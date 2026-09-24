@@ -9,7 +9,7 @@ V.agenda = async (el) => {
   el.innerHTML = `
     <div class="cabecalho"><div><h1>Agenda de prazos</h1><p>Esclarecimento, impugnação, recurso, contrato e cofre — tudo em um lugar.</p></div>
       <div class="acoes">${S.empresas.length > 1 ? `<label class="check"><input type="checkbox" id="todas" ${todas ? "checked" : ""}> Todas as empresas</label>` : ""}
-      <button class="botao" id="novo-prazo">Novo prazo</button></div></div>
+      <button class="botao" id="novo-prazo">${icone("adicionar")} Novo prazo</button></div></div>
     ${guia(`<p>Os prazos com fundamento legal (esclarecimento, impugnação, recurso, vigência, garantia, reajuste) são calculados
       automaticamente. Use "Novo prazo" para compromissos próprios, como uma reunião com o órgão ou a entrega de uma proposta técnica.</p>`)}
     ${secao("Atrasados", grupos.atrasado)}${secao("Hoje", grupos.hoje)}

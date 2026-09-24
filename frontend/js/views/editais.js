@@ -8,7 +8,7 @@ V.editais = async (el) => {
       <div class="acoes"><select id="filtro" aria-label="Filtrar por status">
         <option value="todos" ${status === "todos" ? "selected" : ""}>Todos os status</option>
         ${Object.entries(ROTULOS.statusEdital).map(([k, v]) => `<option value="${k}" ${status === k ? "selected" : ""}>${v}</option>`).join("")}
-        </select><button class="botao" id="novo">Novo edital</button></div></div>
+        </select><button class="botao" id="novo">${icone("adicionar")} Novo edital</button></div></div>
     ${guia(`<p>Um edital chega aqui pelo <a href="#/radar">radar</a> ou é cadastrado direto: pelo número de controle do PNCP
       (formato CNPJ-1-sequencial/ano) ou enviando o PDF, para editais de portais sem integração com o PNCP.
       Depois de cadastrado, use <b>Analisar edital</b> para a IA extrair os dados, conferir sua habilitação e apontar cláusulas restritivas.</p>`)}
@@ -122,9 +122,9 @@ function painelAnalise(el, ed, analises) {
   const ultima = analises[0];
   el.innerHTML = `
     <div class="acoes nao-imprimir" style="margin-bottom:14px">
-      <button class="botao" id="analisar">${ultima ? "Analisar novamente" : "Analisar edital"}</button>
+      <button class="botao" id="analisar">${icone("radarPing")} ${ultima ? "Analisar novamente" : "Analisar edital"}</button>
       ${!ed.tem_texto ? `<span class="fraco">Envie o PDF do edital para habilitar a análise.</span>` : ""}
-      ${ultima ? `<button class="botao secundario" id="imprimir">Imprimir relatório</button>` : ""}
+      ${ultima ? `<button class="botao secundario" id="imprimir">${icone("imprimir")} Imprimir relatório</button>` : ""}
     </div>
     <div id="corpo-analise">${ultima ? htmlAnalise(ultima) : guia(`<p>A análise extrai os dados do edital, confere cada exigência de habilitação
       contra o <a href="#/cofre">cofre de documentos</a> da empresa, aponta cláusulas que restringem a competição e recomenda se vale a pena participar.
@@ -234,14 +234,14 @@ function painelPecasEdital(el, ed, pecas) {
     ${pecas.length ? pecas.map((p) => `<div class="lista-item"><div class="corpo"><b>${esc(p.titulo)}</b>
       <p>${fmt.dataHora(p.criado_em)}</p></div>${carimbo(p.status === "revisada" ? "Revisada" : p.status === "revisao_solicitada" ? "Em revisão" : "Rascunho",
         p.status === "revisada" ? "ok" : p.status === "revisao_solicitada" ? "aviso" : "neutro")}
-      <a class="botao pequeno secundario" href="#/pecas/${p.id}">Abrir</a></div>`).join("")
+      <a class="botao pequeno secundario" href="#/pecas/${p.id}">${icone("chevronDireita",14)} Abrir</a></div>`).join("")
       : vazio("Nenhuma peça gerada", "Selecione cláusulas na aba Análise ou vá em Peças para redigir do zero.")}</section>`;
 }
 
 function painelConcorrentesEdital(el, ed, analises) {
   el.innerHTML = `
     ${guia(`<p>Depois da sessão, baixe do portal da disputa a habilitação ou a proposta do concorrente que você quer questionar
-      e envie aqui junto com o CNPJ dele. O Certame monta um dossiê público (Receita, sanções e histórico no PNCP), confronta o
+      e envie aqui junto com o CNPJ dele. O Kasiski monta um dossiê público (Receita, sanções e histórico no PNCP), confronta o
       documento com as exigências do edital e só mantém no parecer os apontamentos confirmados por uma segunda IA.</p>`)}
     <section class="bloco"><div class="bloco-titulo"><h3>Nova análise de concorrente</h3></div>
       <form id="form-concorrente">
@@ -260,7 +260,7 @@ function painelConcorrentesEdital(el, ed, analises) {
     <section class="bloco">${analises.length ? analises.map((a) => `<div class="lista-item"><div class="corpo">
         <b>${esc(a.concorrente?.razao_social || fmt.cnpj(a.concorrente?.cnpj))} — ${a.tipo === "habilitacao" ? "Habilitação" : "Proposta"}</b>
         <p>${fmt.cnpj(a.concorrente?.cnpj)} · ${fmt.dataHora(a.criado_em)} · ${(a.resultado.apontamentos || []).length} apontamento(s) confirmado(s)</p></div>
-        <a class="botao pequeno secundario" data-abrir-conc="${a.id}">Ver parecer</a></div>`).join("")
+        <a class="botao pequeno secundario" data-abrir-conc="${a.id}">${icone("olho",14)} Ver parecer</a></div>`).join("")
       : vazio("Nenhuma análise ainda", "Envie o primeiro documento de um concorrente acima.")}</section>`;
   const sel = $("#tipo_c", el);
   sel.onchange = () => $("#campos-proposta", el).classList.toggle("oculto", sel.value !== "proposta");

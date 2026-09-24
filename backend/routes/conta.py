@@ -15,6 +15,13 @@ from services import llm
 bp = Blueprint("conta", __name__, url_prefix="/api")
 
 
+@bp.get("/planos")
+def planos_publicos():
+    """Tabela de planos para a página inicial (sem login). Fonte única: planos.PLANOS."""
+    visiveis = {k: v for k, v in planos.PLANOS.items() if k != "suspenso"}
+    return jsonify({"planos": visiveis, "trial_dias": 7})
+
+
 @bp.post("/auth/registro")
 def registro():
     d = dados()

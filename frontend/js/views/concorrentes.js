@@ -3,7 +3,7 @@ V.concorrentes = async (el) => {
   const lista = await api("GET", "/api/concorrentes");
   el.innerHTML = `
     <div class="cabecalho"><div><h1>Concorrentes</h1><p>Dossiês públicos consultados, de todos os editais.</p></div>
-      <button class="botao" id="novo-dossie">Consultar CNPJ</button></div>
+      <button class="botao" id="novo-dossie">${icone("buscar")} Consultar CNPJ</button></div>
     ${guia(`<p>Um dossiê reúne dados públicos do concorrente: situação na Receita, sanções no TCU e no Portal da Transparência e
       o histórico de contratos no PNCP. Ele é atualizado a cada 24 horas. Para analisar a habilitação ou a proposta de um
       concorrente em um edital específico, abra o edital e use a aba Concorrentes.</p>`)}
@@ -48,7 +48,7 @@ V.concorrente = async (el, id) => {
   const cgu = c.dossie?.sancoes_cgu || {};
   el.innerHTML = `
     <div class="cabecalho"><div><h1>${esc(nomeConhecido || "Empresa não identificada")}</h1><p>${fmt.cnpj(c.cnpj)} · atualizado em ${fmt.data(c.atualizado_em)}</p></div>
-      <button class="botao secundario" id="atualizar-dossie">Atualizar dossiê</button></div>
+      <button class="botao secundario" id="atualizar-dossie">${icone("atualizar",15)} Atualizar dossiê</button></div>
     <div class="grade grade-2">
       <section class="bloco"><h2>Receita Federal</h2>
         ${rec.status === "ok" ? `<dl class="capa-campos" style="border:0"><div style="border:0"><dt>Situação</dt><dd>${carimbo(rec.situacao, rec.situacao === "ATIVA" ? "ok" : "erro")}</dd></div>
@@ -73,7 +73,7 @@ V.concorrente = async (el, id) => {
     <section class="bloco"><h2>Análises neste concorrente</h2>
       ${c.analises.length ? c.analises.map((a) => `<div class="lista-item"><div class="corpo"><b>${a.tipo === "habilitacao" ? "Habilitação" : "Proposta"}</b>
         <p>${fmt.dataHora(a.criado_em)} · ${(a.resultado.apontamentos || []).length} apontamento(s)</p></div>
-        <button class="botao pequeno secundario" data-ver="${a.id}">Ver parecer</button></div>`).join("")
+        <button class="botao pequeno secundario" data-ver="${a.id}">${icone("olho",14)} Ver parecer</button></div>`).join("")
         : vazio("Nenhuma análise ainda", "Analise a habilitação ou a proposta deste concorrente em um edital.")}</section>`;
   $("#atualizar-dossie", el).onclick = (ev) => ocupado(ev.target, "Atualizando…", async () => {
     try { await api("POST", "/api/concorrentes", { cnpj: c.cnpj, atualizar: true }); V.concorrente(el, id); } catch (e) { avisarErro(e); }

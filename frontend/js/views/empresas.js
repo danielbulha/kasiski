@@ -3,8 +3,8 @@ V.empresas = async (el) => {
   el.innerHTML = `
     <div class="cabecalho"><div><h1>${S.plano?.empresas > 1 ? "Empresas atendidas" : "Minha empresa"}</h1>
       <p>Cada empresa tem seu próprio cofre, radar, editais e contratos.</p></div>
-      <button class="botao" id="nova-empresa">Cadastrar empresa</button></div>
-    <section class="bloco">${S.empresas.length ? S.empresas.map(linhaEmpresa).join("") : vazio("Nenhuma empresa cadastrada", "Cadastre a primeira empresa para começar a usar o Certame.")}</section>`;
+      <button class="botao" id="nova-empresa">${icone("adicionar")} Cadastrar empresa</button></div>
+    <section class="bloco">${S.empresas.length ? S.empresas.map(linhaEmpresa).join("") : vazio("Nenhuma empresa cadastrada", "Cadastre a primeira empresa para começar a usar o Kasiski.")}</section>`;
   $("#nova-empresa", el).onclick = () => modalEmpresa();
   $$("[data-editar-emp]", el).forEach((b) => b.onclick = () => modalEmpresa(S.empresas.find((e) => e.id == b.dataset.editarEmp)));
   $$("[data-excluir-emp]", el).forEach((b) => b.onclick = async () => {
@@ -21,8 +21,8 @@ function linhaEmpresa(e) {
     <p>${fmt.cnpj(e.cnpj)} · porte ${esc(e.porte)}${e.ufs ? " · " + esc(e.ufs) : ""}</p>
     ${segs.length ? `<p class="fraco">Segmentos: ${segs.map((s) => esc(nomesSeg[s] || s)).join(", ")}</p>` : ""}
     ${e.palavras_chave ? `<p class="fraco">Radar: ${esc(e.palavras_chave)}</p>` : `<p class="fraco">Radar sem palavras-chave configuradas</p>`}</div>
-    <div class="acoes"><button class="botao pequeno secundario" data-editar-emp="${e.id}">Editar</button>
-      <button class="botao texto pequeno" data-excluir-emp="${e.id}">Excluir</button></div></div>`;
+    <div class="acoes"><button class="botao pequeno secundario" data-editar-emp="${e.id}">${icone("editar",14)} Editar</button>
+      <button class="botao texto pequeno" data-excluir-emp="${e.id}">${icone("excluir",14)} Excluir</button></div></div>`;
 }
 
 const PALAVRAS_POR_SEGMENTO = {

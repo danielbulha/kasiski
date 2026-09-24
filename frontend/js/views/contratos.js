@@ -4,7 +4,7 @@ V.contratos = async (el) => {
   const lista = await api("GET", `/api/empresas/${S.empresaId}/contratos`);
   el.innerHTML = `
     <div class="cabecalho"><div><h1>Contratos</h1><p>Contratos vigentes de ${esc(empresaAtual().razao_social)}.</p></div>
-      <button class="botao" id="novo-contrato">Novo contrato</button></div>
+      <button class="botao" id="novo-contrato">${icone("adicionar")} Novo contrato</button></div>
     ${guia(`<p>Cadastre o contrato vencido para acompanhar vigência, garantia e reajuste na agenda automaticamente, e para
       controlar pagamentos: notas fiscais em atraso viram base para o gerador de peças (requerimento de pagamento ou reequilíbrio).</p>`)}
     <section class="bloco">${lista.length ? lista.map(linhaContrato).join("") : vazio("Nenhum contrato cadastrado", "Cadastre um contrato ganho para acompanhar prazos e pagamentos.")}</section>`;
@@ -16,7 +16,7 @@ function linhaContrato(c) {
   return `<div class="lista-item"><div class="corpo"><b>${esc(c.numero || "Contrato " + c.id)} — ${esc(c.orgao)}</b>
     <p>${esc((c.objeto || "").slice(0, 140))}</p><div class="meta"><span>${fmt.data(c.inicio)} a ${fmt.data(c.fim)}</span><span>${fmt.moeda(c.valor)}</span></div></div>
     <div class="acoes">${c.qtd_atrasados ? carimbo(`${c.qtd_atrasados} pagamento(s) em atraso`, "erro") : carimbo("Pagamentos em dia", "ok")}
-      <button class="botao pequeno secundario" data-abrir-contrato="${c.id}">Abrir</button></div></div>`;
+      <button class="botao pequeno secundario" data-abrir-contrato="${c.id}">${icone("chevronDireita",14)} Abrir</button></div></div>`;
 }
 
 function modalContrato(c) {
@@ -53,20 +53,20 @@ V.contrato = async (el, id) => {
   const c = await api("GET", `/api/contratos/${id}`);
   el.innerHTML = `
     <div class="capa"><div class="capa-topo"><div><div class="processo">${esc(c.numero || "Contrato " + c.id)}</div>
-        <h1>${esc(c.objeto)}</h1></div><button class="botao secundario" id="editar-contrato">Editar</button></div>
+        <h1>${esc(c.objeto)}</h1></div><button class="botao secundario" id="editar-contrato">${icone("editar",15)} Editar</button></div>
       <dl class="capa-campos">
         <div><dt>Órgão</dt><dd>${esc(c.orgao)}</dd></div><div><dt>Valor</dt><dd>${fmt.moeda(c.valor)}</dd></div>
         <div><dt>Vigência</dt><dd>${fmt.data(c.inicio)} a ${fmt.data(c.fim)}</dd></div>
         <div><dt>Garantia até</dt><dd>${fmt.data(c.garantia_validade)}</dd></div>
         <div><dt>Data-base do reajuste</dt><dd>${fmt.data(c.data_base_reajuste)}</dd></div>
         <div><dt>Índice</dt><dd>${esc(c.indice_reajuste || "—")}</dd></div></dl></div>
-    <section class="bloco"><div class="bloco-titulo"><h2>Pagamentos</h2><button class="botao pequeno" id="novo-pagamento">Novo pagamento</button></div>
+    <section class="bloco"><div class="bloco-titulo"><h2>Pagamentos</h2><button class="botao pequeno" id="novo-pagamento">${icone("adicionar", 15)} Novo pagamento</button></div>
       ${c.pagamentos.length ? `<div class="tabela-rolagem"><table><thead><tr><th>Referência</th><th>NF</th><th>Valor</th><th>Vencimento</th><th>Situação</th><th></th></tr></thead>
       <tbody>${c.pagamentos.map(linhaPagamento).join("")}</tbody></table></div>` : vazio("Nenhum pagamento lançado", "Cadastre as notas fiscais para acompanhar atrasos.")}</section>
     <section class="bloco"><div class="bloco-titulo"><h2>Peças deste contrato</h2>
       <a class="botao pequeno secundario" href="#/pecas">Gerar peça</a></div>
       ${c.pecas.length ? c.pecas.map((p) => `<div class="lista-item"><div class="corpo"><b>${esc(p.titulo)}</b><p>${fmt.dataHora(p.criado_em)}</p></div>
-        <a class="botao pequeno secundario" href="#/pecas/${p.id}">Abrir</a></div>`).join("") : vazio("Nenhuma peça ainda", "")}</section>`;
+        <a class="botao pequeno secundario" href="#/pecas/${p.id}">${icone("chevronDireita",14)} Abrir</a></div>`).join("") : vazio("Nenhuma peça ainda", "")}</section>`;
   $("#editar-contrato", el).onclick = () => modalContrato(c);
   $("#novo-pagamento", el).onclick = () => modalPagamento(c.id);
   $$("[data-pago]", el).forEach((b) => b.onclick = async () => { await api("PATCH", `/api/pagamentos/${b.dataset.pago}`, { pago_em: new Date().toISOString().slice(0, 10) }); V.contrato(el, id); });
@@ -76,8 +76,8 @@ V.contrato = async (el, id) => {
 function linhaPagamento(p) {
   const sit = { pago: ["Pago", "ok"], atrasado: ["Atrasado" + (p.dias_atraso ? ` (${p.dias_atraso}d)` : ""), "erro"], a_receber: ["A receber", "neutro"] }[p.situacao];
   return `<tr><td>${esc(p.referencia || "—")}</td><td>${esc(p.nota_fiscal || "—")}</td><td>${fmt.moeda(p.valor)}</td><td>${fmt.data(p.vencimento)}</td>
-    <td>${carimbo(sit[0], sit[1])}</td><td>${p.situacao !== "pago" ? `<button class="botao texto pequeno" data-pago="${p.id}">Marcar pago</button>` : ""}
-    <button class="botao texto pequeno" data-excluir-pgto="${p.id}">Excluir</button></td></tr>`;
+    <td>${carimbo(sit[0], sit[1])}</td><td>${p.situacao !== "pago" ? `<button class="botao texto pequeno" data-pago="${p.id}">${icone("ok",14)} Marcar pago</button>` : ""}
+    <button class="botao texto pequeno" data-excluir-pgto="${p.id}">${icone("excluir",14)} Excluir</button></td></tr>`;
 }
 
 function modalPagamento(contratoId) {

@@ -4,7 +4,7 @@ V.precos = async (el) => {
   const lista = await api("GET", `/api/empresas/${S.empresaId}/precos`);
   el.innerHTML = `
     <div class="cabecalho"><div><h1>Preços praticados</h1><p>Pesquisas de preço de ${esc(empresaAtual().razao_social)}.</p></div>
-      <button class="botao" id="nova-pesquisa">Nova pesquisa</button></div>
+      <button class="botao" id="nova-pesquisa">${icone("adicionar")} Nova pesquisa</button></div>
     ${guia(`<p>Informe o código CATMAT (material) ou CATSER (serviço) do Compras.gov.br para trazer preços já homologados em
       compras públicas recentes. Sem o código, cadastre a pesquisa e some orçamentos manuais para calcular a faixa competitiva.</p>`)}
     <section class="bloco">${lista.length ? lista.map(linhaPreco).join("") : vazio("Nenhuma pesquisa ainda", "Cadastre a primeira pesquisa de preço.")}</section>`;
@@ -19,7 +19,7 @@ function linhaPreco(p) {
     <p>${p.codigo_catalogo ? `Código ${esc(p.codigo_catalogo)} · ` : ""}${e.n || 0} amostra(s)${p.uf ? " · " + esc(p.uf) : ""}</p></div>
     <div class="acoes">${e.n ? `<span>Mediana ${fmt.moeda(e.mediana)}</span>` : ""}
       <button class="botao pequeno secundario" data-abrir-preco="${p.id}">Ver</button>
-      <button class="botao texto pequeno" data-excluir-preco="${p.id}">Excluir</button></div></div>`;
+      <button class="botao texto pequeno" data-excluir-preco="${p.id}">${icone("excluir",14)} Excluir</button></div></div>`;
 }
 
 function modalPesquisa() {

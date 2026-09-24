@@ -1,9 +1,10 @@
-# Certame — copiloto de licitações
+# Kasiski — Public Market Intelligence
 
-Aplicativo para empresas que participam de licitações públicas (Lei 14.133/2021): monitora editais no
-PNCP, confere a habilitação da empresa contra o edital, analisa concorrentes, gera minutas de peças
-(impugnação, recurso etc.) e acompanha prazos e contratos — tudo com IA e verificação cruzada entre
-modelos.
+Kasiski é uma plataforma de inteligência para o mercado público que transforma grandes volumes de
+informação em oportunidades aderentes ao perfil de cada empresa. Este repositório é o app de licitações
+(Lei 14.133/2021): monitora editais no PNCP, confere a habilitação da empresa contra o edital, analisa
+concorrentes, gera minutas de peças (impugnação, recurso etc.) e acompanha prazos e contratos — tudo com
+IA e verificação cruzada entre modelos.
 
 **Status:** MVP funcional, testado de ponta a ponta em modo demonstração (sem chaves de IA). As
 integrações com PNCP, Receita Federal, TCU e Portal da Transparência foram escritas com base na
@@ -63,6 +64,10 @@ python -m http.server 8080
 ```
 Abra `http://localhost:8080`. O `js/config.js` já aponta para `http://localhost:5000` quando o
 `location.hostname` é `localhost`, então local-a-local funciona sem editar nada.
+
+**Página inicial pública:** visitantes sem login caem em `#/` — apresentação, recursos, setores, planos
+(lidos de `GET /api/planos`, a mesma tabela que controla os limites no backend) e dúvidas frequentes. O
+texto fica em `frontend/js/views/inicio.js`. Quem já está logado vai direto para o Painel.
 
 **Primeiro acesso:** vá em "Criar conta grátis", cadastre-se com o e-mail que você colocou em
 `ADMIN_EMAILS` no `.env` — esse usuário ganha acesso à tela **Administração** (gerenciar revisões pagas

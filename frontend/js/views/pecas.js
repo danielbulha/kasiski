@@ -5,14 +5,14 @@ V.pecas = async (el) => {
   const pre = sessionStorage.getItem("nova_peca");
   el.innerHTML = `
     <div class="cabecalho"><div><h1>Gerador de peças</h1><p>Minutas de ${esc(empresaAtual().razao_social)}, prontas para revisão.</p></div>
-      <button class="botao" id="nova">Nova peça</button></div>
+      <button class="botao" id="nova">${icone("adicionar")} Nova peça</button></div>
     ${guia(`<p>Escolha o tipo de peça e o edital ou contrato de referência. Se você veio da análise de um edital ou de um concorrente,
       os pontos selecionados já entram como base. A IA redige uma minuta com fundamentação legal; revise antes de protocolar, ou peça
       a revisão profissional paga pela D.B.C. Consultoria.</p>`)}
     <section class="bloco">${lista.length ? lista.map((p) => `<div class="lista-item"><div class="corpo"><b>${esc(p.titulo)}</b>
         <p>${fmt.dataHora(p.criado_em)}</p></div><div class="acoes">${carimbo(p.status === "revisada" ? "Revisada" : p.status === "revisao_solicitada" ? "Em revisão" : "Rascunho",
           p.status === "revisada" ? "ok" : p.status === "revisao_solicitada" ? "aviso" : "neutro")}
-        <a class="botao pequeno secundario" href="#/pecas/${p.id}">Abrir</a></div></div>`).join("")
+        <a class="botao pequeno secundario" href="#/pecas/${p.id}">${icone("chevronDireita",14)} Abrir</a></div></div>`).join("")
       : vazio("Nenhuma peça gerada ainda", "Clique em Nova peça para redigir a primeira minuta.")}</section>`;
   $("#nova", el).onclick = () => modalNovaPeca(tipos, pre ? JSON.parse(pre) : null);
   if (pre) sessionStorage.removeItem("nova_peca");
@@ -58,7 +58,7 @@ V.peca = async (el, id) => {
     <div class="cabecalho"><div><h1>${esc(p.titulo)}</h1><p>${fmt.dataHora(p.criado_em)}</p></div>
       <div class="acoes">${carimbo(p.status === "revisada" ? "Revisada" : p.status === "revisao_solicitada" ? "Em revisão" : "Rascunho",
         p.status === "revisada" ? "ok" : p.status === "revisao_solicitada" ? "aviso" : "neutro")}
-      <button class="botao secundario" id="baixar-peca">Baixar .txt</button>
+      <button class="botao secundario" id="baixar-peca">${icone("baixar")} Baixar .txt</button>
       ${!revisaoAtiva ? `<button class="botao" id="pedir-revisao">Pedir revisão profissional</button>` : ""}</div></div>
     ${p.demonstracao ? `<div class="aviso info">Minuta de demonstração — configure as chaves de IA para gerar o texto completo.</div>` : ""}
     <div class="bloco"><textarea class="editor" id="conteudo-peca">${esc(p.conteudo)}</textarea>

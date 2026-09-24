@@ -130,7 +130,7 @@ async function api(metodo, caminho, corpo) {
   let r;
   try { r = await fetch(CERTAME.API_URL + caminho, opt); }
   catch { throw new Error("Sem conexão com o servidor. Verifique a internet e tente de novo."); }
-  if (r.status === 401 && S.token && !caminho.startsWith("/api/auth")) { sair(); throw new Error("Sua sessão expirou. Entre novamente."); }
+  if (r.status === 401 && S.token && !caminho.startsWith("/api/auth")) { sair("#/entrar"); throw new Error("Sua sessão expirou. Entre novamente."); }
   const ct = r.headers.get("content-type") || "";
   if (!ct.includes("json")) { if (!r.ok) throw new Error(`Erro ${r.status} no servidor.`); return r; }
   const d = await r.json();
@@ -148,10 +148,10 @@ async function baixar(caminho, nome) {
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
-function sair() {
+function sair(destino = "#/") {
   localStorage.removeItem("certame_token");
   S.token = null; S.usuario = null;
-  location.hash = "#/entrar";
+  location.hash = destino;
 }
 
 async function carregarConta() {
@@ -160,13 +160,18 @@ async function carregarConta() {
   S.empresas = await api("GET", "/api/empresas");
   if (!S.empresas.find((e) => e.id === S.empresaId)) S.empresaId = S.empresas[0]?.id || null;
   if (S.empresaId) localStorage.setItem("certame_empresa", S.empresaId);
+  S.resumoNav = { radar_novos: 0 };
+  if (S.empresaId) {
+    try { const p = await api("GET", `/api/painel?empresa_id=${S.empresaId}`); S.resumoNav.radar_novos = p.radar_novos || 0; }
+    catch { /* badge é um extra — uma falha aqui não deve travar a navegação */ }
+  }
 }
 
 const empresaAtual = () => S.empresas.find((e) => e.id === S.empresaId);
 
 function exigirEmpresa() {
   if (S.empresaId) return "";
-  return vazio("Cadastre a primeira empresa", "Tudo no Certame é organizado por CNPJ: editais, documentos, prazos e contratos.",
+  return vazio("Cadastre a primeira empresa", "Tudo no Kasiski é organizado por CNPJ: editais, documentos, prazos e contratos.",
     `<a class="botao" href="#/empresas">Cadastrar empresa</a>`);
 }
 

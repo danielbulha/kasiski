@@ -11,8 +11,8 @@ V.radar = async (el) => {
         <option value="novo" ${filtro === "novo" ? "selected" : ""}>Novos</option>
         <option value="acompanhando" ${filtro === "acompanhando" ? "selected" : ""}>Já acompanhados</option>
         <option value="descartado" ${filtro === "descartado" ? "selected" : ""}>Descartados</option></select>
-        <button class="botao" id="atualizar">Buscar agora</button></div></div>
-    ${guia(`<p>Todo dia útil, cedo, o Certame consulta o PNCP e traz os editais com propostas abertas que contêm suas palavras-chave.
+        <button class="botao" id="atualizar">${icone("radarPing")} Buscar agora</button></div></div>
+    ${guia(`<p>Todo dia útil, cedo, o Kasiski consulta o PNCP e traz os editais com propostas abertas que contêm suas palavras-chave.
       Uma IA de baixo custo dá uma nota de 0 a 100 de aderência ao seu perfil. Clique em <b>Acompanhar</b> para baixar o edital,
       calcular os prazos e liberar a análise completa. As palavras-chave e os estados ficam em <a href="#/empresas">Minha empresa</a>.</p>`)}
     <section class="bloco">
@@ -42,8 +42,8 @@ function linhaRadar(i) {
       <div class="meta"><span>Valor estimado ${fmt.moeda(d.valor_estimado)}</span><span>Propostas até ${fmt.dataHora(d.data_encerramento)}</span>
         ${i.motivo ? `<span>${esc(i.motivo)}</span>` : ""}${d.link ? `<a href="${esc(d.link)}" target="_blank" rel="noopener">Ver no PNCP</a>` : ""}</div>
     </div><div class="acoes" style="flex-direction:column;align-items:flex-end">${nota}
-      ${i.status === "novo" ? `<button class="botao pequeno" data-acompanhar="${i.id}">Acompanhar</button>
-        <button class="botao texto pequeno" data-descartar="${i.id}" data-valor="descartado">Descartar</button>` : ""}
-      ${i.status === "descartado" ? `<button class="botao texto pequeno" data-descartar="${i.id}" data-valor="novo">Restaurar</button>` : ""}
+      ${i.status === "novo" ? `<button class="botao pequeno" data-acompanhar="${i.id}">${icone("adicionar",14)} Acompanhar</button>
+        <button class="botao texto pequeno" data-descartar="${i.id}" data-valor="descartado">${icone("fechar",14)} Descartar</button>` : ""}
+      ${i.status === "descartado" ? `<button class="botao texto pequeno" data-descartar="${i.id}" data-valor="novo">${icone("restaurar",14)} Restaurar</button>` : ""}
     </div></div>`;
 }

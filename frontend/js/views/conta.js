@@ -91,7 +91,7 @@ function desenharRevisoes(el, revisoes) {
   el.innerHTML = `<section class="bloco">${pendentes.length ? pendentes.map((r) => `<div class="lista-item"><div class="corpo">
       <b>${esc(r.peca_titulo)}</b><p>${esc(r.conta)} · ${carimbo(r.status, r.status === "pendente" ? "aviso" : "neutro")} ${r.valor ? "· " + fmt.moeda(r.valor) : ""}
       ${r.prazo_desejado ? " · prazo " + fmt.data(r.prazo_desejado) : ""}</p>${r.observacoes ? `<p class="fraco">${esc(r.observacoes)}</p>` : ""}</div>
-      <button class="botao pequeno secundario" data-rev="${r.id}">Gerenciar</button></div>`).join("")
+      <button class="botao pequeno secundario" data-rev="${r.id}">${icone("editar",14)} Gerenciar</button></div>`).join("")
     : vazio("Nenhuma revisão pendente", "")}</section>`;
   $$("[data-rev]", el).forEach((b) => b.onclick = () => modalRevisaoAdmin(revisoes.find((r) => r.id == b.dataset.rev), el, revisoes));
 }

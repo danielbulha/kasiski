@@ -22,7 +22,14 @@ def consultar_cnpj(cnpj):
     c = limpar_cnpj(cnpj)
     if not c or not cnpj_valido(c):
         raise ErroAPI("CNPJ inválido.")
-    return jsonify(receita(c))
+    d = receita(c)
+    if d.get("status") == "ok":
+        from services import cnae
+        porte = (d.get("porte") or "").upper()
+        d["porte_codigo"] = "ME" if "MICRO" in porte else "EPP" if "PEQUENO" in porte else "demais"
+        d["cnaes_texto"] = cnae.texto_cnaes(d.get("cnaes"))
+        d["sugestao"] = cnae.sugerir(d.get("cnaes"))
+    return jsonify(d)
 
 
 @bp.get("/empresas")

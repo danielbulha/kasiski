@@ -35,6 +35,21 @@ services:
         sync: false
       - key: PORTAL_TRANSPARENCIA_KEY
         sync: false
+      # Cobrança (Mercado Pago)
+      - key: MP_ACCESS_TOKEN
+        sync: false
+      - key: MP_WEBHOOK_SECRET
+        sync: false
+      - key: FRONTEND_URL
+        value: https://kasiski.netlify.app
+      - key: BACKEND_URL
+        sync: false
+      - key: ANUAL_MESES_PAGOS
+        value: "10"
+      - key: CARENCIA_DIAS
+        value: "3"
+      - key: USD_BRL
+        value: "5.5"
 
   - type: cron
     name: certame-radar

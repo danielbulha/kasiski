@@ -1,5 +1,7 @@
-"""Planos, limites mensais e registro de consumo de IA."""
-from datetime import datetime
+"""Planos, limites mensais, vencimento da assinatura e registro de consumo de IA."""
+from datetime import datetime, timedelta
+
+from flask import current_app
 
 from extensions import ErroAPI, db
 from models import Empresa, UsoIA
@@ -16,6 +18,39 @@ PLANOS = {
     "suspenso": {"nome": "Suspenso", "preco": 0, "empresas": 0, "analises": 0, "concorrentes": 0,
                  "pecas": False, "precos": False, "contratos": False, "marca": False},
 }
+
+PAGOS = ("essencial", "profissional", "consultor")
+
+
+def preco(plano, ciclo="mensal"):
+    """Preço cobrado por ciclo. Anual = preço mensal x ANUAL_MESES_PAGOS (padrão: paga 10, leva 12)."""
+    mensal = PLANOS[plano]["preco"]
+    if ciclo == "anual":
+        return round(mensal * current_app.config["ANUAL_MESES_PAGOS"], 2)
+    return float(mensal)
+
+
+def mrr_da_conta(conta):
+    """Receita recorrente mensal que a conta representa hoje (0 se não estiver pagando)."""
+    if conta.plano not in PAGOS or conta.assinatura_status not in ("ativa",):
+        return 0.0
+    return round(preco(conta.plano, conta.ciclo or "mensal") / (12 if conta.ciclo == "anual" else 1), 2)
+
+
+def verificar_vencimento(conta):
+    """Suspende a conta paga cujo acesso venceu há mais que a carência. Contas com plano definido
+    manualmente pelo administrador (sem pago_ate) nunca são suspensas por aqui."""
+    if conta.plano not in PAGOS or not conta.pago_ate:
+        return False
+    limite = conta.pago_ate + timedelta(days=current_app.config["CARENCIA_DIAS"])
+    if datetime.utcnow() > limite:
+        conta.plano = "suspenso"
+        if conta.assinatura_status == "ativa":
+            conta.assinatura_status = "inadimplente"
+        db.session.commit()
+        return True
+    return False
+
 
 NOMES_RECURSO = {"analises": "análises de edital", "concorrentes": "análises de concorrentes",
                  "pecas": "o gerador de peças", "precos": "a inteligência de preços",
@@ -47,6 +82,9 @@ def resumo(conta):
         "uso": {"analises": uso_mes(conta, "analises"), "concorrentes": uso_mes(conta, "concorrentes"),
                 "empresas": Empresa.query.filter_by(conta_id=conta.id).count()},
         "custo_ia_mes_usd": round(float(custo or 0), 4),
+        "assinatura": {"status": conta.assinatura_status, "ciclo": conta.ciclo, "metodo": conta.metodo_pagamento,
+                       "pago_ate": conta.pago_ate.isoformat() if conta.pago_ate else None,
+                       "recorrente": conta.metodo_pagamento == "recorrente" and conta.assinatura_status == "ativa"},
     }
 
 

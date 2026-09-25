@@ -17,9 +17,29 @@ class Conta(db.Model):
     marca_relatorio = db.Column(db.String(200))  # plano Consultor: nome do escritório nos relatórios
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # Cobrança (Mercado Pago)
+    ciclo = db.Column(db.String(10))              # mensal, anual
+    metodo_pagamento = db.Column(db.String(20))   # recorrente (cartão, renova sozinho) ou avulso (Pix/boleto/cartão)
+    assinatura_status = db.Column(db.String(20))  # pendente, ativa, pausada, cancelada, inadimplente
+    mp_assinatura_id = db.Column(db.String(60), index=True)
+    pago_ate = db.Column(db.DateTime)             # acesso pago garantido até esta data
+    assinante_desde = db.Column(db.DateTime)
+    cancelado_em = db.Column(db.DateTime)
+
+    # CRM / funil
+    telefone = db.Column(db.String(30))
+    notas_crm = db.Column(db.Text)
+    etiqueta_crm = db.Column(db.String(30))       # livre: quente, negociando, sem_resposta...
+    origem = db.Column(db.String(80))             # utm_source ou site de origem
+    campanha = db.Column(db.String(120))          # utm_campaign
+    visitante_id = db.Column(db.String(40), index=True)
+
     def to_dict(self):
         return {"id": self.id, "nome": self.nome, "plano": self.plano, "trial_fim": _iso(self.trial_fim),
-                "marca_relatorio": self.marca_relatorio, "criado_em": _iso(self.criado_em)}
+                "marca_relatorio": self.marca_relatorio, "criado_em": _iso(self.criado_em),
+                "ciclo": self.ciclo, "metodo_pagamento": self.metodo_pagamento,
+                "assinatura_status": self.assinatura_status, "pago_ate": _iso(self.pago_ate),
+                "assinante_desde": _iso(self.assinante_desde), "cancelado_em": _iso(self.cancelado_em)}
 
 
 class Usuario(db.Model):
@@ -30,6 +50,7 @@ class Usuario(db.Model):
     senha_hash = db.Column(db.String(300), nullable=False)
     modo_guiado = db.Column(db.Boolean, default=True)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    ultimo_acesso = db.Column(db.DateTime)
     conta = db.relationship("Conta")
 
     def to_dict(self, admin=False):
@@ -332,4 +353,44 @@ class UsoIA(db.Model):
     tokens_entrada = db.Column(db.Integer, default=0)
     tokens_saida = db.Column(db.Integer, default=0)
     custo_usd = db.Column(db.Float, default=0)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+
+class Cobranca(db.Model):
+    """Cada pagamento recebido (ou tentado). É a base do controle de receitas.
+    Origem: mercadopago (webhook) ou manual (lançado pelo administrador)."""
+    id = db.Column(db.Integer, primary_key=True)
+    conta_id = db.Column(db.Integer, db.ForeignKey("conta.id"), index=True)
+    origem = db.Column(db.String(20), default="mercadopago")  # mercadopago, manual
+    tipo = db.Column(db.String(20), default="assinatura")     # assinatura, servico, outro
+    mp_pagamento_id = db.Column(db.String(60), unique=True)
+    mp_assinatura_id = db.Column(db.String(60), index=True)
+    plano = db.Column(db.String(30))
+    ciclo = db.Column(db.String(10))
+    meio = db.Column(db.String(30))          # pix, cartao, boleto, outro
+    valor = db.Column(db.Float, default=0)
+    valor_liquido = db.Column(db.Float)      # após a tarifa do Mercado Pago, quando informado
+    status = db.Column(db.String(20))        # aprovado, pendente, recusado, estornado, cancelado
+    aplicado = db.Column(db.Boolean, default=False)  # já estendeu o acesso da conta (evita estender duas vezes)
+    descricao = db.Column(db.String(300))
+    pago_em = db.Column(db.DateTime, index=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {"id": self.id, "conta_id": self.conta_id, "origem": self.origem, "tipo": self.tipo,
+                "mp_pagamento_id": self.mp_pagamento_id, "plano": self.plano, "ciclo": self.ciclo, "meio": self.meio,
+                "valor": self.valor, "valor_liquido": self.valor_liquido, "status": self.status,
+                "descricao": self.descricao, "pago_em": _iso(self.pago_em), "criado_em": _iso(self.criado_em)}
+
+
+class Evento(db.Model):
+    """Eventos do funil que não aparecem em outras tabelas (visita à página inicial, clique em
+    "testar grátis", checkout iniciado). Cadastro, ativação e pagamento saem das tabelas próprias."""
+    id = db.Column(db.Integer, primary_key=True)
+    tipo = db.Column(db.String(30), nullable=False, index=True)  # visita, cta, checkout
+    visitante_id = db.Column(db.String(40), index=True)
+    conta_id = db.Column(db.Integer, index=True)
+    origem = db.Column(db.String(80))
+    campanha = db.Column(db.String(120))
+    dados = db.Column(db.JSON)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow, index=True)

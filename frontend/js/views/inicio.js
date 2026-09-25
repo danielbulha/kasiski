@@ -15,6 +15,7 @@ const PUBLICO_PLANO = {
 };
 
 V.inicio = async (raiz) => {
+  rastrear("visita");
   let planos = PLANOS_RESERVA, trialDias = 7;
   try { const d = await api("GET", "/api/planos"); planos = d.planos; trialDias = d.trial_dias; } catch { /* segue com a reserva */ }
   const pago = ["essencial", "profissional", "consultor"].filter((k) => planos[k]);

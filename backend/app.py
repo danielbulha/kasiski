@@ -19,7 +19,7 @@ def create_app(config=Config):
     os.makedirs(app.config["UPLOAD_DIR"], exist_ok=True)
 
     origens = app.config["CORS_ORIGINS"]
-    CORS(app, resources={r"/api/*": {"origins": origens if origens == "*" else [o.strip() for o in origens.split(",")]}},
+    CORS(app, resources={r"/api/*": {"origins": origens if origens == "*" else [o.strip().rstrip("/") for o in origens.split(",") if o.strip()]}},
          expose_headers=["Content-Disposition"])
     db.init_app(app)
 

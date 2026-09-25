@@ -5,7 +5,7 @@ from functools import wraps
 import jwt
 from flask import current_app, g, request
 
-from extensions import ErroAPI
+from extensions import ErroAPI, db
 from models import Usuario
 
 
@@ -36,6 +36,7 @@ def login_requerido(f):
         g.usuario = usuario
         g.conta = usuario.conta
         g.admin = eh_admin(usuario)
+        _registrar_acesso(usuario)
         return f(*args, **kwargs)
     return wrapper
 
@@ -48,3 +49,13 @@ def admin_requerido(f):
             raise ErroAPI("Acesso restrito ao administrador.", 403)
         return f(*args, **kwargs)
     return wrapper
+
+
+def _registrar_acesso(usuario):
+    """Último acesso (para o CRM, gravado no máximo 1x/hora) e suspensão de plano vencido."""
+    import planos
+    agora = datetime.utcnow()
+    if not usuario.ultimo_acesso or agora - usuario.ultimo_acesso > timedelta(hours=1):
+        usuario.ultimo_acesso = agora
+        db.session.commit()
+    planos.verificar_vencimento(usuario.conta)

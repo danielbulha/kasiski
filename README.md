@@ -187,3 +187,31 @@ forma em `fluxos.py`, então essa troca não exige mudar quem a usa.
 
 Nenhuma — o banco de dados não está incluído neste pacote. O primeiro cadastro que você fizer já começa
 limpo.
+
+
+## Cobrança (Mercado Pago), CRM, funil e receitas
+
+### Como funciona
+- **Planos pagos**: Essencial, Profissional e Consultor, com ciclo **mensal** ou **anual** (anual = preço mensal × `ANUAL_MESES_PAGOS`, padrão 10 → "2 meses grátis").
+- **Duas formas de pagar** (tela *Plano e conta*):
+  - **Cartão com renovação automática**: Assinaturas do Mercado Pago (`/preapproval`). Cobra sozinho todo ciclo.
+  - **Pix, boleto ou cartão avulso**: Checkout Pro. Vale 1 ciclo; o cliente renova pagando de novo (aparece um aviso 5 dias antes do vencimento).
+- Cada pagamento aprovado estende `pago_ate` da conta por 1 ou 12 meses. Vencido há mais de `CARENCIA_DIAS`, a conta passa para *suspenso* (os dados ficam salvos). Contas com plano definido manualmente pelo administrador, sem data de vencimento, nunca são suspensas automaticamente.
+- **Administração** (menu *Administração*, só para `ADMIN_EMAILS`):
+  - **Clientes e testes**: CRM de todas as contas: etapa, plano, fim do teste, uso da IA, receita, custo de IA, último acesso, anotações, etiquetas e “+7 dias de teste”.
+  - **Funil de conversão**: visita → clique em testar → cadastro → empresa cadastrada → 1ª análise → abriu pagamento → assinante; por origem (`utm_source`) e lista de leads quentes.
+  - **Receitas**: MRR, ARR, recebido por mês (assinaturas × serviços), tarifas do Mercado Pago, custo de IA em R$, resultado, cancelamentos e lançamentos manuais.
+
+### Configuração (uma vez)
+1. No Mercado Pago: **Suas integrações → Criar aplicação** (produto: Checkout Pro + Assinaturas). Copie o **Access Token de produção** (`APP_USR-...`). Para testar, use as credenciais de teste e usuários de teste.
+2. Em **Webhooks** da aplicação, cadastre a URL `https://SEU-BACKEND.onrender.com/api/billing/webhook` com os eventos **Pagamentos**, **Planos e assinaturas** (`subscription_preapproval`) e **Pagamentos recorrentes** (`subscription_authorized_payment`). Copie a **assinatura secreta**.
+3. No Render (serviço da API), em Environment:
+   - `MP_ACCESS_TOKEN` = access token
+   - `MP_WEBHOOK_SECRET` = assinatura secreta do webhook
+   - `BACKEND_URL` = `https://SEU-BACKEND.onrender.com` (sem barra no final)
+   - `FRONTEND_URL` = `https://kasiski.netlify.app`
+   - `CORS_ORIGINS` = `https://kasiski.netlify.app` (a barra final agora é ignorada)
+   - Opcionais: `ANUAL_MESES_PAGOS` (10), `CARENCIA_DIAS` (3), `USD_BRL` (5.5)
+4. Sem `MP_ACCESS_TOKEN`, o botão *Assinar* continua abrindo o `LINK_ASSINATURA` do `config.js` (WhatsApp).
+
+As tabelas e colunas novas (`cobranca`, `evento` e campos em `conta`/`usuario`) são criadas sozinhas ao subir o backend.

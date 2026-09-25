@@ -22,6 +22,7 @@ class Config:
     UPLOAD_DIR = os.getenv("UPLOAD_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads"))
     MAX_CONTENT_LENGTH = 40 * 1024 * 1024  # 40 MB por upload
 
+    # Endereços separados por vírgula. A barra final é ignorada (o navegador nunca envia).
     CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*")
     ADMIN_EMAILS = _lista("ADMIN_EMAILS")
     TOKEN_HORAS = int(os.getenv("TOKEN_HORAS", "72"))
@@ -47,3 +48,12 @@ class Config:
         "esclarecimento": 290, "impugnacao": 690, "intencao_recurso": 190, "recurso": 990,
         "contrarrazoes": 890, "reequilibrio": 1490, "cobranca_pagamento": 490, "defesa_previa": 1190,
     }
+
+    # ------------------------------------------------------------ cobrança (Mercado Pago)
+    MP_ACCESS_TOKEN = os.getenv("MP_ACCESS_TOKEN", "")          # credencial de produção (APP_USR-...) ou de teste
+    MP_WEBHOOK_SECRET = os.getenv("MP_WEBHOOK_SECRET", "")      # "assinatura secreta" do painel de webhooks
+    FRONTEND_URL = os.getenv("FRONTEND_URL", "https://kasiski.netlify.app").rstrip("/")
+    BACKEND_URL = os.getenv("BACKEND_URL", "").rstrip("/")      # URL pública desta API (para o webhook)
+    ANUAL_MESES_PAGOS = int(os.getenv("ANUAL_MESES_PAGOS", "10"))  # plano anual: paga 10, leva 12
+    CARENCIA_DIAS = int(os.getenv("CARENCIA_DIAS", "3"))        # dias após o vencimento antes de suspender
+    USD_BRL = float(os.getenv("USD_BRL", "5.5"))                # câmbio para converter o custo de IA em R$

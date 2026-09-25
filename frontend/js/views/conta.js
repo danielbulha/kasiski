@@ -1,18 +1,47 @@
-// Conta, planos e preferências.
+// Conta, planos, assinatura (Mercado Pago) e preferências.
+const ROTULO_ASSINATURA = { ativa: ["Ativa", "ok"], pendente: ["Aguardando pagamento", "aviso"], pausada: ["Pausada", "aviso"],
+  cancelada: ["Cancelada", "neutro"], inadimplente: ["Pagamento recusado", "erro"] };
+const ROTULO_COBRANCA = { aprovado: ["Pago", "ok"], pendente: ["Pendente", "aviso"], recusado: ["Recusado", "erro"],
+  estornado: ["Estornado", "erro"], cancelado: ["Cancelado", "neutro"] };
+const ROTULO_MEIO = { pix: "Pix", cartao: "Cartão", boleto: "Boleto", saldo_mp: "Saldo Mercado Pago", outro: "Outro" };
+
 V.conta = async (el) => {
   await atualizarConta();
-  const p = S.plano;
+  const retorno = (() => { try { const v = sessionStorage.getItem("kasiski_retorno_mp"); sessionStorage.removeItem("kasiski_retorno_mp"); return v ? JSON.parse(v) : null; } catch { return null; } })();
+  if (retorno) {
+    try { await api("POST", "/api/billing/sincronizar", retorno); await carregarConta(); } catch { /* o webhook resolve */ }
+  }
+  let cobrancas = [];
+  try { cobrancas = await api("GET", "/api/billing/cobrancas"); } catch { /* tela segue sem histórico */ }
+  const p = S.plano, a = p.assinatura || {};
+  const ciclo = V.conta.ciclo || "mensal";
+  const msgRetorno = !retorno ? "" : ["approved", ""].includes(retorno.status) && ["profissional", "essencial", "consultor"].includes(p.codigo)
+    ? `<div class="aviso ok">Pagamento confirmado. Seu plano ${esc(p.nome)} está ativo.</div>`
+    : ["rejected", "null", "failure"].includes(retorno.status)
+      ? `<div class="aviso erro">O pagamento não foi concluído. Você pode tentar de novo com outra forma de pagamento.</div>`
+      : `<div class="aviso info">Recebemos seu pedido. Assim que o Mercado Pago confirmar (Pix: segundos; boleto: até 2 dias úteis), seu plano é liberado automaticamente.</div>`;
+
   el.innerHTML = `
     <div class="cabecalho"><div><h1>Plano e conta</h1><p>${esc(S.usuario.nome)} · ${esc(S.usuario.email)}</p></div></div>
+    ${msgRetorno}
+    ${assinaturaHtml(p, a)}
     <section class="bloco"><h2>Uso deste mês</h2>
       <div class="grade grade-3">
         ${barraUso("Análises de edital", p.uso.analises, p.analises)}
         ${barraUso("Análises de concorrente", p.uso.concorrentes, p.concorrentes)}
         ${barraUso("Empresas cadastradas", p.uso.empresas, p.empresas)}
       </div></section>
-    <section class="bloco"><h2>Planos</h2>
-      <div class="grade grade-4">${["trial", "essencial", "profissional", "consultor"].filter((k) => S.planos[k]).map((k) => planoHtml(k, S.planos[k], p.codigo)).join("")}</div>
+    <section class="bloco"><div class="bloco-titulo"><h2>Planos</h2>
+      <div class="alternador" role="group" aria-label="Ciclo de cobrança">
+        <button data-ciclo="mensal" class="${ciclo === "mensal" ? "ativo" : ""}" aria-pressed="${ciclo === "mensal"}">Mensal</button>
+        <button data-ciclo="anual" class="${ciclo === "anual" ? "ativo" : ""}" aria-pressed="${ciclo === "anual"}">Anual <small>${12 - S.cobranca.anual_meses_pagos} meses grátis</small></button>
+      </div></div>
+      <div class="grade grade-4">${["trial", "essencial", "profissional", "consultor"].filter((k) => S.planos[k]).map((k) => planoHtml(k, S.planos[k], p.codigo, ciclo)).join("")}</div>
     </section>
+    ${cobrancas.length ? `<section class="bloco"><h2>Histórico de pagamentos</h2><div class="tabela-rolagem"><table>
+      <thead><tr><th>Data</th><th>Descrição</th><th>Forma</th><th>Valor</th><th>Situação</th></tr></thead>
+      <tbody>${cobrancas.map((c) => `<tr><td>${fmt.data(c.pago_em || c.criado_em)}</td><td>${esc(c.descricao || "")}</td>
+        <td>${esc(ROTULO_MEIO[c.meio] || c.meio || "—")}</td><td>${fmt.moeda(c.valor)}</td><td>${carimboStatus(ROTULO_COBRANCA, c.status)}</td></tr>`).join("")}</tbody></table></div></section>` : ""}
     <section class="bloco"><h2>Preferências</h2>
       <form id="form-pref">
         <label class="check"><input type="checkbox" name="modo_guiado" ${S.usuario.modo_guiado ? "checked" : ""}> Mostrar explicações do modo guiado em cada tela</label>
@@ -31,8 +60,59 @@ V.conta = async (el) => {
     try { await api("PATCH", "/api/conta", dadosForm(ev.target)); ev.target.reset(); toast("Senha alterada.", "ok"); }
     catch (e) { $("#erro-senha", el).innerHTML = erroTela(e); }
   };
-  $$("[data-assinar]", el).forEach((b) => b.onclick = () => window.open(CERTAME.LINK_ASSINATURA, "_blank"));
+  $$("[data-ciclo]", el).forEach((b) => b.onclick = () => { V.conta.ciclo = b.dataset.ciclo; V.conta(el); });
+  $$("[data-assinar]", el).forEach((b) => b.onclick = () => modalCheckout(b.dataset.assinar, V.conta.ciclo || "mensal"));
+  const canc = $("#cancelar-assinatura", el);
+  if (canc) canc.onclick = async () => {
+    if (!(await confirmar(`A renovação automática será cancelada. Você continua com acesso ao plano até ${fmt.data(a.pago_ate)}.`, "Cancelar renovação"))) return;
+    try { await api("POST", "/api/billing/cancelar"); toast("Renovação cancelada.", "ok"); V.conta(el); } catch (e) { avisarErro(e); }
+  };
 };
+
+function assinaturaHtml(p, a) {
+  if (!a.status && !["essencial", "profissional", "consultor", "suspenso"].includes(p.codigo)) return "";
+  const pago = !!a.pago_ate;
+  const forma = a.metodo === "recorrente" ? "Cartão · renova automaticamente" : a.metodo === "avulso" ? "Pix, boleto ou cartão · renovação manual" : "Definido pelo suporte";
+  let acao = "";
+  if (a.recorrente) acao = `<button class="botao texto" id="cancelar-assinatura">Cancelar renovação automática</button>`;
+  else if (["essencial", "profissional", "consultor"].includes(p.codigo) && a.metodo === "avulso")
+    acao = `<button class="botao" data-assinar="${p.codigo}">Renovar agora</button>`;
+  else if (p.codigo === "suspenso") acao = `<span class="fraco">Escolha um plano abaixo para reativar.</span>`;
+  return `<section class="bloco"><div class="bloco-titulo"><h2>Sua assinatura</h2>${a.status ? carimboStatus(ROTULO_ASSINATURA, a.status) : ""}</div>
+    <div class="grade grade-3">
+      <div class="indicador"><b>${esc(p.nome)}</b><span>${a.ciclo === "anual" ? "Cobrança anual" : "Cobrança mensal"}</span></div>
+      <div class="indicador ${pago && fmt.dias(a.pago_ate) < 0 ? "alerta" : ""}"><b>${pago ? fmt.data(a.pago_ate) : "—"}</b>
+        <span>${a.recorrente ? "próxima cobrança" : a.status === "cancelada" ? "acesso garantido até" : "acesso pago até"}</span></div>
+      <div class="indicador"><b style="font-size:1rem;padding-top:8px">${esc(forma)}</b><span>forma de pagamento</span></div>
+    </div>${acao ? `<div style="margin-top:14px">${acao}</div>` : ""}</section>`;
+}
+
+function precoCiclo(v, ciclo) { return ciclo === "anual" ? v.preco * S.cobranca.anual_meses_pagos : v.preco; }
+
+function modalCheckout(plano, ciclo) {
+  const v = S.planos[plano];
+  if (!S.cobranca.online) { window.open(CERTAME.LINK_ASSINATURA, "_blank"); return; }
+  const total = precoCiclo(v, ciclo);
+  const recorrente = S.plano.assinatura?.recorrente;
+  const m = modal({
+    titulo: `Assinar ${v.nome} · ${ciclo === "anual" ? "anual" : "mensal"}`,
+    corpo: `<p class="preco-checkout">${fmt.moeda(total)}<small>${ciclo === "anual" ? `/ano · equivale a ${fmt.moeda(total / 12)}/mês` : "/mês"}</small></p>
+      <div class="opcoes-pagamento">
+        <button class="opcao-pagamento" data-metodo="recorrente" ${recorrente ? "disabled" : ""}>
+          <b>Cartão de crédito, com renovação automática</b>
+          <span>Cobrado ${ciclo === "anual" ? "uma vez por ano" : "todo mês"} sem você precisar lembrar. Cancele quando quiser.${recorrente ? " <em>Você já tem uma renovação automática ativa.</em>" : ""}</span></button>
+        <button class="opcao-pagamento" data-metodo="avulso">
+          <b>Pix, boleto ou cartão, pagamento único</b>
+          <span>Vale por ${ciclo === "anual" ? "12 meses" : "1 mês"}. Para continuar, você renova com um novo pagamento${ciclo === "anual" ? " (cartão em até 12x)" : ""}.</span></button>
+      </div>
+      <p class="fraco" style="margin-top:12px">Você será levado ao ambiente seguro do Mercado Pago. O plano é liberado assim que o pagamento for confirmado.</p>
+      <div id="erro-checkout"></div>`,
+  });
+  $$("[data-metodo]", m).forEach((b) => b.onclick = () => ocupado(b, "Abrindo o Mercado Pago…", async () => {
+    try { const d = await api("POST", "/api/billing/checkout", { plano, ciclo, metodo: b.dataset.metodo }); location.href = d.url; }
+    catch (e) { $("#erro-checkout", m).innerHTML = erroTela(e); }
+  }));
+}
 
 function barraUso(rotulo, usado, limite) {
   const ilimitado = limite === true || limite === undefined;
@@ -41,13 +121,19 @@ function barraUso(rotulo, usado, limite) {
     ${ilimitado ? "" : `<div class="barra"><i style="width:${pct}%;${pct >= 100 ? "background:var(--carimbo)" : ""}"></i></div>`}</div>`;
 }
 
-function planoHtml(codigo, v, atual) {
+function planoHtml(codigo, v, atual, ciclo = "mensal") {
   const limite = (n, unid) => (n === true ? `${unid} ilimitado(a)s` : n === false || n === 0 ? `Sem ${unid}` : `${n} ${unid}${n > 1 ? "s" : ""}/mês`);
-  return `<div class="plano ${codigo === atual ? "atual" : ""}"><h3>${esc(v.nome)}</h3><div class="preco">${v.preco ? fmt.moeda(v.preco) : "Grátis"}${v.preco ? "<small>/mês</small>" : ""}</div>
+  const valor = precoCiclo(v, ciclo);
+  const preco = !v.preco ? "Grátis" : ciclo === "anual"
+    ? `${fmt.moeda(valor / 12)}<small>/mês</small><span class="preco-nota">${fmt.moeda(valor)} por ano</span>`
+    : `${fmt.moeda(valor)}<small>/mês</small>`;
+  const botao = codigo === atual ? carimbo("Seu plano", "ok")
+    : codigo === "trial" ? "" : `<button class="botao ${codigo === "profissional" ? "" : "secundario"}" data-assinar="${codigo}">Assinar</button>`;
+  return `<div class="plano ${codigo === atual ? "atual" : ""}"><h3>${esc(v.nome)}</h3><div class="preco">${preco}</div>
     <ul><li>${v.empresas} empresa(s)</li><li>${limite(v.analises, "análise de edital")}</li><li>${limite(v.concorrentes, "análise de concorrente")}</li>
       <li>${v.pecas ? "Gerador de peças" : "Sem gerador de peças"}</li><li>${v.precos ? "Inteligência de preços" : "Sem inteligência de preços"}</li>
       ${v.marca ? "<li>Relatórios com sua marca</li>" : ""}</ul>
-    ${codigo === atual ? carimbo("Seu plano", "ok") : `<button class="botao secundario" data-assinar>Assinar</button>`}</div>`;
+    ${botao}</div>`;
 }
 
 // ---------------------------------------------------------------- glossário
@@ -70,58 +156,3 @@ V.glossario = async (el) => {
     ${GLOSSARIO.map(([t, d]) => `<div class="lista-item"><div class="corpo"><b>${esc(t)}</b><p>${esc(d)}</p></div></div>`).join("")}</section>`;
 };
 
-// ---------------------------------------------------------------- admin
-V.admin = async (el) => {
-  const [contas, revisoes] = await Promise.all([api("GET", "/api/admin/contas"), api("GET", "/api/admin/revisoes")]);
-  el.innerHTML = `
-    <div class="cabecalho"><h1>Administração</h1></div>
-    <div class="abas" role="tablist"><button class="ativa" data-a-aba="revisoes">Revisões pendentes</button><button data-a-aba="contas">Contas</button></div>
-    <div id="painel-admin"></div>`;
-  const painel = $("#painel-admin", el);
-  const mostrar = (aba) => {
-    $$("[data-a-aba]", el).forEach((b) => b.classList.toggle("ativa", b.dataset.aAba === aba));
-    if (aba === "revisoes") desenharRevisoes(painel, revisoes); else desenharContas(painel, contas);
-  };
-  $$("[data-a-aba]", el).forEach((b) => b.onclick = () => mostrar(b.dataset.aAba));
-  mostrar("revisoes");
-};
-
-function desenharRevisoes(el, revisoes) {
-  const pendentes = revisoes.filter((r) => r.status !== "concluida" && r.status !== "cancelada");
-  el.innerHTML = `<section class="bloco">${pendentes.length ? pendentes.map((r) => `<div class="lista-item"><div class="corpo">
-      <b>${esc(r.peca_titulo)}</b><p>${esc(r.conta)} · ${carimbo(r.status, r.status === "pendente" ? "aviso" : "neutro")} ${r.valor ? "· " + fmt.moeda(r.valor) : ""}
-      ${r.prazo_desejado ? " · prazo " + fmt.data(r.prazo_desejado) : ""}</p>${r.observacoes ? `<p class="fraco">${esc(r.observacoes)}</p>` : ""}</div>
-      <button class="botao pequeno secundario" data-rev="${r.id}">${icone("editar",14)} Gerenciar</button></div>`).join("")
-    : vazio("Nenhuma revisão pendente", "")}</section>`;
-  $$("[data-rev]", el).forEach((b) => b.onclick = () => modalRevisaoAdmin(revisoes.find((r) => r.id == b.dataset.rev), el, revisoes));
-}
-
-function modalRevisaoAdmin(r, elLista, revisoes) {
-  const m = modal({
-    titulo: r.peca_titulo, largo: true, corpo: `
-    <textarea class="editor" id="conteudo-rev" style="min-height:320px">${esc(r.conteudo)}</textarea>
-    <form id="form-rev-admin" style="margin-top:14px">
-      <div class="linha-campos"><div class="campo"><label>Status</label><select name="status">
-        <option value="pendente" ${r.status === "pendente" ? "selected" : ""}>Pendente</option>
-        <option value="em_andamento" ${r.status === "em_andamento" ? "selected" : ""}>Em andamento</option>
-        <option value="concluida" ${r.status === "concluida" ? "selected" : ""}>Concluída</option>
-        <option value="cancelada" ${r.status === "cancelada" ? "selected" : ""}>Cancelada</option></select></div>
-        <div class="campo"><label>Valor (R$)</label><input name="valor" value="${r.valor ?? ""}" inputmode="decimal"></div></div>
-      <div class="campo"><label>Parecer para o cliente</label><textarea name="parecer">${esc(r.parecer || "")}</textarea></div>
-      <button class="botao" style="width:100%" type="submit">Salvar</button></form>`,
-  });
-  $("#form-rev-admin", m).onsubmit = async (ev) => {
-    ev.preventDefault();
-    const d = dadosForm(ev.target); d.conteudo_revisado = $("#conteudo-rev", m).value;
-    await api("PATCH", `/api/admin/revisoes/${r.id}`, d);
-    m.fechar(); toast("Revisão atualizada.", "ok"); V.admin(elLista.closest("#conteudo"));
-  };
-}
-
-function desenharContas(el, contas) {
-  el.innerHTML = `<section class="bloco tabela-rolagem"><table><thead><tr><th>Conta</th><th>Usuários</th><th>Plano</th><th>Uso (análises/mês)</th><th>Custo IA/mês</th><th></th></tr></thead>
-    <tbody>${contas.map((c) => `<tr><td>${esc(c.nome)}</td><td>${c.usuarios.map(esc).join(", ")}</td>
-      <td><select data-plano="${c.id}">${Object.keys(S.planos).map((k) => `<option value="${k}" ${c.plano === k ? "selected" : ""}>${S.planos[k].nome}</option>`).join("")}</select></td>
-      <td>${c.uso.analises}</td><td>$${c.custo_ia_total_usd}</td><td></td></tr>`).join("")}</tbody></table></section>`;
-  $$("[data-plano]", el).forEach((s) => s.onchange = async () => { await api("PATCH", `/api/admin/contas/${s.dataset.plano}`, { plano: s.value }); toast("Plano atualizado.", "ok"); });
-}

@@ -156,7 +156,8 @@ function sair(destino = "#/") {
 
 async function carregarConta() {
   const d = await api("GET", "/api/conta");
-  Object.assign(S, { usuario: d.usuario, conta: d.conta, plano: d.plano, planos: d.planos, demo: d.modo_demonstracao });
+  Object.assign(S, { usuario: d.usuario, conta: d.conta, plano: d.plano, planos: d.planos, demo: d.modo_demonstracao,
+    cobranca: d.cobranca || { online: false, anual_meses_pagos: 10 } });
   S.empresas = await api("GET", "/api/empresas");
   if (!S.empresas.find((e) => e.id === S.empresaId)) S.empresaId = S.empresas[0]?.id || null;
   if (S.empresaId) localStorage.setItem("certame_empresa", S.empresaId);
@@ -216,3 +217,33 @@ function marcarRolagem() {
 }
 window.addEventListener("resize", () => requestAnimationFrame(marcarRolagem));
 new MutationObserver(() => requestAnimationFrame(marcarRolagem)).observe(document.body, { childList: true, subtree: true });
+
+// ---------------------------------------------------------------- funil: origem do visitante
+// Um id aleatório por navegador (sem dado pessoal) liga a visita ao cadastro. A origem vem do
+// utm_source/utm_campaign do link (ex.: ?utm_source=instagram) ou do site que trouxe o visitante.
+const FUNIL = (() => {
+  const ler = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+  const gravar = (k, v) => { try { localStorage.setItem(k, v); } catch { /* navegação privada */ } };
+  let vid = ler("kasiski_visitante");
+  if (!vid) { vid = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2)).slice(0, 36); gravar("kasiski_visitante", vid); }
+  const q = new URLSearchParams(location.search);
+  let ref = "";
+  try { ref = document.referrer ? new URL(document.referrer).hostname : ""; } catch { /* ignora */ }
+  if (ref === location.hostname) ref = "";
+  // Primeiro toque vence: não sobrescreve a origem já registrada neste navegador
+  if (!ler("kasiski_origem") && (q.get("utm_source") || ref)) gravar("kasiski_origem", q.get("utm_source") || ref);
+  if (!ler("kasiski_campanha") && q.get("utm_campaign")) gravar("kasiski_campanha", q.get("utm_campaign"));
+  return { visitante: vid, origem: () => ler("kasiski_origem") || "", campanha: () => ler("kasiski_campanha") || "" };
+})();
+
+const _rastreados = new Set();
+function rastrear(tipo) {
+  if (S.token || _rastreados.has(tipo)) return; // só visitantes; uma vez por carregamento
+  _rastreados.add(tipo);
+  fetch(CERTAME.API_URL + "/api/eventos", {
+    method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true,
+    body: JSON.stringify({ tipo, visitante: FUNIL.visitante, origem: FUNIL.origem(), campanha: FUNIL.campanha(),
+      pagina: location.hash || "#/", referencia: document.referrer || "" }),
+  }).catch(() => { /* funil é acessório */ });
+}
+document.addEventListener("click", (ev) => { if (ev.target.closest('a[href="#/cadastro"]')) rastrear("cta"); });

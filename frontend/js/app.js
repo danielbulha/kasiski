@@ -21,6 +21,10 @@ function layout() {
   const aviso = [];
   if (S.demo) aviso.push(`<div class="faixa-aviso"><span><b>Modo demonstração.</b> As respostas de IA são exemplos. Configure as chaves de IA no servidor para análises reais.</span></div>`);
   if (S.plano?.teste_expirado) aviso.push(`<div class="faixa-aviso"><span>Seu teste grátis terminou. Seus dados continuam salvos.</span><a href="#/conta">Escolher um plano</a></div>`);
+  else if (S.plano?.codigo === "suspenso") aviso.push(`<div class="faixa-aviso"><span>Seu acesso está suspenso por falta de pagamento. Seus dados continuam salvos.</span><a href="#/conta">Regularizar</a></div>`);
+  else if (S.plano?.assinatura?.status === "inadimplente") aviso.push(`<div class="faixa-aviso"><span>Não conseguimos cobrar seu cartão. Atualize o pagamento para não perder o acesso.</span><a href="#/conta">Resolver</a></div>`);
+  else if (S.plano?.assinatura?.pago_ate && !S.plano.assinatura.recorrente && fmt.dias(S.plano.assinatura.pago_ate) <= 5)
+    aviso.push(`<div class="faixa-aviso"><span>Seu plano vence ${fmt.prazo(S.plano.assinatura.pago_ate)} (${fmt.data(S.plano.assinatura.pago_ate)}).</span><a href="#/conta">Renovar</a></div>`);
   else if (S.plano?.codigo === "trial") aviso.push(`<div class="faixa-aviso"><span>Teste grátis até ${fmt.data(S.plano.trial_fim)}: ${S.plano.uso.analises} de ${S.plano.analises} análises usadas.</span><a href="#/conta">Ver planos</a></div>`);
   return `
   <div class="topo-movel"><a class="marca" href="#/painel">${simboloMarca(22)}<strong>${esc(CERTAME.NOME)}</strong></a>
@@ -119,6 +123,7 @@ function telaEntrada(cadastro) {
         <div id="erro-entrada"></div>
         ${cadastro ? `<div class="campo"><label for="nome">Seu nome</label><input id="nome" name="nome" required autocomplete="name"></div>
           <div class="campo"><label for="nome_conta">Empresa ou escritório</label><input id="nome_conta" name="nome_conta" autocomplete="organization"></div>` : ""}
+        ${cadastro ? `<div class="campo"><label for="telefone">WhatsApp <small>(opcional)</small></label><input id="telefone" name="telefone" type="tel" autocomplete="tel" inputmode="tel"></div>` : ""}
         <div class="campo"><label for="email">E-mail</label><input id="email" name="email" type="email" required autocomplete="email"></div>
         <div class="campo"><label for="senha">Senha</label><input id="senha" name="senha" type="password" required minlength="8" autocomplete="${cadastro ? "new-password" : "current-password"}">
           ${cadastro ? "<small>Mínimo de 8 caracteres.</small>" : ""}</div>
@@ -138,7 +143,9 @@ function ligarEntrada(cadastro) {
     const b = f.querySelector("button[type=submit]");
     await ocupado(b, "Aguarde…", async () => {
       try {
-        const d = await api("POST", cadastro ? "/api/auth/registro" : "/api/auth/login", dadosForm(f));
+        const corpo = dadosForm(f);
+        if (cadastro) Object.assign(corpo, { visitante: FUNIL.visitante, origem: FUNIL.origem(), campanha: FUNIL.campanha() });
+        const d = await api("POST", cadastro ? "/api/auth/registro" : "/api/auth/login", corpo);
         S.token = d.token; localStorage.setItem("certame_token", d.token);
         S.usuario = null;
         location.hash = cadastro ? "#/empresas" : "#/painel";
@@ -146,6 +153,16 @@ function ligarEntrada(cadastro) {
     });
   };
 }
+
+// Volta do Mercado Pago: a URL chega como /?pagamento=retorno&payment_id=... (sem hash).
+// Guarda os dados, limpa a URL e leva o cliente para a tela do plano, que confere o pagamento.
+(() => {
+  const q = new URLSearchParams(location.search);
+  if (q.get("pagamento") !== "retorno") return;
+  const info = { payment_id: q.get("payment_id") || q.get("collection_id") || "", status: q.get("status") || q.get("collection_status") || "" };
+  try { sessionStorage.setItem("kasiski_retorno_mp", JSON.stringify(info)); } catch { /* segue */ }
+  history.replaceState(null, "", location.pathname + "#/conta");
+})();
 
 window.addEventListener("hashchange", navegar);
 navegar();

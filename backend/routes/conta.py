@@ -2,7 +2,7 @@
 import re
 from datetime import datetime, timedelta
 
-from flask import Blueprint, g, jsonify
+from flask import Blueprint, current_app, g, jsonify
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import planos
@@ -19,7 +19,7 @@ bp = Blueprint("conta", __name__, url_prefix="/api")
 def planos_publicos():
     """Tabela de planos para a página inicial (sem login). Fonte única: planos.PLANOS."""
     visiveis = {k: v for k, v in planos.PLANOS.items() if k != "suspenso"}
-    return jsonify({"planos": visiveis, "trial_dias": 7})
+    return jsonify({"planos": visiveis, "trial_dias": 7, "anual_meses_pagos": current_app.config["ANUAL_MESES_PAGOS"]})
 
 
 @bp.post("/auth/registro")
@@ -33,7 +33,11 @@ def registro():
     if Usuario.query.filter_by(email=email).first():
         raise ErroAPI("Já existe uma conta com este e-mail. Entre com sua senha.")
     conta = Conta(nome=(d.get("nome_conta") or nome).strip(), plano="trial",
-                  trial_fim=datetime.utcnow() + timedelta(days=7))
+                  trial_fim=datetime.utcnow() + timedelta(days=7),
+                  telefone=(d.get("telefone") or "").strip()[:30] or None,
+                  origem=(d.get("origem") or "").strip()[:80] or None,
+                  campanha=(d.get("campanha") or "").strip()[:120] or None,
+                  visitante_id=(d.get("visitante") or "").strip()[:40] or None)
     db.session.add(conta)
     db.session.flush()
     u = Usuario(conta_id=conta.id, nome=nome, email=email, senha_hash=generate_password_hash(senha),
@@ -57,7 +61,9 @@ def login():
 def ver_conta():
     return jsonify({"usuario": g.usuario.to_dict(g.admin), "conta": g.conta.to_dict(),
                     "plano": planos.resumo(g.conta), "planos": planos.PLANOS,
-                    "modo_demonstracao": llm.modo_demonstracao()})
+                    "modo_demonstracao": llm.modo_demonstracao(),
+                    "cobranca": {"online": bool(current_app.config["MP_ACCESS_TOKEN"]),
+                                 "anual_meses_pagos": current_app.config["ANUAL_MESES_PAGOS"]}})
 
 
 @bp.patch("/conta")
@@ -138,5 +144,19 @@ def admin_atualizar_conta(cid):
     if d.get("trial_fim"):
         dt = para_data(d["trial_fim"])
         c.trial_fim = datetime(dt.year, dt.month, dt.day, 23, 59)
+    if d.get("estender_trial_dias"):
+        base = c.trial_fim if c.trial_fim and c.trial_fim > datetime.utcnow() else datetime.utcnow()
+        c.trial_fim = base + timedelta(days=int(d["estender_trial_dias"]))
+        c.plano = "trial"
+    if "pago_ate" in d:
+        dt = para_data(d["pago_ate"])
+        c.pago_ate = datetime(dt.year, dt.month, dt.day, 23, 59) if dt else None
+    if d.get("assinatura_status") in ("ativa", "pendente", "pausada", "cancelada", "inadimplente", ""):
+        c.assinatura_status = d["assinatura_status"] or None
+    if d.get("ciclo") in ("mensal", "anual"):
+        c.ciclo = d["ciclo"]
+    for campo, n in (("notas_crm", 5000), ("telefone", 30), ("etiqueta_crm", 30)):
+        if campo in d:
+            setattr(c, campo, (d[campo] or "").strip()[:n] or None)
     db.session.commit()
     return jsonify(c.to_dict())

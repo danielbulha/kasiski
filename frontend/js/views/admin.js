@@ -17,13 +17,31 @@ const FILTROS_CRM = [
 V.admin = async (el) => {
   const aba = V.admin.aba || "crm";
   el.innerHTML = `
-    <div class="cabecalho"><h1>Administração</h1></div>
+    <div class="cabecalho"><h1>Administração</h1><button class="botao pequeno secundario" id="teste-email">Testar envio de e-mail</button></div>
     <div class="abas" role="tablist">
       ${[["crm", "Clientes e testes"], ["funil", "Funil de conversão"], ["receitas", "Receitas"], ["revisoes", "Revisões"]]
         .map(([k, t]) => `<button role="tab" data-a-aba="${k}" class="${aba === k ? "ativa" : ""}" aria-selected="${aba === k}">${t}</button>`).join("")}
     </div>
     <div id="painel-admin"><p class="carregando">Carregando…</p></div>`;
   $$("[data-a-aba]", el).forEach((b) => b.onclick = () => { V.admin.aba = b.dataset.aAba; V.admin(el); });
+  $("#teste-email", el).onclick = () => {
+    const m = modal({ titulo: "Testar envio de e-mail", corpo: `<form id="form-teste-email">
+      <p class="fraco">Envia um e-mail de teste pelo Resend e mostra a resposta exata do serviço.</p>
+      <div class="campo"><label for="te-para">Enviar para</label><input id="te-para" name="para" type="email" value="${esc(S.usuario.email)}"></div>
+      <button class="botao" type="submit">Enviar teste</button><div id="te-resultado" style="margin-top:14px"></div></form>` });
+    $("#form-teste-email", m).onsubmit = async (ev) => {
+      ev.preventDefault();
+      const b = ev.target.querySelector("button");
+      await ocupado(b, "Enviando…", async () => {
+        try {
+          const r = await api("POST", "/api/admin/teste-email", dadosForm(ev.target));
+          $("#te-resultado", m).innerHTML = `<div class="aviso ${r.ok ? "ok" : "erro"}"><b>${r.ok ? "Enviado. Confira a caixa de entrada (e o spam)." : "O envio falhou."}</b><br>
+            Remetente usado: ${esc(r.remetente)}${r.remetente_valido ? "" : " <b>(formato inválido)</b>"}${r.remetente_limpo_diferente ? `<br><small>Valor original no Render: ${esc(r.remetente_bruto)} (limpo automaticamente)</small>` : ""}<br>Chave: ${r.chave_configurada ? esc(r.chave_inicio) : "não configurada"}${r.status ? ` · HTTP ${r.status}` : ""}
+            <pre style="white-space:pre-wrap;margin:8px 0 0;font-size:.8rem">${esc(r.resposta || "")}</pre></div>`;
+        } catch (e) { $("#te-resultado", m).innerHTML = erroTela(e); }
+      });
+    };
+  };
   const painel = $("#painel-admin", el);
   try {
     if (aba === "crm") await abaCrm(painel);

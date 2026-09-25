@@ -55,9 +55,14 @@ def _pedir_verificacao(u, primeiro=False):
         verificacao.enviar_codigo(u)
         aviso = None
     except ErroAPI as e:
-        if e.codigo not in ("aguarde",):  # um código recente ainda vale: segue para a tela do código
+        # Código recente ainda válido, limite de envios ou falha do provedor: a conta já existe, então
+        # segue para a tela do código (com aviso) em vez de travar o cadastro; lá dá para reenviar.
+        if e.codigo == "email_falhou":
+            aviso = "Não conseguimos enviar o e-mail agora. Aguarde um minuto e clique em \"Reenviar código\"."
+        elif e.codigo in ("aguarde", "limite_envios"):
+            aviso = e.mensagem
+        else:
             raise
-        aviso = e.mensagem
     return jsonify({"verificacao_pendente": True, "token_verificacao": gerar_token_verificacao(u),
                     "email": u.email, "novo_cadastro": primeiro, "aviso": aviso})
 
@@ -100,7 +105,7 @@ def login():
     if u.falhas_login or u.bloqueado_ate:
         u.falhas_login, u.bloqueado_ate = 0, None
         db.session.commit()
-    if not u.verificado:
+    if not u.verificado and verificacao.exigida():
         return _pedir_verificacao(u)
     return jsonify({"token": gerar_token(u), "usuario": u.to_dict(eh_admin(u))})
 
@@ -209,3 +214,10 @@ def admin_atualizar_conta(cid):
             setattr(c, campo, (d[campo] or "").strip()[:n] or None)
     db.session.commit()
     return jsonify(c.to_dict())
+
+
+@bp.post("/admin/teste-email")
+@admin_requerido
+def admin_teste_email():
+    from services import email
+    return jsonify(email.diagnostico((dados().get("para") or g.usuario.email).strip()))

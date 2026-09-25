@@ -56,7 +56,8 @@ def login_requerido(f):
         usuario = Usuario.query.get(dados.get("uid"))
         if not usuario:
             raise ErroAPI("Usuário não encontrado.", 401)
-        if not usuario.verificado:
+        from services import verificacao
+        if not usuario.verificado and verificacao.exigida():
             raise ErroAPI("Confirme seu e-mail para continuar.", 401, "email_nao_verificado")
         g.usuario = usuario
         g.conta = usuario.conta

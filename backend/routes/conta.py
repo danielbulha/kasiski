@@ -6,11 +6,11 @@ from flask import Blueprint, current_app, g, jsonify
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import planos
-from auth import admin_requerido, eh_admin, gerar_token, login_requerido
+from auth import admin_requerido, eh_admin, gerar_token, gerar_token_verificacao, login_requerido, usuario_do_token_verificacao
 from extensions import ErroAPI, db
 from models import Conta, Revisao, UsoIA, Usuario
 from routes import dados, para_data
-from services import llm
+from services import llm, verificacao
 
 bp = Blueprint("conta", __name__, url_prefix="/api")
 
@@ -40,19 +40,68 @@ def registro():
                   visitante_id=(d.get("visitante") or "").strip()[:40] or None)
     db.session.add(conta)
     db.session.flush()
+    exigir = verificacao.exigida()
     u = Usuario(conta_id=conta.id, nome=nome, email=email, senha_hash=generate_password_hash(senha),
-                modo_guiado=d.get("perfil") != "experiente")
+                modo_guiado=d.get("perfil") != "experiente", email_verificado=not exigir)
     db.session.add(u)
     db.session.commit()
+    if exigir:
+        return _pedir_verificacao(u, primeiro=True), 201
     return jsonify({"token": gerar_token(u), "usuario": u.to_dict(eh_admin(u))}), 201
+
+
+def _pedir_verificacao(u, primeiro=False):
+    try:
+        verificacao.enviar_codigo(u)
+        aviso = None
+    except ErroAPI as e:
+        if e.codigo not in ("aguarde",):  # um código recente ainda vale: segue para a tela do código
+            raise
+        aviso = e.mensagem
+    return jsonify({"verificacao_pendente": True, "token_verificacao": gerar_token_verificacao(u),
+                    "email": u.email, "novo_cadastro": primeiro, "aviso": aviso})
+
+
+@bp.post("/auth/verificar")
+def verificar_email():
+    d = dados()
+    u = usuario_do_token_verificacao(d.get("token_verificacao"))
+    if not u.verificado:
+        verificacao.conferir(u, d.get("codigo"))
+    return jsonify({"token": gerar_token(u), "usuario": u.to_dict(eh_admin(u))})
+
+
+@bp.post("/auth/reenviar-codigo")
+def reenviar_codigo():
+    u = usuario_do_token_verificacao(dados().get("token_verificacao"))
+    if u.verificado:
+        return jsonify({"ok": True, "ja_verificado": True})
+    verificacao.enviar_codigo(u)
+    return jsonify({"ok": True})
 
 
 @bp.post("/auth/login")
 def login():
     d = dados()
     u = Usuario.query.filter_by(email=(d.get("email") or "").strip().lower()).first()
+    agora = datetime.utcnow()
+    if u and u.bloqueado_ate and u.bloqueado_ate > agora:
+        minutos = int((u.bloqueado_ate - agora).total_seconds() // 60) + 1
+        raise ErroAPI(f"Muitas tentativas de senha. Por segurança, o acesso foi pausado por {minutos} minuto(s).", 429,
+                      "bloqueado")
     if not u or not check_password_hash(u.senha_hash, d.get("senha") or ""):
+        if u:
+            u.falhas_login = (u.falhas_login or 0) + 1
+            if u.falhas_login >= 5:
+                u.bloqueado_ate = agora + timedelta(minutes=15)
+                u.falhas_login = 0
+            db.session.commit()
         raise ErroAPI("E-mail ou senha incorretos.", 401)
+    if u.falhas_login or u.bloqueado_ate:
+        u.falhas_login, u.bloqueado_ate = 0, None
+        db.session.commit()
+    if not u.verificado:
+        return _pedir_verificacao(u)
     return jsonify({"token": gerar_token(u), "usuario": u.to_dict(eh_admin(u))})
 
 

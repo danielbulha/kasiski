@@ -51,7 +51,16 @@ class Usuario(db.Model):
     modo_guiado = db.Column(db.Boolean, default=True)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
     ultimo_acesso = db.Column(db.DateTime)
+    # Segurança do acesso. email_verificado = None em contas anteriores à verificação (tratadas como
+    # confirmadas); False nos cadastros novos até digitarem o código recebido por e-mail.
+    email_verificado = db.Column(db.Boolean)
+    falhas_login = db.Column(db.Integer, default=0)
+    bloqueado_ate = db.Column(db.DateTime)
     conta = db.relationship("Conta")
+
+    @property
+    def verificado(self):
+        return self.email_verificado is not False
 
     def to_dict(self, admin=False):
         return {"id": self.id, "nome": self.nome, "email": self.email, "modo_guiado": self.modo_guiado, "admin": admin}
@@ -393,4 +402,16 @@ class Evento(db.Model):
     origem = db.Column(db.String(80))
     campanha = db.Column(db.String(120))
     dados = db.Column(db.JSON)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+
+class CodigoVerificacao(db.Model):
+    """Código de 6 dígitos enviado por e-mail. Guardado só como hash; vale 15 minutos e 5 tentativas."""
+    id = db.Column(db.Integer, primary_key=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey("usuario.id"), nullable=False, index=True)
+    finalidade = db.Column(db.String(20), default="cadastro")
+    codigo_hash = db.Column(db.String(64), nullable=False)
+    tentativas = db.Column(db.Integer, default=0)
+    expira_em = db.Column(db.DateTime, nullable=False)
+    usado_em = db.Column(db.DateTime)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow, index=True)

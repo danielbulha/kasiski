@@ -215,3 +215,17 @@ limpo.
 4. Sem `MP_ACCESS_TOKEN`, o botão *Assinar* continua abrindo o `LINK_ASSINATURA` do `config.js` (WhatsApp).
 
 As tabelas e colunas novas (`cobranca`, `evento` e campos em `conta`/`usuario`) são criadas sozinhas ao subir o backend.
+
+
+## Verificação de e-mail no cadastro e proteção do login
+
+- Cadastro novo recebe um **código de 6 números** por e-mail (vale 15 min, 5 tentativas, reenvio a cada 60 s e no máximo 5 por hora). Sem confirmar, a conta não acessa o sistema; ao tentar entrar depois, um novo código é enviado.
+- Contas criadas antes desta versão continuam entrando normalmente.
+- **5 senhas erradas seguidas** pausam o login daquele e-mail por 15 minutos.
+- No CRM do admin, contas sem e-mail confirmado aparecem com a etiqueta "e-mail não confirmado".
+
+### Configurar o Resend (uma vez)
+1. Crie a conta em resend.com → **Domains → Add domain** (ex.: `kasiski.com.br`) e cadastre no DNS do domínio os registros que ele mostrar (SPF/DKIM). Aguarde o status *Verified*.
+2. **API Keys → Create** (permissão *Sending access*).
+3. No Render: `RESEND_API_KEY` = a chave; `EMAIL_REMETENTE` = `Kasiski <nao-responda@SEU-DOMINIO>` (precisa ser do domínio verificado).
+4. `VERIFICAR_EMAIL`: `auto` (padrão: exige o código só quando `RESEND_API_KEY` está preenchida), `sim` ou `nao`.

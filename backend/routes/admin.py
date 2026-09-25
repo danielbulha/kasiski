@@ -79,7 +79,7 @@ def _linha_crm(c, ag):
     return {
         **c.to_dict(), "plano_nome": p["nome"], "telefone": c.telefone, "notas_crm": c.notas_crm,
         "etiqueta_crm": c.etiqueta_crm, "origem": c.origem, "campanha": c.campanha,
-        "usuarios": [{"nome": u.nome, "email": u.email} for u in us],
+        "usuarios": [{"nome": u.nome, "email": u.email, "verificado": u.verificado} for u in us],
         "ultimo_acesso": _iso(max(acessos)) if acessos else None,
         "etapa": etapa(c, ag["empresas"].get(c.id, 0), ag["analises_total"].get(c.id, 0), c.id in ag["receita"]),
         "empresas": ag["empresas"].get(c.id, 0),

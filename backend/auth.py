@@ -14,6 +14,27 @@ def gerar_token(usuario):
     return jwt.encode(payload, current_app.config["SECRET_KEY"], algorithm="HS256")
 
 
+def gerar_token_verificacao(usuario):
+    """Token curto que só serve para confirmar o e-mail (não dá acesso ao sistema)."""
+    payload = {"uid": usuario.id, "escopo": "verificar", "exp": datetime.utcnow() + timedelta(hours=2)}
+    return jwt.encode(payload, current_app.config["SECRET_KEY"], algorithm="HS256")
+
+
+def usuario_do_token_verificacao(token):
+    try:
+        dados = jwt.decode(token or "", current_app.config["SECRET_KEY"], algorithms=["HS256"])
+    except jwt.ExpiredSignatureError:
+        raise ErroAPI("O prazo para confirmar expirou. Entre de novo com seu e-mail e senha.", 401, "verificacao_expirada")
+    except jwt.InvalidTokenError:
+        raise ErroAPI("Sessão de verificação inválida. Entre de novo com seu e-mail e senha.", 401, "verificacao_expirada")
+    if dados.get("escopo") != "verificar":
+        raise ErroAPI("Sessão de verificação inválida.", 401)
+    u = Usuario.query.get(dados.get("uid"))
+    if not u:
+        raise ErroAPI("Usuário não encontrado.", 401)
+    return u
+
+
 def eh_admin(usuario):
     return usuario.email.lower() in current_app.config["ADMIN_EMAILS"]
 
@@ -30,9 +51,13 @@ def login_requerido(f):
             raise ErroAPI("Sua sessão expirou. Entre novamente.", 401)
         except jwt.InvalidTokenError:
             raise ErroAPI("Sessão inválida. Entre novamente.", 401)
+        if dados.get("escopo"):  # token de verificação não abre o sistema
+            raise ErroAPI("Confirme seu e-mail para continuar.", 401)
         usuario = Usuario.query.get(dados.get("uid"))
         if not usuario:
             raise ErroAPI("Usuário não encontrado.", 401)
+        if not usuario.verificado:
+            raise ErroAPI("Confirme seu e-mail para continuar.", 401, "email_nao_verificado")
         g.usuario = usuario
         g.conta = usuario.conta
         g.admin = eh_admin(usuario)

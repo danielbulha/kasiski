@@ -59,4 +59,9 @@ class Config:
     # Só para testes: e-mail do COMPRADOR de teste do Mercado Pago. Quando preenchido, é enviado no lugar
     # do e-mail do usuário (o Mercado Pago recusa misturar vendedor de teste com comprador real).
     MP_EMAIL_COMPRADOR_TESTE = os.getenv("MP_EMAIL_COMPRADOR_TESTE", "").strip()
+    # ------------------------------------------------------------ e-mail (Resend) e verificação
+    RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+    EMAIL_REMETENTE = os.getenv("EMAIL_REMETENTE", "Kasiski <nao-responda@kasiski.com.br>")
+    # auto = exige o código só quando há como enviar e-mail (RESEND_API_KEY preenchida); sim / nao forçam
+    VERIFICAR_EMAIL = os.getenv("VERIFICAR_EMAIL", "auto").lower()
     USD_BRL = float(os.getenv("USD_BRL", "5.5"))                # câmbio para converter o custo de IA em R$

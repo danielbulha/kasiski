@@ -50,6 +50,13 @@ services:
         value: "3"
       - key: USD_BRL
         value: "5.5"
+      # E-mail (Resend) e verificação no cadastro
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_REMETENTE
+        value: Kasiski <nao-responda@kasiski.com.br>
+      - key: VERIFICAR_EMAIL
+        value: auto
 
   - type: cron
     name: certame-radar

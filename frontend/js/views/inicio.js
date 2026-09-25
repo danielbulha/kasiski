@@ -138,7 +138,7 @@ V.inicio = async (raiz) => {
     <footer class="lp-rodape">
       <div class="lp-conteiner lp-rodape-linha">
         <span class="lp-marca">${simboloMarca(20)}<span class="texto"><strong>${esc(CERTAME.NOME)}</strong><span>public market intelligence</span></span></span>
-        <span>Rua Pamplona, 145, Conj. 02 - Jardim Paulista - São Paulo/SP - CEP 01405-900</span>
+        <span>Lei 14.133/2021 · dados públicos do PNCP, Receita Federal, TCU e CGU</span>
         <span><a href="#/entrar">Entrar</a> · <a href="#/cadastro">Criar conta</a></span>
       </div>
     </footer>

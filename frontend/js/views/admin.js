@@ -75,7 +75,7 @@ function linhaCrm(c) {
   else if (c.pago_ate) acesso = `até ${fmt.data(c.pago_ate)}`;
   const limite = typeof c.limite_analises === "number" ? ` / ${c.limite_analises}` : "";
   return `<tr>
-    <td><b>${esc(c.nome)}</b><br><small>${esc(email)}${c.origem ? ` · ${esc(c.origem)}` : ""}</small>${c.etiqueta_crm ? `<br>${carimbo(c.etiqueta_crm, "oficio")}` : ""}</td>
+    <td><b>${esc(c.nome)}</b><br><small>${esc(email)}${c.origem ? ` · ${esc(c.origem)}` : ""}</small>${c.usuarios[0] && !c.usuarios[0].verificado ? `<br>${carimbo("e-mail não confirmado", "aviso")}` : ""}${c.etiqueta_crm ? `<br>${carimbo(c.etiqueta_crm, "oficio")}` : ""}</td>
     <td>${carimboStatus(ETAPAS_CRM, c.etapa)}${c.iniciou_checkout && !c.receita_total ? `<br><small>abriu o pagamento</small>` : ""}</td>
     <td>${esc(c.plano_nome)}${c.ciclo ? `<br><small>${c.ciclo}${c.metodo_pagamento === "recorrente" ? " · cartão auto" : c.metodo_pagamento === "avulso" ? " · Pix/avulso" : ""}</small>` : ""}</td>
     <td>${acesso}</td><td>${c.analises_mes}${limite}</td><td>${fmt.moeda(c.receita_total)}</td><td>${fmt.moeda(c.custo_ia_mes_brl)}</td>

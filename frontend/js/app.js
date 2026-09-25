@@ -59,6 +59,11 @@ async function navegar() {
     return;
   }
   document.body.classList.remove("publico");
+  if (hash === "#/verificar") {
+    if (S.token) { location.hash = "#/painel"; return; }
+    telaVerificacao(raiz);
+    return;
+  }
   if (["#/entrar", "#/cadastro"].includes(hash)) {
     if (S.token) { location.hash = "#/painel"; return; }
     raiz.innerHTML = telaEntrada(hash === "#/cadastro");
@@ -146,9 +151,12 @@ function ligarEntrada(cadastro) {
         const corpo = dadosForm(f);
         if (cadastro) Object.assign(corpo, { visitante: FUNIL.visitante, origem: FUNIL.origem(), campanha: FUNIL.campanha() });
         const d = await api("POST", cadastro ? "/api/auth/registro" : "/api/auth/login", corpo);
-        S.token = d.token; localStorage.setItem("certame_token", d.token);
-        S.usuario = null;
-        location.hash = cadastro ? "#/empresas" : "#/painel";
+        if (d.verificacao_pendente) {
+          try { sessionStorage.setItem("kasiski_verificacao", JSON.stringify({ token: d.token_verificacao, email: d.email, novo: d.novo_cadastro, aviso: d.aviso })); } catch { /* segue */ }
+          location.hash = "#/verificar";
+          return;
+        }
+        entrarComToken(d.token, cadastro);
       } catch (e) { $("#erro-entrada").innerHTML = erroTela(e); }
     });
   };
@@ -163,6 +171,80 @@ function ligarEntrada(cadastro) {
   try { sessionStorage.setItem("kasiski_retorno_mp", JSON.stringify(info)); } catch { /* segue */ }
   history.replaceState(null, "", location.pathname + "#/conta");
 })();
+
+function entrarComToken(token, novo) {
+  S.token = token; localStorage.setItem("certame_token", token);
+  S.usuario = null;
+  try { sessionStorage.removeItem("kasiski_verificacao"); } catch { /* segue */ }
+  location.hash = novo ? "#/empresas" : "#/painel";
+}
+
+// ---------------------------------------------------------------- verificação do e-mail (primeiro acesso)
+function telaVerificacao(raiz) {
+  let v = null;
+  try { v = JSON.parse(sessionStorage.getItem("kasiski_verificacao") || "null"); } catch { /* segue */ }
+  if (!v?.token) { location.hash = "#/entrar"; return; }
+  raiz.innerHTML = `<div class="entrada">
+    <section class="entrada-lado">
+      <div class="entrada-topo"><a class="marca-completa" href="#/">${simboloMarca(30)}<span class="texto"><strong>${esc(CERTAME.NOME)}</strong><span>public market intelligence</span></span></a></div>
+      <div><h1>Falta só confirmar seu e-mail.</h1>
+        <p>Assim garantimos que só você acessa a conta e que os avisos de prazos e editais chegam no endereço certo.</p></div>
+      <small style="color:var(--linha-forte)">O código vale por 15 minutos.</small>
+    </section>
+    <section class="entrada-form">
+      <form id="form-codigo" novalidate>
+        <h2>Digite o código</h2>
+        <p class="fraco">Enviamos um código de 6 números para <b>${esc(v.email)}</b>. Confira também a caixa de spam.</p>
+        <div id="erro-codigo">${v.aviso ? `<div class="aviso info">${esc(v.aviso)}</div>` : ""}</div>
+        <div class="campo"><label for="codigo">Código de verificação</label>
+          <input id="codigo" name="codigo" class="campo-codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="7" pattern="[0-9 ]*" required placeholder="000000"></div>
+        <button class="botao" style="width:100%" type="submit">Confirmar e entrar</button>
+        <p style="margin-top:16px;text-align:center"><button type="button" class="botao texto" id="reenviar">Reenviar código</button></p>
+        <p style="text-align:center"><a href="#/${v.novo ? "cadastro" : "entrar"}" id="trocar">Usar outro e-mail</a></p>
+      </form>
+    </section></div>`;
+  const campo = $("#codigo"), erro = $("#erro-codigo"), reenviar = $("#reenviar");
+  campo.focus();
+  campo.oninput = () => {
+    campo.value = campo.value.replace(/\D/g, "").slice(0, 6);
+    if (campo.value.length === 6) $("#form-codigo").requestSubmit();
+  };
+  $("#trocar").onclick = () => { try { sessionStorage.removeItem("kasiski_verificacao"); } catch { /* segue */ } };
+  const falhou = (e) => {
+    erro.innerHTML = erroTela(e);
+    if (["verificacao_expirada"].includes(e.codigo)) setTimeout(() => { location.hash = "#/entrar"; }, 2500);
+  };
+  $("#form-codigo").onsubmit = async (ev) => {
+    ev.preventDefault();
+    if (campo.value.length !== 6) { erro.innerHTML = `<div class="aviso erro">Digite os 6 números do código.</div>`; return; }
+    const b = ev.target.querySelector("button[type=submit]");
+    await ocupado(b, "Conferindo…", async () => {
+      try { const d = await api("POST", "/api/auth/verificar", { token_verificacao: v.token, codigo: campo.value }); entrarComToken(d.token, v.novo); }
+      catch (e) { falhou(e); campo.select(); }
+    });
+  };
+  let espera = 0, relogio = null;
+  const contar = (seg) => {
+    espera = seg; clearInterval(relogio);
+    const tick = () => {
+      reenviar.disabled = espera > 0;
+      reenviar.textContent = espera > 0 ? `Reenviar código em ${espera}s` : "Reenviar código";
+      if (espera-- <= 0) clearInterval(relogio);
+    };
+    tick(); relogio = setInterval(tick, 1000);
+  };
+  contar(60);
+  reenviar.onclick = async () => {
+    try {
+      const d = await api("POST", "/api/auth/reenviar-codigo", { token_verificacao: v.token });
+      if (d.ja_verificado) { location.hash = "#/entrar"; toast("Seu e-mail já está confirmado. Entre com sua senha.", "ok"); return; }
+      erro.innerHTML = `<div class="aviso ok">Enviamos um novo código para ${esc(v.email)}.</div>`; contar(60); campo.value = ""; campo.focus();
+    } catch (e) {
+      falhou(e);
+      const m = /(\d+) segundos/.exec(e.message || ""); if (m) contar(Number(m[1]));
+    }
+  };
+}
 
 window.addEventListener("hashchange", navegar);
 navegar();

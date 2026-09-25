@@ -41,6 +41,10 @@ def _req(metodo, caminho, corpo=None):
     return r.json() if r.content else {}
 
 
+def _email(email):
+    return current_app.config.get("MP_EMAIL_COMPRADOR_TESTE") or email
+
+
 def _url_retorno():
     return current_app.config["FRONTEND_URL"] + "/?pagamento=retorno"
 
@@ -56,7 +60,7 @@ def criar_assinatura(*, email, valor, anual, titulo, referencia):
     corpo = {
         "reason": titulo,
         "external_reference": referencia,
-        "payer_email": email,
+        "payer_email": _email(email),
         "back_url": _url_retorno(),
         "status": "pending",
         "auto_recurring": {"frequency": 12 if anual else 1, "frequency_type": "months",
@@ -70,7 +74,7 @@ def criar_pagamento_avulso(*, email, valor, anual, titulo, referencia):
     """Checkout Pro (Pix, boleto ou cartão). Devolve (id da preferência, link de pagamento)."""
     corpo = {
         "items": [{"id": referencia, "title": titulo, "quantity": 1, "unit_price": valor, "currency_id": "BRL"}],
-        "payer": {"email": email},
+        "payer": {"email": _email(email)},
         "external_reference": referencia,
         "back_urls": {k: _url_retorno() for k in ("success", "pending", "failure")},
         "auto_return": "approved",

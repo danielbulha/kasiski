@@ -56,4 +56,7 @@ class Config:
     BACKEND_URL = os.getenv("BACKEND_URL", "").rstrip("/")      # URL pública desta API (para o webhook)
     ANUAL_MESES_PAGOS = int(os.getenv("ANUAL_MESES_PAGOS", "10"))  # plano anual: paga 10, leva 12
     CARENCIA_DIAS = int(os.getenv("CARENCIA_DIAS", "3"))        # dias após o vencimento antes de suspender
+    # Só para testes: e-mail do COMPRADOR de teste do Mercado Pago. Quando preenchido, é enviado no lugar
+    # do e-mail do usuário (o Mercado Pago recusa misturar vendedor de teste com comprador real).
+    MP_EMAIL_COMPRADOR_TESTE = os.getenv("MP_EMAIL_COMPRADOR_TESTE", "").strip()
     USD_BRL = float(os.getenv("USD_BRL", "5.5"))                # câmbio para converter o custo de IA em R$

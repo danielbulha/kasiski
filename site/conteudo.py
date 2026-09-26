@@ -26,8 +26,8 @@ SELO_PLANO = {"profissional": "Indicado para PMEs", "avancado": "Proposta comerc
 # Controlador dos dados pessoais (Política de Privacidade, Termos). Preencha CNPJ e endereço antes de publicar.
 EMPRESA = {
     "razao": "D.B.C. Consultoria e Serviços Ltda.",
-    "cnpj": "",            # ex.: "00.000.000/0001-00"
-    "endereco": "",        # ex.: "Rua X, 123 — Juquitiba/SP — CEP 00000-000"
+    "cnpj": "01.152.886/0001-51",            # ex.: "00.000.000/0001-00"
+    "endereco": "Rua Pamplona, 145, cj 02 - São Paulo/SP - CEP 01405-900",        # ex.: "Rua X, 123 — Juquitiba/SP — CEP 00000-000"
     "email_contato": "contato@kasiski.com.br",
     "email_privacidade": "privacidade@kasiski.com.br",
     "encarregado": "Encarregado pelo tratamento de dados (DPO) do Kasiski",

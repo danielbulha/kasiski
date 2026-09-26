@@ -57,6 +57,16 @@ services:
         value: Kasiski <nao-responda@kasiski.com.br>
       - key: VERIFICAR_EMAIL
         value: auto
+      # Ferramentas gratuitas do site (limites anti-abuso e custo de IA)
+      - key: PUBLICO_ANALISES_DIA
+        value: "40"
+      - key: PUBLICO_ANALISES_IP_DIA
+        value: "2"
+      - key: TURNSTILE_SECRET
+        sync: false
+      # Automações de e-mail (onboarding e fim do teste)
+      - key: AUTOMACOES_ATIVAS
+        value: sim
 
   - type: cron
     name: certame-radar
@@ -87,6 +97,8 @@ services:
         sync: false
       - key: FRONTEND_URL
         value: https://kasiski.com.br
+      - key: BACKEND_URL
+        sync: false
 
 databases:
   - name: certame-db

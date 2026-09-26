@@ -318,3 +318,55 @@ Nas análises de habilitação/proposta desse concorrente em um edital, a IA rec
 - A sincronização com o PNCP roda todo dia no mesmo cron do radar (`jobs/sincronizar_oportunidades.py`) e também pelo botão **Sincronizar com o PNCP**.
 - O Painel ganhou o bloco **Pipeline de oportunidades**. A tela do edital tem um atalho para o cartão.
 - Código: `backend/services/oportunidades.py`, `backend/routes/oportunidades.py` e `frontend/js/views/oportunidades.js`. Os dados ficam nos campos novos de `Edital` e na tabela `Movimento`, criados automaticamente.
+
+## Máquina de aquisição (site público, CRM de leads, tracking e automações)
+
+### Site público com URLs limpas (`site/` → `frontend/`)
+- As páginas são HTML estático gerado por `python site/gerar.py` (requer `pip install markdown`). **Depois de editar textos, rode o gerador de novo e publique a pasta `frontend/`.**
+- Páginas geradas:
+  - ferramentas: `/analisar-edital/`, `/consultar-concorrente/`;
+  - soluções: `/radar-licitacoes/`, `/go-no-go/`, `/concorrentes/`, `/habilitacao/`, `/precos/`, `/propostas/`, `/gestao-contratos/`;
+  - outras: `/consultorias/`, `/newsletter/`, `/inteligencia/` (+ artigos), `/glossario/` (+ 10 termos), `/privacidade/`, `/cookies/`, `/termos/`, `/termos-ia/`;
+  - landing pages sem menu (fora do índice do Google): `/lp/analisar-edital/`, `/lp/software-licitacoes/`, `/lp/radar/`, `/lp/consultorias/`, `/lp/concorrentes/`.
+- SEO: `title`, `description`, `canonical`, Open Graph (imagem `assets/og-kasiski.png`), JSON-LD (Organization, SoftwareApplication, BreadcrumbList, DefinedTerm, Article), `sitemap.xml`, `robots.txt`, `404.html` e `_redirects` (Netlify).
+- Onde editar:
+  - textos em `site/conteudo.py` (soluções, landing pages, glossário e **dados do controlador para a LGPD: preencha CNPJ e endereço**);
+  - textos legais em `site/legal.py`;
+  - artigos em `site/artigos/*.md`.
+- O app continua em `/#/...`. `/entrar` e `/cadastro` redirecionam para o app, e `#planos` abre a seção de planos.
+
+### Rastreamento (`frontend/js/rastreio.js`, usado no site e no app)
+- `visitor_id` próprio, primeiro e último toque (UTMs, gclid, fbclid, li_fat_id, `?ref=` de parceiro, página de entrada, site de origem), guardados até a assinatura.
+- Banner de cookies com três categorias (necessários, medição e marketing), Google Consent Mode v2 e "Preferências de cookies" no rodapé.
+- **Tags:** cole os IDs em `frontend/js/config.js` → `TAGS`. O recomendado é preencher só o `GTM_ID` e configurar GA4, Google Ads, LinkedIn e Meta dentro do Tag Manager, com "consentimento adicional". Sem ID, nenhuma tag de terceiros é carregada.
+- **Data Layer** (nomes padrão do GA4 quando existem):
+  - no site: `page_view`, `cta_click`, `pricing_view`, `lead_form_start`, `generate_lead`, `tool_started`, `tool_completed`;
+  - no app: `sign_up`, `login`, `company_created`, `radar_configured`, `edital_added`, `edital_analyzed`, `begin_checkout`, `purchase`.
+- O servidor registra os mesmos eventos (e mais `document_uploaded`, `competitor_analyzed`, `proposal_generated`, `legal_document_generated`, `subscription_cancelled`) na tabela `Evento`, ligados ao lead e ao canal.
+
+### CRM de leads e lead score (`services/marketing.py`)
+- Tabela `Lead`: contato, empresa, UTMs, canal, isca, página de entrada, score, status (novo → engajado → MQL > 50 → SQL > 80 → trial → ativado → assinante, ou perdido), responsável e notas.
+- No cadastro, o lead é ligado à conta pelo e-mail ou pelo `visitor_id`, e a conta guarda `aquisicao` (primeiro e último toque).
+- Pontos: newsletter +2, planos +5, consulta de concorrente +10, análise gratuita +15, cadastro +20, empresa +20, radar +15, uso da IA +25, checkout +30.
+
+### API pública (`/api/public/...`) com anti-abuso
+- `analisar-edital`: upload + triagem com IA barata; a tela mostra nota, contagens e o 1º ponto, e os demais pontos **não saem do servidor**.
+- `concorrente` (resumo do dossiê), `newsletter` (com confirmação por e-mail e descadastro em `/api/public/sair?t=`), `leads` e `eventos`.
+- Proteções:
+  - limite por IP e por e-mail e teto diário de análises (`PUBLICO_ANALISES_DIA`);
+  - honeypot e Cloudflare Turnstile opcional (`TURNSTILE_SECRET` no Render + `TURNSTILE_SITEKEY` no `config.js`);
+  - PDF de até 15 MB, apagado em 7 dias.
+- Quem cria conta com o mesmo e-mail tem o edital importado ao cadastrar a empresa, e a análise completa roda **de cortesia** (não desconta do plano).
+
+### Automações de e-mail (`services/automacoes.py`)
+- Boas-vindas, lembrete de empresa, configurar radar, radar funcionando, 24h sem análise, 1ª análise concluída, fim do teste em 48h, 24h e 6h (com o valor acumulado da conta).
+- Cada e-mail sai uma vez por conta, respeita o descadastro, roda a cada 10 min no servidor web e tem reforço no job diário.
+- Em Admin → Marketing → Automações é possível ativar ou pausar, editar o assunto, enviar um teste e rodar na hora.
+
+### Admin → Marketing
+- **Funil:** visitantes → leads → trials → ativados → assinantes.
+- **Indicadores:** MRR, ARR, ARPU, MRR novo, CAC, LTV, payback, churn e taxas de conversão.
+- **Canais e campanhas:** CAC por canal, campanhas (utm_campaign) e cohort de retenção por canal.
+- **Leads:** lista com filtros, jornada completa e exportação .csv.
+- **Ferramentas grátis:** uso e custo de IA, conversão por isca e exportação da newsletter.
+- **Investimentos:** gasto por canal e mês, usado no CAC.

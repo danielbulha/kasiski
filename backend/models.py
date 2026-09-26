@@ -12,7 +12,7 @@ def _iso(v):
 class Conta(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(200), nullable=False)
-    plano = db.Column(db.String(30), default="trial")  # trial, essencial, profissional, consultor, suspenso
+    plano = db.Column(db.String(30), default="trial")  # trial, essencial, profissional, avancado, consultor, suspenso
     trial_fim = db.Column(db.DateTime)
     marca_relatorio = db.Column(db.String(200))  # plano Consultor: nome do escritório nos relatórios
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
@@ -33,6 +33,14 @@ class Conta(db.Model):
     origem = db.Column(db.String(80))             # utm_source ou site de origem
     campanha = db.Column(db.String(120))          # utm_campaign
     visitante_id = db.Column(db.String(40), index=True)
+
+    # Pacotes extras de contratos (mensal)
+    pacotes_contratos = db.Column(db.Integer, default=0)
+    pacotes_ate = db.Column(db.DateTime)
+    pacotes_status = db.Column(db.String(20))   # pendente, ativa, cancelada, inadimplente
+    pacotes_metodo = db.Column(db.String(20))   # recorrente, avulso
+    pacotes_mp_assinatura_id = db.Column(db.String(60), index=True)
+    ultimo_aviso_contratos = db.Column(db.Date)
 
     def to_dict(self):
         return {"id": self.id, "nome": self.nome, "plano": self.plano, "trial_fim": _iso(self.trial_fim),
@@ -157,6 +165,7 @@ class Edital(db.Model):
     link = db.Column(db.String(500))
     arquivo = db.Column(db.String(300))
     nome_arquivo = db.Column(db.String(250))
+    arquivo_url = db.Column(db.String(600))  # endereço original do documento no PNCP
     texto = db.Column(db.Text)
     status = db.Column(db.String(20), default="acompanhando")  # acompanhando, participando, ganho, perdido, descartado
     resultado_em = db.Column(db.Date)
@@ -169,6 +178,7 @@ class Edital(db.Model):
              "uf": self.uf, "municipio": self.municipio, "valor_estimado": self.valor_estimado,
              "data_abertura": _iso(self.data_abertura), "portal_disputa": self.portal_disputa, "link": self.link,
              "nome_arquivo": self.nome_arquivo, "tem_texto": bool(self.texto), "status": self.status,
+             "tem_documento": bool(self.arquivo or self.numero_controle),
              "resultado_em": _iso(self.resultado_em), "criado_em": _iso(self.criado_em)}
         if completo:
             d["caracteres_texto"] = len(self.texto or "")
@@ -178,15 +188,20 @@ class Edital(db.Model):
 class Analise(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     edital_id = db.Column(db.Integer, db.ForeignKey("edital.id"), nullable=False, index=True)
-    status = db.Column(db.String(20), default="concluida")
+    status = db.Column(db.String(20), default="concluida")  # processando, concluida, erro
+    etapa = db.Column(db.String(40))       # andamento mostrado na tela enquanto processa
+    erro = db.Column(db.Text)
     resultado = db.Column(db.JSON)
     modelos = db.Column(db.JSON)
     demonstracao = db.Column(db.Boolean, default=False)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    concluido_em = db.Column(db.DateTime)
 
     def to_dict(self):
-        return {"id": self.id, "edital_id": self.edital_id, "status": self.status, "resultado": self.resultado or {},
-                "modelos": self.modelos or {}, "demonstracao": self.demonstracao, "criado_em": _iso(self.criado_em)}
+        return {"id": self.id, "edital_id": self.edital_id, "status": self.status, "etapa": self.etapa,
+                "erro": self.erro, "resultado": self.resultado or {},
+                "modelos": self.modelos or {}, "demonstracao": self.demonstracao, "criado_em": _iso(self.criado_em),
+                "concluido_em": _iso(self.concluido_em)}
 
 
 class Peca(db.Model):
@@ -212,10 +227,14 @@ class Peca(db.Model):
 
 
 class Revisao(db.Model):
+    """Serviço de advogado: elaboração de uma peça do zero ou revisão de uma minuta gerada pela IA."""
     id = db.Column(db.Integer, primary_key=True)
     peca_id = db.Column(db.Integer, db.ForeignKey("peca.id"), nullable=False)
     conta_id = db.Column(db.Integer, db.ForeignKey("conta.id"), nullable=False, index=True)
-    status = db.Column(db.String(20), default="pendente")  # pendente, em_andamento, concluida, cancelada
+    # aguardando_pagamento, pendente (pago, na fila), em_andamento, concluida, cancelada
+    status = db.Column(db.String(24), default="pendente")
+    servico = db.Column(db.String(20), default="revisao")  # elaboracao, revisao
+    pago_em = db.Column(db.DateTime)
     valor = db.Column(db.Float)
     prazo_desejado = db.Column(db.Date)
     observacoes = db.Column(db.Text)
@@ -225,6 +244,7 @@ class Revisao(db.Model):
 
     def to_dict(self):
         return {"id": self.id, "peca_id": self.peca_id, "status": self.status, "valor": self.valor,
+                "servico": self.servico or "revisao", "pago_em": _iso(self.pago_em),
                 "prazo_desejado": _iso(self.prazo_desejado), "observacoes": self.observacoes, "parecer": self.parecer,
                 "criado_em": _iso(self.criado_em), "peca_titulo": self.peca.titulo if self.peca else None,
                 "peca_tipo": self.peca.tipo if self.peca else None}
@@ -255,11 +275,45 @@ class Concorrente(db.Model):
     razao_social = db.Column(db.String(300))
     dossie = db.Column(db.JSON)
     atualizado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    # Dossiê completo: perfil consolidado pela IA a partir de fontes públicas, acervo e análises anteriores
+    perfil = db.Column(db.JSON)
+    perfil_em = db.Column(db.DateTime)
+    perfil_status = db.Column(db.String(20))   # atualizando, pronto, desatualizado, erro
+    perfil_etapa = db.Column(db.String(120))
+    perfil_erro = db.Column(db.Text)
     __table_args__ = (db.UniqueConstraint("conta_id", "cnpj"),)
 
     def to_dict(self):
         return {"id": self.id, "cnpj": self.cnpj, "razao_social": self.razao_social, "dossie": self.dossie or {},
-                "atualizado_em": _iso(self.atualizado_em)}
+                "atualizado_em": _iso(self.atualizado_em), "perfil": self.perfil or {}, "perfil_em": _iso(self.perfil_em),
+                "perfil_status": self.perfil_status, "perfil_etapa": self.perfil_etapa, "perfil_erro": self.perfil_erro}
+
+
+class DocumentoConcorrente(db.Model):
+    """Acervo do concorrente: atas, decisões, habilitações, balanços, atestados de outros certames."""
+    id = db.Column(db.Integer, primary_key=True)
+    concorrente_id = db.Column(db.Integer, db.ForeignKey("concorrente.id"), nullable=False, index=True)
+    conta_id = db.Column(db.Integer, nullable=False, index=True)
+    origem = db.Column(db.String(20), default="upload")  # upload, pncp
+    tipo = db.Column(db.String(30), default="outro")     # ata, decisao, habilitacao, proposta, atestado, balanco, certidao, outro
+    titulo = db.Column(db.String(300))
+    orgao = db.Column(db.String(300))
+    certame = db.Column(db.String(200))
+    data_documento = db.Column(db.Date)
+    arquivo = db.Column(db.String(300))
+    nome_arquivo = db.Column(db.String(250))
+    fonte_url = db.Column(db.String(600), index=True)
+    texto = db.Column(db.Text)
+    extracao = db.Column(db.JSON)
+    status = db.Column(db.String(20), default="pendente")  # pendente, lido, sem_mencao, erro
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {"id": self.id, "concorrente_id": self.concorrente_id, "origem": self.origem, "tipo": self.tipo,
+                "titulo": self.titulo, "orgao": self.orgao, "certame": self.certame,
+                "data_documento": _iso(self.data_documento), "nome_arquivo": self.nome_arquivo,
+                "fonte_url": self.fonte_url, "tem_arquivo": bool(self.arquivo), "extracao": self.extracao or {},
+                "status": self.status, "criado_em": _iso(self.criado_em)}
 
 
 class AnaliseConcorrente(db.Model):
@@ -314,6 +368,14 @@ class Contrato(db.Model):
     garantia_validade = db.Column(db.Date)
     observacoes = db.Column(db.Text)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    # Leitura do PDF pela IA e gestão
+    arquivo = db.Column(db.String(300))
+    nome_arquivo = db.Column(db.String(250))
+    texto = db.Column(db.Text)
+    leitura_status = db.Column(db.String(20))   # lendo, concluida, erro
+    leitura_erro = db.Column(db.Text)
+    dados_ia = db.Column(db.JSON)               # tudo o que a IA extraiu (garantia, medição, faturamento...)
+    obrigacoes = db.Column(db.JSON)             # rotinas de gestão [{descricao, periodicidade, dia, ...}]
     pagamentos = db.relationship("Pagamento", cascade="all, delete-orphan", order_by="Pagamento.vencimento")
 
     def to_dict(self, com_pagamentos=False):
@@ -321,7 +383,9 @@ class Contrato(db.Model):
              "orgao": self.orgao, "objeto": self.objeto, "valor": self.valor, "inicio": _iso(self.inicio),
              "fim": _iso(self.fim), "data_base_reajuste": _iso(self.data_base_reajuste),
              "indice_reajuste": self.indice_reajuste, "garantia_validade": _iso(self.garantia_validade),
-             "observacoes": self.observacoes}
+             "observacoes": self.observacoes, "nome_arquivo": self.nome_arquivo, "tem_arquivo": bool(self.arquivo),
+             "leitura_status": self.leitura_status, "leitura_erro": self.leitura_erro,
+             "dados_ia": self.dados_ia or {}, "obrigacoes": self.obrigacoes or []}
         if com_pagamentos:
             d["pagamentos"] = [p.to_dict() for p in self.pagamentos]
         return d
@@ -415,3 +479,102 @@ class CodigoVerificacao(db.Model):
     expira_em = db.Column(db.DateTime, nullable=False)
     usado_em = db.Column(db.DateTime)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+
+class TabelaReferencia(db.Model):
+    """Tabela oficial de preços enviada pelo administrador (SINAPI, SICRO, CMED, SIGTAP, CCT...).
+    Consultada por todos os clientes na formação de preço (RAG estruturado)."""
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(200), nullable=False)
+    fonte = db.Column(db.String(30), default="outra")   # sinapi, sicro, cmed, sigtap, cct, bps, outra
+    uf = db.Column(db.String(2))
+    data_base = db.Column(db.Date)
+    observacao = db.Column(db.Text)
+    n_itens = db.Column(db.Integer, default=0)
+    ativa = db.Column(db.Boolean, default=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {"id": self.id, "nome": self.nome, "fonte": self.fonte, "uf": self.uf, "data_base": _iso(self.data_base),
+                "observacao": self.observacao, "n_itens": self.n_itens, "ativa": self.ativa,
+                "criado_em": _iso(self.criado_em)}
+
+
+class ItemReferencia(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    tabela_id = db.Column(db.Integer, db.ForeignKey("tabela_referencia.id"), nullable=False, index=True)
+    codigo = db.Column(db.String(60))
+    descricao = db.Column(db.Text, nullable=False)
+    unidade = db.Column(db.String(40))
+    preco = db.Column(db.Float)
+    termos = db.Column(db.Text)  # descrição normalizada (minúsculas, sem acento) para a busca
+
+    def to_dict(self, tabela=None):
+        d = {"id": self.id, "tabela_id": self.tabela_id, "codigo": self.codigo, "descricao": self.descricao,
+             "unidade": self.unidade, "preco": self.preco}
+        if tabela:
+            d.update({"tabela": tabela.nome, "fonte": tabela.fonte, "uf": tabela.uf, "data_base": _iso(tabela.data_base)})
+        return d
+
+
+class Proposta(db.Model):
+    """Minuta de proposta comercial: itens com formação de preço + texto gerado pela IA."""
+    id = db.Column(db.Integer, primary_key=True)
+    empresa_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=False, index=True)
+    edital_id = db.Column(db.Integer, db.ForeignKey("edital.id"))
+    titulo = db.Column(db.String(300))
+    status = db.Column(db.String(20), default="rascunho")   # lendo_edital, rascunho, gerando, pronta, erro
+    etapa = db.Column(db.String(80))
+    erro = db.Column(db.Text)
+    regime = db.Column(db.String(20), default="simples")     # simples, presumido, real
+    tributos_pct = db.Column(db.Float, default=6.0)          # alíquota total sobre o preço de venda
+    bdi_pct = db.Column(db.Float, default=20.0)              # BDI/margem padrão aplicado aos itens
+    bdi_detalhe = db.Column(db.JSON)                         # componentes da fórmula do TCU, se usada
+    validade_dias = db.Column(db.Integer, default=60)
+    condicoes = db.Column(db.JSON)   # o que o edital exige da proposta (lido pela IA)
+    itens = db.Column(db.JSON)       # [{descricao, unidade, quantidade, custo_unitario, bdi, preco_unitario, ...}]
+    texto = db.Column(db.Text)       # minuta (markdown simples)
+    alertas = db.Column(db.JSON)     # pontos de atenção apontados pela IA e pelas regras
+    demonstracao = db.Column(db.Boolean, default=False)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    atualizado_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self, completo=True):
+        d = {"id": self.id, "empresa_id": self.empresa_id, "edital_id": self.edital_id, "titulo": self.titulo,
+             "status": self.status, "etapa": self.etapa, "erro": self.erro, "regime": self.regime,
+             "tributos_pct": self.tributos_pct, "bdi_pct": self.bdi_pct, "validade_dias": self.validade_dias,
+             "demonstracao": self.demonstracao, "criado_em": _iso(self.criado_em),
+             "atualizado_em": _iso(self.atualizado_em), "n_itens": len(self.itens or [])}
+        if completo:
+            d.update({"bdi_detalhe": self.bdi_detalhe or {}, "condicoes": self.condicoes or {},
+                      "itens": self.itens or [], "texto": self.texto or "", "alertas": self.alertas or []})
+        return d
+
+
+class LogErro(db.Model):
+    """Erros do sistema durante o uso (servidor, tarefas em segundo plano e navegador), para o admin analisar."""
+    id = db.Column(db.Integer, primary_key=True)
+    origem = db.Column(db.String(20), index=True)      # servidor, tarefa, navegador
+    nivel = db.Column(db.String(10), default="erro")   # erro, aviso
+    mensagem = db.Column(db.Text)
+    detalhe = db.Column(db.Text)                       # traceback ou pilha do navegador
+    rota = db.Column(db.String(300))
+    metodo = db.Column(db.String(10))
+    status = db.Column(db.Integer)
+    usuario_email = db.Column(db.String(200))
+    conta_id = db.Column(db.Integer, index=True)
+    navegador = db.Column(db.String(300))
+    assinatura = db.Column(db.String(64), index=True)  # agrupa erros iguais
+    ocorrencias = db.Column(db.Integer, default=1)
+    resolvido = db.Column(db.Boolean, default=False, index=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    ultimo_em = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    def to_dict(self, completo=False):
+        d = {"id": self.id, "origem": self.origem, "nivel": self.nivel, "mensagem": self.mensagem, "rota": self.rota,
+             "metodo": self.metodo, "status": self.status, "usuario_email": self.usuario_email, "conta_id": self.conta_id,
+             "ocorrencias": self.ocorrencias, "resolvido": self.resolvido, "criado_em": _iso(self.criado_em),
+             "ultimo_em": _iso(self.ultimo_em)}
+        if completo:
+            d.update({"detalhe": self.detalhe, "navegador": self.navegador})
+        return d

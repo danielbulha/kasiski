@@ -152,6 +152,8 @@ def admin_revisoes():
         d = r.to_dict()
         d["conta"] = Conta.query.get(r.conta_id).nome
         d["conteudo"] = r.peca.conteudo if r.peca else ""
+        u = Usuario.query.filter_by(conta_id=r.conta_id).first()
+        d["email"] = u.email if u else None
         saida.append(d)
     return jsonify(saida)
 
@@ -161,7 +163,7 @@ def admin_revisoes():
 def admin_atualizar_revisao(rid):
     r = Revisao.query.get_or_404(rid)
     d = dados()
-    if d.get("status") in ("pendente", "em_andamento", "concluida", "cancelada"):
+    if d.get("status") in ("aguardando_pagamento", "pendente", "em_andamento", "concluida", "cancelada"):
         r.status = d["status"]
     if "parecer" in d:
         r.parecer = d["parecer"]

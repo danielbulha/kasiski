@@ -2,23 +2,26 @@
 // Tom de voz conforme o manual da marca: precisa, clara, proativa e sóbria — sem superlativos.
 
 const PLANOS_RESERVA = { // usado só se a API estiver fora do ar; a fonte oficial é GET /api/planos
-  trial: { nome: "Teste grátis", preco: 0, empresas: 1, analises: 2, concorrentes: 1, pecas: true, precos: true, contratos: true, marca: false },
-  essencial: { nome: "Essencial", preco: 197, empresas: 1, analises: 5, concorrentes: 0, pecas: false, precos: false, contratos: true, marca: false },
-  profissional: { nome: "Profissional", preco: 497, empresas: 1, analises: 20, concorrentes: 5, pecas: true, precos: true, contratos: true, marca: false },
-  consultor: { nome: "Consultor", preco: 1290, empresas: 10, analises: 60, concorrentes: 30, pecas: true, precos: true, contratos: true, marca: true },
+  trial: { nome: "Teste grátis", preco: 0, empresas: 1, analises: 2, concorrentes: 1, pecas: true, precos: true, propostas: false, contratos: 1, marca: false },
+  essencial: { nome: "Essencial", preco: 197, empresas: 1, analises: 5, concorrentes: 0, pecas: false, precos: false, propostas: false, contratos: 0, marca: false },
+  profissional: { nome: "Profissional", preco: 497, empresas: 1, analises: 20, concorrentes: 5, pecas: true, precos: true, propostas: false, contratos: 10, marca: false },
+  avancado: { nome: "Avançado", preco: 799, empresas: 3, analises: 40, concorrentes: 15, pecas: true, precos: true, propostas: true, contratos: 30, marca: false },
+  consultor: { nome: "Consultor", preco: 1290, empresas: 10, analises: 60, concorrentes: 30, pecas: true, precos: true, propostas: true, contratos: 50, marca: true },
 };
 
 const PUBLICO_PLANO = {
   essencial: "Para quem está começando a licitar",
   profissional: "Para empresas que disputam todo mês",
+  avancado: "Para quem quer a proposta pronta, com preço calculado",
   consultor: "Para escritórios e consultorias de licitação",
 };
+const SELO_PLANO = { profissional: "Indicado para PMEs", avancado: "Proposta comercial com IA" };
 
 V.inicio = async (raiz) => {
   rastrear("visita");
   let planos = PLANOS_RESERVA, trialDias = 7;
   try { const d = await api("GET", "/api/planos"); planos = d.planos; trialDias = d.trial_dias; } catch { /* segue com a reserva */ }
-  const pago = ["essencial", "profissional", "consultor"].filter((k) => planos[k]);
+  const pago = ["essencial", "profissional", "avancado", "consultor"].filter((k) => planos[k]);
   const trial = planos.trial || PLANOS_RESERVA.trial;
 
   raiz.innerHTML = `
@@ -75,8 +78,8 @@ V.inicio = async (raiz) => {
           ${recurso("concorrentes", "Inteligência de concorrentes", "Dossiê público do CNPJ, sanções no TCU e na CGU e análise da habilitação e da proposta do adversário.")}
           ${recurso("pecas", "Gerador de peças", "Minutas de esclarecimento, impugnação, recurso, contrarrazões, reequilíbrio e defesa prévia.")}
           ${recurso("agenda", "Agenda de prazos", "Prazos da Lei 14.133 contados em dias úteis, com feriados nacionais, a partir da data da sessão.")}
-          ${recurso("contratos", "Contratos e pagamentos", "Vigência, garantia, reajuste e notas em atraso — com a peça de cobrança a um clique.")}
-          ${recurso("precos", "Preços praticados", "Mediana e faixa competitiva a partir de compras públicas já homologadas.")}
+          ${recurso("contratos", "Gestão de contratos", "Envie o PDF: a IA preenche vigência, garantia, reajuste, medição e faturamento e avisa antes de cada prazo.")}
+          ${recurso("precos", "Preços e proposta comercial", "Mediana das compras públicas, tabelas oficiais (SINAPI, CMED, convenções coletivas) e a minuta da proposta com BDI e checagem de exequibilidade.")}
         </div>
       </div>
     </section>
@@ -109,7 +112,7 @@ V.inicio = async (raiz) => {
         <p class="lp-rotulo">Planos</p>
         <h2>Preço fixo por mês. Sem taxa de êxito.</h2>
         <div class="lp-planos">${pago.map((k) => cartaoPlano(k, planos[k])).join("")}</div>
-        <p class="lp-nota lp-centro">Valores mensais. Análises adicionais podem ser contratadas em pacotes avulsos.</p>
+        <p class="lp-nota lp-centro">Valores mensais. Precisa de mais contratos? Pacotes de +10 contratos por R$ 169,90/mês.</p>
       </div>
     </section>
 
@@ -118,6 +121,7 @@ V.inicio = async (raiz) => {
         <p class="lp-rotulo">Dúvidas frequentes</p>
         <h2>Antes de começar</h2>
         ${duvida("O Kasiski substitui um advogado?", "Não. As peças são minutas fundamentadas para você revisar antes de protocolar. Se preferir, é possível solicitar dentro do sistema a revisão por advogado, contratada à parte.")}
+        ${duvida("Como funciona a proposta comercial com IA?", "Nos planos Avançado e Consultor, o Kasiski lê no edital o que a proposta precisa conter (itens, quantidades, validade, documentos e declarações), ajuda a formar o preço com custos, BDI e tributos, compara com os preços praticados e com tabelas oficiais como SINAPI, CMED e convenções coletivas, avisa riscos de inexequibilidade e entrega a minuta em Word para você revisar e assinar.")}
         ${duvida("De onde vêm os dados?", "De fontes públicas oficiais: PNCP (editais, contratos e atas), Receita Federal (dados cadastrais), TCU e Portal da Transparência (sanções) e Compras.gov.br (preços praticados). Editais fora do PNCP podem ser enviados em PDF.")}
         ${duvida("Como a IA evita erros?", "Cada cláusula restritiva, risco ou falha de concorrente apontada por um modelo é conferida por um segundo modelo, de outro fornecedor. O resultado da conferência aparece ao lado de cada ponto, com a página do documento de origem.")}
         ${duvida("Funciona para dispensa e inexigibilidade?", "Sim. Nesses casos o sistema não aplica os prazos de pregão: calcula o prazo de divulgação do aviso de contratação direta e avalia se a hipótese legal está bem enquadrada.")}
@@ -163,10 +167,11 @@ function duvida(p, r) {
 
 function cartaoPlano(codigo, v) {
   const destaque = codigo === "profissional";
-  const item = (ok, texto) => `<li class="${ok ? "" : "fora"}">${icone(ok ? "ok" : "fechar", 15)} ${esc(texto)}</li>`;
+  const selo = SELO_PLANO[codigo];
+  const item = (ok, texto, novo) => `<li class="${ok ? "" : "fora"}">${icone(ok ? "ok" : "fechar", 15)} <span>${esc(texto)}${novo && ok ? ` <b class="lp-novo">novo</b>` : ""}</span></li>`;
   const qtd = (n, s, p) => `${n} ${n === 1 ? s : p}`;
-  return `<div class="lp-plano ${destaque ? "destaque" : ""}">
-    ${destaque ? `<span class="lp-selo">Indicado para PMEs</span>` : ""}
+  return `<div class="lp-plano ${destaque ? "destaque" : ""} ${codigo === "avancado" ? "novo" : ""}">
+    ${selo ? `<span class="lp-selo ${codigo === "avancado" ? "lp-selo-ciano" : ""}">${esc(selo)}</span>` : ""}
     <h3>${esc(v.nome)}</h3>
     <p class="lp-plano-publico">${esc(PUBLICO_PLANO[codigo] || "")}</p>
     <p class="lp-preco">${fmt.moeda(v.preco).replace(",00", "")}<small>/mês</small></p>
@@ -176,8 +181,9 @@ function cartaoPlano(codigo, v) {
       ${item(!!v.concorrentes, v.concorrentes ? `${qtd(v.concorrentes, "análise", "análises")} de concorrente por mês` : "Análise de concorrentes")}
       ${item(true, "Radar diário, cofre e agenda de prazos")}
       ${item(!!v.pecas, "Gerador de peças")}
-      ${item(!!v.precos, "Preços praticados")}
-      ${item(!!v.contratos, "Gestão de contratos")}
+      ${item(!!v.precos, "Inteligência de preços")}
+      ${item(!!v.propostas, "Proposta comercial com IA e exportação em Word", true)}
+      ${item(!!v.contratos, v.contratos ? `Gestão de contratos com IA (até ${v.contratos})` : "Gestão de contratos")}
       ${v.marca ? item(true, "Relatórios com a marca do escritório") : ""}
     </ul>
     <a class="botao ${destaque ? "" : "secundario"}" href="#/cadastro">Começar pelo teste grátis</a>

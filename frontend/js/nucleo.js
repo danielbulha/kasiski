@@ -129,7 +129,15 @@ async function api(metodo, caminho, corpo) {
   else if (corpo !== undefined) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(corpo); }
   let r;
   try { r = await fetch(CERTAME.API_URL + caminho, opt); }
-  catch { throw new Error("Sem conexão com o servidor. Verifique a internet e tente de novo."); }
+  catch (e) {
+    reportarErro({ tipo: "rede", mensagem: `Sem conexão com o servidor (${e.message || "falha de rede"})`, chamada: caminho.split("?")[0], metodo });
+    throw new Error("Sem conexão com o servidor. Verifique a internet e tente de novo.");
+  }
+  if (r.status >= 500 && !caminho.startsWith("/api/logs")) {
+    const copia = r.clone();
+    copia.text().then((t) => reportarErro({ tipo: "servidor", mensagem: `Erro ${r.status} em ${metodo} ${caminho.split("?")[0]}: ${t.slice(0, 300)}`,
+      chamada: caminho.split("?")[0], metodo, status: r.status })).catch(() => {});
+  }
   if (r.status === 401 && S.token && !caminho.startsWith("/api/auth")) { sair("#/entrar"); throw new Error("Sua sessão expirou. Entre novamente."); }
   const ct = r.headers.get("content-type") || "";
   if (!ct.includes("json")) { if (!r.ok) throw new Error(`Erro ${r.status} no servidor.`); return r; }
@@ -247,3 +255,27 @@ function rastrear(tipo) {
   }).catch(() => { /* funil é acessório */ });
 }
 document.addEventListener("click", (ev) => { if (ev.target.closest('a[href="#/cadastro"]')) rastrear("cta"); });
+
+// ---------------------------------------------------------------- registro de erros (área Logs do admin)
+// Envia ao servidor erros de JavaScript e falhas de chamada que o usuário encontrou. Sem dados de formulário.
+const _errosEnviados = new Set();
+function reportarErro(e) {
+  try {
+    const chave = `${e.tipo}|${e.mensagem}`.slice(0, 300);
+    if (_errosEnviados.has(chave) || _errosEnviados.size > 25) return; // uma vez por erro, no máximo 25 por página
+    _errosEnviados.add(chave);
+    const cab = { "Content-Type": "application/json" };
+    if (S.token) cab.Authorization = "Bearer " + S.token;
+    fetch(CERTAME.API_URL + "/api/logs", { method: "POST", headers: cab, keepalive: true,
+      body: JSON.stringify({ ...e, tela: location.hash || "#/", mensagem: String(e.mensagem || "").slice(0, 1000), pilha: String(e.pilha || "").slice(0, 8000) }) }).catch(() => {});
+  } catch { /* o registro de erro nunca pode quebrar a tela */ }
+}
+window.addEventListener("error", (ev) => {
+  if (!ev.message) return;
+  reportarErro({ tipo: "javascript", mensagem: `${ev.message} (${String(ev.filename || "").split("/").pop()}:${ev.lineno || 0})`, pilha: ev.error?.stack || "" });
+});
+window.addEventListener("unhandledrejection", (ev) => {
+  const r = ev.reason || {};
+  if (r.status && r.status < 500) return; // erros de validação/plano já mostrados ao usuário
+  reportarErro({ tipo: "javascript", mensagem: `Promessa não tratada: ${r.message || String(r)}`, pilha: r.stack || "" });
+});

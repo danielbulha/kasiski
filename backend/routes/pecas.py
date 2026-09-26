@@ -12,11 +12,24 @@ from services.prompts import TIPOS_PECA
 bp = Blueprint("pecas", __name__, url_prefix="/api")
 
 
+DESCRICAO_SERVICO = {
+    "esclarecimento": "Pergunta formal ao órgão sobre ponto obscuro do edital, no prazo legal.",
+    "impugnacao": "Pedido de correção de cláusula ilegal ou restritiva do edital antes da sessão.",
+    "intencao_recurso": "Manifestação motivada na sessão, que garante o direito de recorrer.",
+    "recurso": "Razões recursais contra habilitação, desclassificação ou resultado.",
+    "contrarrazoes": "Defesa do resultado contra o recurso de um concorrente.",
+    "reequilibrio": "Pedido de recomposição do contrato por fato imprevisível, com memória de cálculo.",
+    "cobranca_pagamento": "Requerimento administrativo de pagamento em atraso, com correção e juros.",
+    "defesa_previa": "Defesa em processo administrativo sancionador (multa, impedimento, inidoneidade).",
+}
+
+
 @bp.get("/pecas/tipos")
 @login_requerido
 def tipos():
     precos = current_app.config["PRECO_REVISAO"]
-    return jsonify([{"codigo": k, "nome": v, "preco_revisao": precos.get(k)} for k, v in TIPOS_PECA.items()])
+    return jsonify([{"codigo": k, "nome": v, "preco_advogado": precos.get(k), "descricao": DESCRICAO_SERVICO.get(k, "")}
+                    for k, v in TIPOS_PECA.items()])
 
 
 @bp.get("/empresas/<int:eid>/pecas")
@@ -52,7 +65,9 @@ def gerar(eid):
             if ac:
                 ids = set(d.get("itens") or [])
                 referencia["recorrido"] = ac.concorrente.to_dict()["razao_social"] if ac.concorrente else None
-                pontos += [p for p in (ac.resultado or {}).get("apontamentos", []) if p.get("id") in ids]
+                res = ac.resultado or {}
+                pontos += [p for p in res.get("apontamentos", []) + res.get("sugestoes", []) + res.get("cruzamentos_historico", [])
+                           if p.get("id") in ids]
     if d.get("contrato_id"):
         contrato = contrato_da_conta(d["contrato_id"])
         referencia.update({"orgao": contrato.orgao, "numero": f"Contrato {contrato.numero}",
@@ -112,19 +127,96 @@ def excluir(pid):
     return jsonify({"ok": True})
 
 
+def _link_pagamento(r, peca):
+    """Cria o link de pagamento (Checkout Pro: Pix, boleto ou cartão em até 3x) do serviço de advogado."""
+    from services import mercadopago as mp
+    tipo = "Elaboração" if r.servico == "elaboracao" else "Revisão"
+    _, url = mp.criar_pagamento_avulso(email=g.usuario.email, valor=float(r.valor or 0), anual=False,
+                                       titulo=f"{tipo} por advogado — {TIPOS_PECA.get(peca.tipo, 'peça')}"[:250],
+                                       referencia=f"r:{r.id}", destino="advogado", parcelas=3)
+    return url
+
+
+def _criar_pedido(peca, servico, d):
+    from services import mercadopago as mp
+    valor = current_app.config["PRECO_REVISAO"].get(peca.tipo)
+    online = mp.configurado() and bool(valor)
+    r = Revisao(peca_id=peca.id, conta_id=g.conta.id, servico=servico, valor=valor,
+                status="aguardando_pagamento" if online else "pendente",
+                prazo_desejado=para_data(d.get("prazo_desejado")), observacoes=(d.get("observacoes") or "").strip() or None)
+    db.session.add(r)
+    db.session.flush()
+    url = None
+    if online:
+        url = _link_pagamento(r, peca)  # se o Mercado Pago falhar, o ErroAPI desfaz o pedido
+    else:
+        peca.status = "revisao_solicitada"
+    db.session.commit()
+    return r, url
+
+
 @bp.post("/pecas/<int:pid>/revisao")
 @login_requerido
 def solicitar_revisao(pid):
     p = _peca(pid)
-    if Revisao.query.filter(Revisao.peca_id == pid, Revisao.status.in_(["pendente", "em_andamento"])).first():
-        raise ErroAPI("Já existe uma revisão em andamento para esta peça.")
+    if Revisao.query.filter(Revisao.peca_id == pid,
+                            Revisao.status.in_(["aguardando_pagamento", "pendente", "em_andamento"])).first():
+        raise ErroAPI("Já existe um pedido em andamento para esta peça. Veja em Peças > Elaboração com advogado.")
+    r, url = _criar_pedido(p, "revisao", dados())
+    return jsonify({**r.to_dict(), "url_pagamento": url}), 201
+
+
+@bp.post("/empresas/<int:eid>/advogado")
+@login_requerido
+def pedir_elaboracao(eid):
+    """Elaboração completa de uma peça por advogado (sem minuta prévia da IA)."""
+    empresa = empresa_da_conta(eid)
     d = dados()
-    r = Revisao(peca_id=pid, conta_id=g.conta.id, valor=current_app.config["PRECO_REVISAO"].get(p.tipo),
-                prazo_desejado=para_data(d.get("prazo_desejado")), observacoes=d.get("observacoes"))
-    p.status = "revisao_solicitada"
-    db.session.add(r)
+    tipo = d.get("tipo")
+    if tipo not in TIPOS_PECA:
+        raise ErroAPI("Escolha a peça que o advogado deve elaborar.")
+    if not (d.get("observacoes") or "").strip():
+        raise ErroAPI("Descreva o caso: o que aconteceu e o que a peça deve pedir.")
+    edital = edital_da_conta(int(d["edital_id"])) if str(d.get("edital_id") or "").isdigit() else None
+    contrato = contrato_da_conta(int(d["contrato_id"])) if str(d.get("contrato_id") or "").isdigit() else None
+    ref = (edital.numero or edital.orgao) if edital else (f"Contrato {contrato.numero}" if contrato else empresa.razao_social)
+    peca = Peca(empresa_id=eid, edital_id=edital.id if edital else None, contrato_id=contrato.id if contrato else None,
+                tipo=tipo, titulo=f"{TIPOS_PECA[tipo]} — {ref or empresa.razao_social}"[:300], status="com_advogado",
+                conteudo="")
+    db.session.add(peca)
+    db.session.flush()
+    r, url = _criar_pedido(peca, "elaboracao", d)
+    return jsonify({**r.to_dict(), "url_pagamento": url, "peca_id": peca.id}), 201
+
+
+def _minha_revisao(rid):
+    r = Revisao.query.filter_by(id=rid, conta_id=g.conta.id).first()
+    if not r:
+        raise ErroAPI("Pedido não encontrado.", 404)
+    return r
+
+
+@bp.post("/revisoes/<int:rid>/pagar")
+@login_requerido
+def pagar_revisao(rid):
+    r = _minha_revisao(rid)
+    if r.status != "aguardando_pagamento":
+        raise ErroAPI("Este pedido não está aguardando pagamento.")
+    return jsonify({"url_pagamento": _link_pagamento(r, Peca.query.get(r.peca_id))})
+
+
+@bp.delete("/revisoes/<int:rid>")
+@login_requerido
+def cancelar_revisao(rid):
+    r = _minha_revisao(rid)
+    if r.status != "aguardando_pagamento":
+        raise ErroAPI("Só é possível cancelar pedidos que ainda não foram pagos. Fale com o suporte.")
+    peca = Peca.query.get(r.peca_id)
+    db.session.delete(r)
+    if peca and r.servico == "elaboracao" and not (peca.conteudo or "").strip():
+        db.session.delete(peca)
     db.session.commit()
-    return jsonify(r.to_dict()), 201
+    return jsonify({"ok": True})
 
 
 @bp.get("/revisoes")

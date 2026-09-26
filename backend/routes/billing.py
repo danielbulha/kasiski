@@ -72,11 +72,12 @@ def cancelar():
 def sincronizar():
     """Chamado quando o cliente volta do Mercado Pago: confere a assinatura na hora, sem esperar o webhook."""
     conta = g.conta
-    if conta.mp_assinatura_id and mp.configurado():
-        try:
-            cob.processar_assinatura(conta.mp_assinatura_id)
-        except ErroAPI:
-            pass
+    for aid in (conta.mp_assinatura_id, conta.pacotes_mp_assinatura_id):
+        if aid and mp.configurado():
+            try:
+                cob.processar_assinatura(aid)
+            except ErroAPI:
+                pass
     pid = (dados().get("payment_id") or dados().get("collection_id") or "").strip()
     if pid.isdigit() and mp.configurado():
         try:
@@ -84,6 +85,47 @@ def sincronizar():
         except ErroAPI:
             pass
     return jsonify({"plano": planos.resumo(conta)})
+
+
+@bp.post("/billing/pacotes")
+@login_requerido
+def comprar_pacotes():
+    """Pacotes extras de contratos (mensal). metodo: recorrente (cartão) ou avulso (Pix/boleto/cartão, 1 mês)."""
+    d = dados()
+    conta = g.conta
+    if conta.plano not in planos.PAGOS or not planos.PLANOS[conta.plano].get("contratos"):
+        raise ErroAPI("Pacotes extras de contratos estão disponíveis a partir do plano Profissional.", 402, "fora_do_plano")
+    try:
+        qtd = max(1, min(int(d.get("quantidade") or 1), 20))
+    except (TypeError, ValueError):
+        raise ErroAPI("Quantidade inválida.")
+    metodo = d.get("metodo") if d.get("metodo") in ("recorrente", "avulso") else "avulso"
+    if metodo == "recorrente" and conta.pacotes_status == "ativa" and conta.pacotes_metodo == "recorrente":
+        raise ErroAPI("Você já tem pacotes com renovação automática. Cancele a renovação atual para mudar a quantidade.", 409)
+    valor = round(planos.PACOTE_CONTRATOS["preco"] * qtd, 2)
+    titulo = f"Kasiski — {qtd} pacote(s) de +10 contratos (mensal)"
+    ref = f"p:{conta.id}:{qtd}:{metodo}"
+    if metodo == "recorrente":
+        aid, url = mp.criar_assinatura(email=g.usuario.email, valor=valor, anual=False, titulo=titulo, referencia=ref)
+        conta.pacotes_mp_assinatura_id = aid
+        if conta.pacotes_status != "ativa":
+            conta.pacotes_status = "pendente"
+    else:
+        _, url = mp.criar_pagamento_avulso(email=g.usuario.email, valor=valor, anual=False, titulo=titulo, referencia=ref)
+    db.session.commit()
+    return jsonify({"url": url, "valor": valor})
+
+
+@bp.post("/billing/pacotes/cancelar")
+@login_requerido
+def cancelar_pacotes():
+    conta = g.conta
+    if conta.pacotes_metodo != "recorrente" or not conta.pacotes_mp_assinatura_id:
+        raise ErroAPI("Não há renovação automática de pacotes. Pacotes pagos por Pix simplesmente não renovam.")
+    mp.cancelar_assinatura(conta.pacotes_mp_assinatura_id)
+    conta.pacotes_status = "cancelada"
+    db.session.commit()
+    return jsonify({"ok": True, "ate": conta.pacotes_ate.isoformat() if conta.pacotes_ate else None})
 
 
 @bp.post("/billing/webhook")
@@ -117,7 +159,7 @@ TIPOS_PUBLICOS = {"visita", "cta"}
 
 
 def _limpo(v, n):
-    return re.sub(r"[^\w\-. /:]", "", str(v or ""))[:n] or None
+    return re.sub(r"[^\w\-. /:#]", "", str(v or ""))[:n] or None
 
 
 @bp.post("/eventos")
@@ -133,4 +175,31 @@ def registrar_evento():
                           campanha=_limpo(d.get("campanha"), 120),
                           dados={"pagina": _limpo(d.get("pagina"), 120), "referencia": _limpo(d.get("referencia"), 200)}))
     db.session.commit()
+    return jsonify({"ok": True})
+
+
+@bp.post("/logs")
+def erro_do_navegador():
+    """Erros de JavaScript e falhas de chamada vistas no navegador do usuário (login opcional)."""
+    import jwt
+    from flask import current_app
+    from models import Usuario
+    from services import logs
+    d = request.get_json(silent=True) or {}
+    msg = str(d.get("mensagem") or "").strip()
+    if not msg:
+        return jsonify({"ok": False}), 400
+    email = conta_id = None
+    cab = request.headers.get("Authorization", "")
+    if cab.startswith("Bearer "):
+        try:
+            u = Usuario.query.get(jwt.decode(cab[7:], current_app.config["SECRET_KEY"], algorithms=["HS256"]).get("uid"))
+            if u:
+                email, conta_id = u.email, u.conta_id
+        except Exception:
+            pass
+    tela = _limpo(d.get("tela"), 120) or ""
+    logs.registrar("navegador", msg[:1000], str(d.get("pilha") or "")[:8000] or None, status=d.get("status") if isinstance(d.get("status"), int) else None,
+                   nivel="aviso" if d.get("tipo") == "rede" else "erro", rota=f"{tela} → {str(d.get('chamada') or '')[:150]}".strip(" →"),
+                   metodo=str(d.get("metodo") or "—")[:10], usuario_email=email, conta_id=conta_id)
     return jsonify({"ok": True})

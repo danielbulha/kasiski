@@ -1,5 +1,7 @@
 """Radar de editais (PNCP), cadastro de editais (PNCP ou upload) e análise com verificação cruzada."""
-from flask import Blueprint, g, jsonify, request
+import threading
+from datetime import datetime, timedelta
+from flask import Blueprint, current_app, g, jsonify, request
 
 import planos
 from auth import login_requerido
@@ -72,8 +74,11 @@ def _importar_pncp(empresa_id, numero_controle, base=None):
         pass
     if not info.get("objeto"):
         raise ErroAPI("Não encontrei esta contratação no PNCP. Confira o número de controle.", 404)
-    texto, nome = pncp.baixar_texto_edital(numero_controle)
+    doc = pncp.baixar_edital(numero_controle) or {}
+    texto, nome = doc.get("texto"), doc.get("nome")
+    caminho = arquivos.salvar_bytes(doc["conteudo"], f"editais/{empresa_id}") if doc.get("conteudo") else None
     ed = Edital(empresa_id=empresa_id, origem="pncp", numero_controle=numero_controle, numero=info.get("numero"),
+                arquivo=caminho, arquivo_url=doc.get("url"),
                 orgao=info.get("orgao"), objeto=info.get("objeto"), modalidade=info.get("modalidade"),
                 uf=(info.get("uf") or "")[:2], municipio=info.get("municipio"),
                 valor_estimado=info.get("valor_estimado"), data_abertura=pncp._data(info.get("data_abertura")),
@@ -96,7 +101,7 @@ def listar(eid):
     saida = []
     for e in eds:
         d = e.to_dict()
-        ult = Analise.query.filter_by(edital_id=e.id).order_by(Analise.id.desc()).first()
+        ult = Analise.query.filter_by(edital_id=e.id, status="concluida").order_by(Analise.id.desc()).first()
         d["decisao"] = ((ult.resultado or {}).get("recomendacao") or {}).get("decisao") if ult else None
         saida.append(d)
     return jsonify(saida)
@@ -131,8 +136,12 @@ def criar(eid):
 @login_requerido
 def ver(edid):
     ed = edital_da_conta(edid)
-    analises = Analise.query.filter_by(edital_id=edid).order_by(Analise.id.desc()).all()
+    _expirar_travadas(edid)
+    analises = Analise.query.filter_by(edital_id=edid, status="concluida").order_by(Analise.id.desc()).all()
+    andamento = Analise.query.filter_by(edital_id=edid).filter(Analise.status != "concluida") \
+        .order_by(Analise.id.desc()).first()
     return jsonify({"edital": ed.to_dict(completo=True), "analises": [a.to_dict() for a in analises],
+                    "analise_andamento": andamento.to_dict() if andamento and andamento.status == "processando" else None,
                     "prazos": [p.to_dict() for p in Prazo.query.filter_by(edital_id=edid).order_by(Prazo.data)],
                     "pecas": [p.to_dict(False) for p in Peca.query.filter_by(edital_id=edid).order_by(Peca.id.desc())],
                     "concorrentes": [a.to_dict() for a in AnaliseConcorrente.query.filter_by(edital_id=edid)
@@ -161,6 +170,33 @@ def editar(edid):
     return jsonify(ed.to_dict())
 
 
+@bp.get("/editais/<int:edid>/documento")
+@login_requerido
+def documento(edid):
+    """PDF do edital para consulta: o enviado pelo usuário ou o capturado no PNCP (baixado agora se ainda não estiver salvo)."""
+    import os
+    from flask import send_file
+    ed = edital_da_conta(edid)
+    if ed.arquivo and not os.path.exists(arquivos.caminho_absoluto(ed.arquivo)):
+        ed.arquivo = None  # arquivo sumiu do disco (ex.: disco temporário); tenta o PNCP de novo
+    if not ed.arquivo and ed.numero_controle:
+        doc = pncp.baixar_edital(ed.numero_controle)
+        if doc and doc.get("conteudo"):
+            ed.arquivo = arquivos.salvar_bytes(doc["conteudo"], f"editais/{ed.empresa_id}")
+            ed.arquivo_url, ed.nome_arquivo = doc.get("url"), ed.nome_arquivo or doc.get("nome")
+            if not ed.texto:
+                ed.texto = doc.get("texto")
+            db.session.commit()
+    if not ed.arquivo:
+        raise ErroAPI("O documento deste edital não está disponível. Envie o PDF pela opção Editar ou consulte no PNCP.", 404)
+    nome = ed.nome_arquivo or "edital.pdf"
+    ext = os.path.splitext(ed.arquivo)[1].lower()
+    tipos = {".pdf": "application/pdf", ".txt": "text/plain; charset=utf-8",
+             ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".doc": "application/msword"}
+    return send_file(arquivos.caminho_absoluto(ed.arquivo), mimetype=tipos.get(ext, "application/octet-stream"),
+                     as_attachment=ext not in (".pdf", ".txt"), download_name=nome)
+
+
 @bp.delete("/editais/<int:edid>")
 @login_requerido
 def excluir(edid):
@@ -169,27 +205,79 @@ def excluir(edid):
     AnaliseConcorrente.query.filter_by(edital_id=edid).delete()
     Prazo.query.filter_by(edital_id=edid).delete()
     Peca.query.filter_by(edital_id=edid).update({"edital_id": None})
+    from models import Proposta
+    Proposta.query.filter_by(edital_id=edid).update({"edital_id": None})
     db.session.delete(ed)
     db.session.commit()
     return jsonify({"ok": True})
+
+
+ANALISE_LIMITE_MIN = 20  # sem conclusão depois disso, a análise é dada como perdida (ex.: servidor reiniciou)
+
+
+def _expirar_travadas(edid):
+    limite = datetime.utcnow() - timedelta(minutes=ANALISE_LIMITE_MIN)
+    for a in Analise.query.filter(Analise.edital_id == edid, Analise.status == "processando",
+                                  Analise.criado_em < limite).all():
+        a.status, a.etapa = "erro", None
+        a.erro = "A análise foi interrompida (o servidor reiniciou ou demorou demais). Nada foi descontado; tente de novo."
+    db.session.commit()
+
+
+def _rodar_analise(app, analise_id, edital_id, empresa_id, conta_id):
+    """Executa em segundo plano: a análise de um edital grande leva vários minutos e passaria do
+    tempo máximo de uma requisição web."""
+    with app.app_context():
+        from models import Conta, Empresa
+        analise = Analise.query.get(analise_id)
+        ed, empresa, conta = Edital.query.get(edital_id), Empresa.query.get(empresa_id), Conta.query.get(conta_id)
+        try:
+            _, respostas = fluxos.analisar_edital(ed, empresa, analise)
+            planos.registrar_uso(conta, "analises", respostas)
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            app.logger.exception("Falha na análise %s", analise_id)
+            analise = Analise.query.get(analise_id)
+            analise.status, analise.etapa = "erro", None
+            msg = e.mensagem if isinstance(e, ErroAPI) else "Não foi possível concluir a análise agora. Tente novamente em instantes."
+            if not isinstance(e, ErroAPI) and "Nenhuma IA respondeu" in str(e):
+                msg = "Os serviços de IA não responderam. Tente novamente em alguns minutos."
+            analise.erro = msg
+            db.session.commit()
+        finally:
+            db.session.remove()
 
 
 @bp.post("/editais/<int:edid>/analisar")
 @login_requerido
 def analisar(edid):
     ed = edital_da_conta(edid)
+    if not ed.texto:
+        raise ErroAPI("Este edital ainda não tem texto. Envie o PDF do edital para analisar.")
+    _expirar_travadas(edid)
+    andamento = Analise.query.filter_by(edital_id=edid, status="processando").first()
+    if andamento:  # clique duplo ou outra aba: acompanha a que já está rodando
+        return jsonify(andamento.to_dict()), 202
     planos.exigir(g.conta, "analises")
     empresa = empresa_da_conta(ed.empresa_id)
-    try:
-        analise, respostas = fluxos.analisar_edital(ed, empresa)
-    except ErroAPI:
-        raise
-    except Exception as e:
-        db.session.rollback()
-        raise ErroAPI(f"Não foi possível concluir a análise agora. Tente novamente em instantes. ({e})", 502)
-    planos.registrar_uso(g.conta, "analises", respostas)
+    analise = Analise(edital_id=edid, status="processando", etapa="Na fila")
+    db.session.add(analise)
     db.session.commit()
-    return jsonify(analise.to_dict()), 201
+    threading.Thread(target=_rodar_analise, daemon=True,
+                     args=(current_app._get_current_object(), analise.id, ed.id, empresa.id, g.conta.id)).start()
+    return jsonify(analise.to_dict()), 202
+
+
+@bp.get("/editais/<int:edid>/analises/<int:aid>")
+@login_requerido
+def ver_analise(edid, aid):
+    edital_da_conta(edid)
+    _expirar_travadas(edid)
+    a = Analise.query.filter_by(id=aid, edital_id=edid).first()
+    if not a:
+        raise ErroAPI("Análise não encontrada.", 404)
+    return jsonify(a.to_dict())
 
 
 @bp.post("/editais/<int:edid>/resultado")

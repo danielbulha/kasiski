@@ -45,8 +45,8 @@ def _email(email):
     return current_app.config.get("MP_EMAIL_COMPRADOR_TESTE") or email
 
 
-def _url_retorno():
-    return current_app.config["FRONTEND_URL"] + "/?pagamento=retorno"
+def _url_retorno(destino=None):
+    return current_app.config["FRONTEND_URL"] + "/?pagamento=retorno" + (f"&destino={destino}" if destino else "")
 
 
 def _url_webhook():
@@ -70,16 +70,16 @@ def criar_assinatura(*, email, valor, anual, titulo, referencia):
     return d["id"], d["init_point"]
 
 
-def criar_pagamento_avulso(*, email, valor, anual, titulo, referencia):
+def criar_pagamento_avulso(*, email, valor, anual, titulo, referencia, destino=None, parcelas=None):
     """Checkout Pro (Pix, boleto ou cartão). Devolve (id da preferência, link de pagamento)."""
     corpo = {
         "items": [{"id": referencia, "title": titulo, "quantity": 1, "unit_price": valor, "currency_id": "BRL"}],
         "payer": {"email": _email(email)},
         "external_reference": referencia,
-        "back_urls": {k: _url_retorno() for k in ("success", "pending", "failure")},
+        "back_urls": {k: _url_retorno(destino) for k in ("success", "pending", "failure")},
         "auto_return": "approved",
         "statement_descriptor": "KASISKI",
-        "payment_methods": {"installments": 12 if anual else 1},
+        "payment_methods": {"installments": parcelas or (12 if anual else 1)},
     }
     if _url_webhook():
         corpo["notification_url"] = _url_webhook()

@@ -2,20 +2,21 @@
 const ROTAS = [
   [/^#\/painel$/, "painel"], [/^#\/radar$/, "radar"], [/^#\/editais$/, "editais"], [/^#\/editais\/(\d+)$/, "edital"],
   [/^#\/cofre$/, "cofre"], [/^#\/concorrentes$/, "concorrentes"], [/^#\/concorrentes\/(\d+)$/, "concorrente"],
-  [/^#\/pecas$/, "pecas"], [/^#\/pecas\/(\d+)$/, "peca"], [/^#\/agenda$/, "agenda"],
-  [/^#\/contratos$/, "contratos"], [/^#\/contratos\/(\d+)$/, "contrato"], [/^#\/precos$/, "precos"],
+  [/^#\/pecas$/, "pecas"], [/^#\/pecas\/advogado$/, "advogado"], [/^#\/pecas\/(\d+)$/, "peca"], [/^#\/agenda$/, "agenda"],
+  [/^#\/contratos$/, "contratos"], [/^#\/contratos\/(\d+)$/, "contrato"], [/^#\/precos$/, "precos"], [/^#\/propostas\/(\d+)$/, "proposta"],
   [/^#\/empresas$/, "empresas"], [/^#\/conta$/, "conta"], [/^#\/glossario$/, "glossario"], [/^#\/admin$/, "admin"],
 ];
 
 const NAV = [
   ["Antes da disputa", [["#/radar", "Radar de editais", "radar"], ["#/editais", "Editais", "editais"], ["#/cofre", "Cofre de documentos", "cofre"]]],
-  ["Na disputa", [["#/concorrentes", "Concorrentes", "concorrentes"], ["#/pecas", "Peças", "pecas"], ["#/agenda", "Agenda de prazos", "agenda"]]],
-  ["Depois da disputa", [["#/contratos", "Contratos", "contratos"], ["#/precos", "Preços praticados", "precos"]]],
+  ["Na disputa", [["#/precos", "Preços e propostas", "precos"], ["#/concorrentes", "Concorrentes", "concorrentes"], ["#/pecas", "Peças", "pecas"], ["#/agenda", "Agenda de prazos", "agenda"]]],
+  ["Depois da disputa", [["#/contratos", "Gestão de contratos", "contratos"]]],
 ];
 
 function layout() {
   const opcoes = S.empresas.map((e) => `<option value="${e.id}" ${e.id === S.empresaId ? "selected" : ""}>${esc(e.razao_social)}</option>`).join("");
-  const rota = location.hash.split("/").slice(0, 2).join("/");
+  let rota = location.hash.split("/").slice(0, 2).join("/");
+  if (rota === "#/propostas") rota = "#/precos";
   const link = ([h, t, ic], badge) => `<a href="${h}" class="${rota === h ? "ativo" : ""}">
     <span class="rotulo">${ic ? icone(ic, 17) : ""}${esc(t)}</span>${badge ? `<span class="contador">${badge}</span>` : ""}</a>`;
   const aviso = [];
@@ -168,8 +169,9 @@ function ligarEntrada(cadastro) {
   const q = new URLSearchParams(location.search);
   if (q.get("pagamento") !== "retorno") return;
   const info = { payment_id: q.get("payment_id") || q.get("collection_id") || "", status: q.get("status") || q.get("collection_status") || "" };
-  try { sessionStorage.setItem("kasiski_retorno_mp", JSON.stringify(info)); } catch { /* segue */ }
-  history.replaceState(null, "", location.pathname + "#/conta");
+  const advogado = q.get("destino") === "advogado";
+  try { sessionStorage.setItem(advogado ? "kasiski_retorno_advogado" : "kasiski_retorno_mp", JSON.stringify(info)); } catch { /* segue */ }
+  history.replaceState(null, "", location.pathname + (advogado ? "#/pecas/advogado" : "#/conta"));
 })();
 
 function entrarComToken(token, novo) {

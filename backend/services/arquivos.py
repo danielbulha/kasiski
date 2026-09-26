@@ -24,6 +24,15 @@ def salvar(arquivo, subpasta):
     return caminho_rel, nome
 
 
+def salvar_bytes(conteudo, subpasta, ext=".pdf"):
+    pasta = os.path.join(current_app.config["UPLOAD_DIR"], subpasta)
+    os.makedirs(pasta, exist_ok=True)
+    caminho_rel = os.path.join(subpasta, f"{uuid.uuid4().hex}{ext}")
+    with open(os.path.join(current_app.config["UPLOAD_DIR"], caminho_rel), "wb") as f:
+        f.write(conteudo)
+    return caminho_rel
+
+
 def caminho_absoluto(rel):
     return os.path.join(current_app.config["UPLOAD_DIR"], rel)
 

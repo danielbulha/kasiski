@@ -71,12 +71,21 @@ def _verificar(texto, itens, familia_principal):
 
 
 # ---------------------------------------------------------------- edital
-def analisar_edital(edital, empresa):
+def _etapa(analise, texto):
+    if analise is not None:
+        analise.etapa = texto
+        db.session.commit()
+
+
+def analisar_edital(edital, empresa, analise=None):
+    """Roda as três etapas. Com `analise` (registro em processamento), preenche esse registro e
+    atualiza a etapa a cada passo, para a tela mostrar o andamento."""
     if not edital.texto:
         raise ErroAPI("Este edital ainda não tem texto. Envie o PDF do edital para analisar.")
     texto = cortar(edital.texto)
 
     # 1) Extração estruturada com a IA mais barata
+    _etapa(analise, "Lendo o edital e extraindo os dados")
     s, u, demo = prompts.extracao_edital(texto)
     r_ext = llm.chamar("barata", s, u, max_tokens=4000, demo=demo)
     extracao = llm.extrair_json(r_ext.texto)
@@ -91,6 +100,7 @@ def analisar_edital(edital, empresa):
         edital.data_abertura = _data_iso(extracao["data_abertura"])
 
     # 2) Análise jurídica com a Claude
+    _etapa(analise, "Conferindo habilitação e cláusulas")
     ref = edital.data_abertura.date() if edital.data_abertura else date.today()
     cofre = [{"tipo": d.tipo, "categoria": d.categoria, "validade": d.validade.isoformat() if d.validade else None,
               "situacao_na_sessao": d.situacao(ref)} for d in Documento.query.filter_by(empresa_id=empresa.id)]
@@ -113,17 +123,21 @@ def analisar_edital(edital, empresa):
         rk["id"] = f"r{i}"
         itens.append({"id": rk["id"], "tipo": "risco", "tema": rk.get("tema"), "descricao": rk.get("descricao"),
                       "pagina": rk.get("pagina")})
+    _etapa(analise, "Verificação cruzada com a segunda IA")
     mapa, r_ver = _verificar(texto, itens, r_an.familia)
     for lista in (resultado.get("clausulas_restritivas", []), resultado.get("riscos", [])):
         for it in lista:
             it["verificacao"] = mapa.get(it["id"], {"confirmado": None, "comentario": "Sem retorno do revisor."})
 
     resultado["extracao"] = extracao
-    analise = Analise(edital_id=edital.id, resultado=resultado,
-                      modelos={"extracao": r_ext.modelo, "analise": r_an.modelo,
-                               "verificacao": r_ver.modelo if r_ver else None},
-                      demonstracao=r_an.demonstracao)
-    db.session.add(analise)
+    if analise is None:
+        analise = Analise(edital_id=edital.id)
+        db.session.add(analise)
+    analise.resultado = resultado
+    analise.modelos = {"extracao": r_ext.modelo, "analise": r_an.modelo, "verificacao": r_ver.modelo if r_ver else None}
+    analise.demonstracao = r_an.demonstracao
+    analise.status, analise.etapa, analise.erro = "concluida", None, None
+    analise.concluido_em = datetime.utcnow()
     gerar_prazos_edital(edital)
     return analise, [r_ext, r_an, r_ver]
 
@@ -186,7 +200,7 @@ def montar_dossie(cnpj):
 
 
 def analisar_concorrente(edital, concorrente, tipo, texto, nome_arquivo, valor_proposta=None, engenharia=False):
-    ultima = Analise.query.filter_by(edital_id=edital.id).order_by(Analise.id.desc()).first()
+    ultima = Analise.query.filter_by(edital_id=edital.id, status="concluida").order_by(Analise.id.desc()).first()
     extracao = (ultima.resultado or {}).get("extracao", {}) if ultima else {}
     exigencias = extracao.get("exigencias_habilitacao", []) if tipo == "habilitacao" else {
         "especificacoes": extracao.get("exigencias_tecnicas_objeto", []),
@@ -203,8 +217,9 @@ def analisar_concorrente(edital, concorrente, tipo, texto, nome_arquivo, valor_p
     contexto = kb.buscar(f"{termo} recurso {edital.objeto or ''} "
                          f"{_termos_setoriais(edital.tipo_objeto, edital.segmento)}", k=5)
     texto = cortar(texto)
+    from services.concorrencia import contexto_para_analise
     s, u, demo = prompts.analise_concorrente(tipo, texto, exigencias, dossie_resumo, edital_info, contexto,
-                                             valor_proposta)
+                                             valor_proposta, historico=contexto_para_analise(concorrente))
     r_an = llm.chamar("analise", s, u, max_tokens=6000, demo=demo)
     resultado = llm.extrair_json(r_an.texto)
 
@@ -253,6 +268,16 @@ def analisar_concorrente(edital, concorrente, tipo, texto, nome_arquivo, valor_p
     ordem = {"forte": 0, "medio": 1, "fraco": 2}
     resultado["apontamentos"] = sorted(confirmados, key=lambda a: ordem.get(a.get("forca"), 3))
     resultado["descartados"] = descartados
+    # Sugestões de peça (recurso, contrarrazões...) combinando apontamentos confirmados e histórico do concorrente
+    for i, sg in enumerate(resultado.get("sugestoes") or []):
+        sg["id"] = f"s{i}"
+        sg["descricao"] = sg.get("argumento")
+    for i, cz in enumerate(resultado.get("cruzamentos_historico") or []):
+        cz["id"] = f"h{i}"
+        cz["descricao"] = f"{cz.get('o_que_o_historico_mostra', '')} Conferir: {cz.get('o_que_conferir_no_documento_atual', '')}".strip()
+    resultado["usou_historico"] = bool(concorrente.perfil)
+    if concorrente.perfil:
+        concorrente.perfil_status = "desatualizado"  # a nova análise ainda não entrou no dossiê consolidado
 
     ac = AnaliseConcorrente(edital_id=edital.id, concorrente_id=concorrente.id, tipo=tipo, nome_arquivo=nome_arquivo,
                             resultado=resultado, demonstracao=r_an.demonstracao,

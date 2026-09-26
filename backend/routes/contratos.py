@@ -1,44 +1,22 @@
-"""Gestão pós-contrato: vigência, garantia, reajuste e pagamentos, com prazos automáticos na agenda."""
-from datetime import date, timedelta
+"""Gestão de contratos: leitura do PDF pela IA, rotinas de gestão, prazos preventivos e pagamentos."""
+from datetime import date, datetime, timedelta
 
-from flask import Blueprint, g, jsonify
+from flask import Blueprint, current_app, g, jsonify, request
 
 import planos
 from auth import login_requerido
 from extensions import ErroAPI, db
 from models import Contrato, Pagamento, Peca, Prazo
 from routes import contrato_da_conta, dados, edital_da_conta, empresa_da_conta, para_data, para_float
+from services import arquivos, tarefas
+from services import contratos as gestao
 from services.prazos import fim_do_dia
 
 bp = Blueprint("contratos", __name__, url_prefix="/api")
 
 
-def _mais_um_ano(d):
-    try:
-        return d.replace(year=d.year + 1)
-    except ValueError:  # 29/02
-        return d + timedelta(days=365)
-
-
 def _prazos_contrato(c):
-    Prazo.query.filter_by(contrato_id=c.id, automatico=True).delete(synchronize_session=False)
-    base = {"empresa_id": c.empresa_id, "contrato_id": c.id, "automatico": True}
-    nome = f"Contrato {c.numero or c.id}"
-    novos = []
-    if c.fim:
-        novos.append(Prazo(titulo=f"{nome}: fim da vigência", data=fim_do_dia(c.fim), tipo="vigencia",
-                           fundamento="Avaliar prorrogação com antecedência (Lei 14.133, arts. 106 e 107)", **base))
-    if c.garantia_validade:
-        novos.append(Prazo(titulo=f"{nome}: vencimento da garantia", data=fim_do_dia(c.garantia_validade),
-                           tipo="garantia", fundamento="Renovar a garantia contratual (Lei 14.133, art. 96)", **base))
-    if c.data_base_reajuste:
-        alvo = _mais_um_ano(c.data_base_reajuste)
-        while alvo < date.today():
-            alvo = _mais_um_ano(alvo)
-        novos.append(Prazo(titulo=f"{nome}: aniversário para reajuste/repactuação", data=fim_do_dia(alvo),
-                           tipo="reajuste", fundamento="Anualidade contada da data do orçamento estimado "
-                           "(Lei 14.133, art. 25, §7º, e art. 135)", **base))
-    db.session.add_all(novos)
+    gestao.gerar_prazos(c)
 
 
 def _preencher(c, d):
@@ -67,6 +45,40 @@ def listar(eid):
     return jsonify(saida)
 
 
+def _ler_pdf(cid, conta_id):
+    from models import Conta
+    c, conta = Contrato.query.get(cid), Conta.query.get(conta_id)
+    try:
+        respostas = gestao.ler_contrato(c)
+        c.leitura_status, c.leitura_erro = "concluida", None
+        if not c.orgao:
+            c.orgao = "Órgão não identificado"
+        if not c.objeto:
+            c.objeto = "Objeto não identificado — confira o contrato"
+        gestao.gerar_prazos(c)
+        planos.registrar_uso(conta, "contratos", respostas, cobravel=False)
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.exception("Falha na tarefa _ler_pdf (id %s)", cid)
+        c = Contrato.query.get(cid)
+        c.leitura_status = "erro"
+        c.leitura_erro = (e.mensagem if isinstance(e, ErroAPI) else
+                          "Não foi possível ler o contrato agora. Preencha os dados manualmente ou tente de novo.")
+        c.orgao = c.orgao or "A preencher"
+        c.objeto = c.objeto or "A preencher"
+    db.session.commit()
+
+
+def _anexar_pdf(c):
+    f = request.files.get("arquivo")
+    if not f or not f.filename:
+        return False
+    c.arquivo, c.nome_arquivo = arquivos.salvar(f, f"contratos/{c.empresa_id}")
+    c.texto = arquivos.extrair_texto(c.arquivo)
+    c.leitura_status, c.leitura_erro = "lendo", None
+    return True
+
+
 @bp.post("/empresas/<int:eid>/contratos")
 @login_requerido
 def criar(eid):
@@ -75,26 +87,101 @@ def criar(eid):
     d = dados()
     c = Contrato(empresa_id=eid)
     if d.get("edital_id"):  # a partir de um edital ganho
-        ed = edital_da_conta(d["edital_id"])
+        ed = edital_da_conta(int(d["edital_id"]))
         c.edital_id, c.orgao, c.objeto = ed.id, ed.orgao, ed.objeto
         ed.status = "ganho"
-    _preencher(c, d)
-    if not (c.orgao and c.objeto):
-        raise ErroAPI("Informe o órgão e o objeto do contrato.")
+    _preencher(c, {k: v for k, v in d.items() if v not in ("", None)})
+    com_pdf = _anexar_pdf(c)
+    if not com_pdf and not (c.orgao and c.objeto):
+        raise ErroAPI("Envie o PDF do contrato ou informe o órgão e o objeto.")
     db.session.add(c)
     db.session.flush()
-    _prazos_contrato(c)
+    if not com_pdf:
+        _prazos_contrato(c)
     db.session.commit()
+    if com_pdf:
+        tarefas.rodar(_ler_pdf, c.id, g.conta.id)
     return jsonify(c.to_dict(True)), 201
+
+
+@bp.post("/contratos/<int:cid>/arquivo")
+@login_requerido
+def enviar_arquivo(cid):
+    """Envia (ou reenvia) o PDF do contrato e roda a leitura pela IA de novo."""
+    c = contrato_da_conta(cid)
+    if c.leitura_status == "lendo":
+        return jsonify(c.to_dict(True)), 202
+    if not _anexar_pdf(c):
+        if not c.texto:
+            raise ErroAPI("Envie o PDF do contrato.")
+        c.leitura_status, c.leitura_erro = "lendo", None
+    db.session.commit()
+    tarefas.rodar(_ler_pdf, c.id, g.conta.id)
+    return jsonify(c.to_dict(True)), 202
+
+
+@bp.patch("/contratos/<int:cid>/obrigacoes")
+@login_requerido
+def editar_obrigacoes(cid):
+    c = contrato_da_conta(cid)
+    lista = (dados().get("obrigacoes") or [])
+    if not isinstance(lista, list):
+        raise ErroAPI("Lista de rotinas inválida.")
+    limpas = []
+    for o in lista[:40]:
+        if not isinstance(o, dict) or not str(o.get("descricao") or "").strip():
+            continue
+        per = o.get("periodicidade") if o.get("periodicidade") in (*gestao.PERIODOS, "unica") else "mensal"
+        try:
+            dia = int(o.get("dia_do_mes")) if o.get("dia_do_mes") not in (None, "") else None
+        except (TypeError, ValueError):
+            dia = None
+        limpas.append({"descricao": str(o["descricao"]).strip()[:300], "periodicidade": per,
+                       "dia_do_mes": dia if dia and 1 <= dia <= 31 else None, "prazo": str(o.get("prazo") or "")[:200],
+                       "fundamento": str(o.get("fundamento") or "")[:200], "pagina": str(o.get("pagina") or ""),
+                       "ativa": o.get("ativa", True) not in (False, "false", 0)})
+    c.obrigacoes = limpas
+    gestao.gerar_prazos(c)
+    db.session.commit()
+    return jsonify(c.to_dict(True))
+
+
+@bp.get("/empresas/<int:eid>/gestao-contratos")
+@login_requerido
+def painel_gestao(eid):
+    """Resumo da carteira: limite do plano, próximos prazos de gestão e pendências."""
+    empresa_da_conta(eid)
+    hoje = datetime.utcnow()
+    ids = [c.id for c in Contrato.query.filter_by(empresa_id=eid)]
+    prazos = Prazo.query.filter(Prazo.contrato_id.in_(ids), Prazo.concluido.is_(False),
+                                Prazo.data <= hoje + timedelta(days=45)).order_by(Prazo.data).limit(40).all() if ids else []
+    return jsonify({"uso": planos.contar_contratos(g.conta), "limite": planos.limite_contratos(g.conta),
+                    "prazos": [p.to_dict() for p in prazos], "pacote": planos.PACOTE_CONTRATOS,
+                    "plano_permite": bool(planos.PLANOS.get(g.conta.plano, {}).get("contratos"))})
 
 
 @bp.get("/contratos/<int:cid>")
 @login_requerido
 def ver(cid):
     c = contrato_da_conta(cid)
+    if c.leitura_status == "lendo" and c.criado_em and c.criado_em < datetime.utcnow() - timedelta(minutes=20) \
+            and not c.dados_ia:
+        c.leitura_status, c.leitura_erro = "erro", "A leitura foi interrompida. Clique em Ler de novo."
+        db.session.commit()
     d = c.to_dict(True)
+    d["prazos"] = [p.to_dict() for p in Prazo.query.filter_by(contrato_id=cid).order_by(Prazo.concluido, Prazo.data).all()]
     d["pecas"] = [p.to_dict(False) for p in Peca.query.filter_by(contrato_id=cid).order_by(Peca.id.desc())]
     return jsonify(d)
+
+
+@bp.get("/contratos/<int:cid>/arquivo")
+@login_requerido
+def baixar_arquivo(cid):
+    from flask import send_file
+    c = contrato_da_conta(cid)
+    if not c.arquivo:
+        raise ErroAPI("Este contrato não tem arquivo.", 404)
+    return send_file(arquivos.caminho_absoluto(c.arquivo), download_name=c.nome_arquivo, as_attachment=True)
 
 
 @bp.patch("/contratos/<int:cid>")

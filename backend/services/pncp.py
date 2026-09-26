@@ -122,16 +122,23 @@ def detalhe(numero_controle):
 
 
 def baixar_texto_edital(numero_controle):
-    """Baixa o primeiro PDF de edital publicado e devolve (texto, nome_arquivo). Zip e imagens são ignorados."""
+    """Compatibilidade: devolve só (texto, nome_arquivo)."""
+    d = baixar_edital(numero_controle)
+    return (d["texto"], d["nome"]) if d else (None, None)
+
+
+def baixar_edital(numero_controle):
+    """Baixa o primeiro PDF de edital publicado. Devolve {texto, nome, conteudo, url} ou None.
+    Zip e imagens são ignorados."""
     partes = partes_controle(numero_controle)
     if not partes:
-        return None, None
+        return None
     cnpj, ano, seq = partes
     try:
         arquivos = _get(f"{BASE_PNCP}/orgaos/{cnpj}/compras/{ano}/{seq}/arquivos") or []
     except Exception as e:
         log.warning("Lista de arquivos PNCP falhou: %s", e)
-        return None, None
+        return None
     arquivos = sorted(arquivos, key=lambda a: 0 if "edital" in str(a.get("tipoDocumentoNome", "")).lower() else 1)
     for a in arquivos:
         url = a.get("url") or a.get("uri")
@@ -143,10 +150,12 @@ def baixar_texto_edital(numero_controle):
                 continue
             texto = texto_de_pdf_bytes(r.content)
             if len(texto) > 500:
-                return texto, a.get("titulo") or "edital.pdf"
+                nome = a.get("titulo") or "edital"
+                return {"texto": texto, "nome": nome if nome.lower().endswith(".pdf") else f"{nome}.pdf",
+                        "conteudo": r.content, "url": url}
         except Exception as e:
             log.warning("Download de arquivo PNCP falhou: %s", e)
-    return None, None
+    return None
 
 
 def historico_fornecedor(cnpj, limite=20):
@@ -164,4 +173,56 @@ def historico_fornecedor(cnpj, limite=20):
                           "valor": it.get("valor_global"), "uf": it.get("uf"),
                           "data": it.get("data_publicacao_pncp") or it.get("data_inicio_vigencia"),
                           "numero_controle": it.get("numero_controle_pncp")})
+    return saida
+
+
+_DOC_RELEVANTE = re.compile(r"ata|julgament|habilita|recurs|resultado|decis|parecer|adjudica|homologa|relat[oó]rio|diligên|dilig", re.I)
+_DOC_IGNORAR = re.compile(r"\bedital\b|termo de refer|estudo t[eé]cnico|projeto b[aá]sico|minuta|aviso", re.I)
+
+
+def compra_do_contrato(numero_controle_contrato):
+    """'CNPJ-2-000140/2026' -> numero de controle da compra de origem ('CNPJ-1-000968/2026') ou None."""
+    try:
+        cnpj, _, resto = numero_controle_contrato.split("-")
+        seq, ano = resto.split("/")
+        d = _get(f"{BASE_PNCP}/orgaos/{cnpj}/contratos/{ano}/{int(seq)}") or {}
+        return d.get("numeroControlePncpCompra") or d.get("numeroControlePNCPCompra")
+    except Exception as e:
+        log.warning("Contrato PNCP %s sem compra de origem: %s", numero_controle_contrato, e)
+        return None
+
+
+def documentos_de_julgamento(numero_controle_compra, limite=3):
+    """Atas, julgamentos, decisões de recurso etc. publicados na compra (PDFs). Devolve [{titulo, tipo, url, conteudo, texto}]."""
+    partes = partes_controle(numero_controle_compra)
+    if not partes:
+        return []
+    cnpj, ano, seq = partes
+    try:
+        arquivos = _get(f"{BASE_PNCP}/orgaos/{cnpj}/compras/{ano}/{seq}/arquivos") or []
+    except Exception as e:
+        log.warning("Arquivos da compra %s indisponíveis: %s", numero_controle_compra, e)
+        return []
+    saida = []
+    for a in arquivos:
+        rotulo = f"{a.get('tipoDocumentoNome') or ''} {a.get('titulo') or ''}"
+        if not _DOC_RELEVANTE.search(rotulo) or _DOC_IGNORAR.search(rotulo):
+            continue
+        url = a.get("url") or a.get("uri")
+        if not url:
+            continue
+        try:
+            r = requests.get(url, headers={"User-Agent": CAB["User-Agent"]}, timeout=60)
+            if r.content[:4] != b"%PDF" or len(r.content) > 25 * 1024 * 1024:
+                continue
+            texto = texto_de_pdf_bytes(r.content)
+            if len(texto) < 200:
+                continue
+            saida.append({"titulo": (a.get("titulo") or a.get("tipoDocumentoNome") or "Documento")[:300],
+                          "tipo_pncp": a.get("tipoDocumentoNome"), "url": url, "conteudo": r.content, "texto": texto,
+                          "data": a.get("dataPublicacaoPncp")})
+        except Exception as e:
+            log.warning("Download de documento PNCP falhou: %s", e)
+        if len(saida) >= limite:
+            break
     return saida

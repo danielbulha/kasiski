@@ -13,11 +13,12 @@ V.editais = async (el) => {
       (formato CNPJ-1-sequencial/ano) ou enviando o PDF, para editais de portais sem integração com o PNCP.
       Depois de cadastrado, use <b>Analisar edital</b> para a IA extrair os dados, conferir sua habilitação e apontar cláusulas restritivas.</p>`)}
     <section class="bloco tabela-rolagem">
-      ${lista.length ? `<table><thead><tr><th>Objeto</th><th>Órgão</th><th>Sessão</th><th>Valor</th><th>Status</th><th>Análise</th></tr></thead>
+      ${lista.length ? `<table><thead><tr><th>Objeto</th><th>Órgão</th><th>Sessão</th><th>Valor</th><th>Status</th><th>Análise</th><th><span class="oculto-visual">Documento</span></th></tr></thead>
         <tbody>${lista.map(linhaEdital).join("")}</tbody></table>` : vazio("Nenhum edital aqui", "Use o radar ou cadastre um edital para começar.")}
     </section>`;
   $("#filtro", el).onchange = (ev) => { sessionStorage.setItem("editais_status", ev.target.value); V.editais(el); };
-  $$("tr.clicavel", el).forEach((tr) => tr.onclick = () => { location.hash = `#/editais/${tr.dataset.id}`; });
+  $$("tr.clicavel", el).forEach((tr) => tr.onclick = (ev) => { if (ev.target.closest("[data-documento],[data-sem-linha]")) return; location.hash = `#/editais/${tr.dataset.id}`; });
+  $$("[data-documento]", el).forEach((b) => b.onclick = (ev) => { ev.stopPropagation(); abrirDocumentoEdital(b.dataset.documento, b); });
   $("#novo", el).onclick = () => modalNovoEdital();
 };
 
@@ -30,7 +31,9 @@ function linhaEdital(e) {
     <td>${fmt.dataHora(e.data_abertura)}</td>
     <td>${fmt.moeda(e.valor_estimado)}</td>
     <td>${carimbo(ROTULOS.statusEdital[e.status] || e.status, e.status === "ganho" ? "ok" : e.status === "perdido" ? "erro" : "neutro")}</td>
-    <td>${decisao || "<span class='fraco'>Não analisado</span>"}</td></tr>`;
+    <td>${decisao || "<span class='fraco'>Não analisado</span>"}</td>
+    <td class="acoes-celula">${e.tem_documento ? `<button class="botao-icone" data-documento="${e.id}" title="Abrir o edital" aria-label="Abrir o documento do edital">${icone("olho", 17)}</button>` : ""}
+      ${e.link ? `<a class="botao-icone" href="${esc(e.link)}" target="_blank" rel="noopener" data-sem-linha title="Ver no PNCP" aria-label="Ver no PNCP">${icone("chevronDireita", 17)}</a>` : ""}</td></tr>`;
 }
 
 function modalNovoEdital() {
@@ -103,43 +106,43 @@ V.edital = async (el, id) => {
           </select></dd></div>
         <div><dt>Portal da disputa</dt><dd>${esc(ed.portal_disputa || "—")}</dd></div>
         <div><dt>Local</dt><dd>${esc(ed.municipio || "—")}${ed.uf ? "/" + esc(ed.uf) : ""}</dd></div>
-        <div><dt>Documento</dt><dd>${ed.link ? `<a href="${esc(ed.link)}" target="_blank" rel="noopener">Ver no PNCP</a>` : ed.nome_arquivo ? esc(ed.nome_arquivo) : "—"}</dd></div>
+        <div><dt>Documento</dt><dd>${ed.tem_documento ? `<button class="botao pequeno secundario" id="abrir-doc">${icone("olho", 14)} Abrir edital</button>` : ""}
+          ${ed.link ? ` <a href="${esc(ed.link)}" target="_blank" rel="noopener">Ver no PNCP</a>` : ""}${!ed.tem_documento && !ed.link ? "—" : ""}
+          ${ed.nome_arquivo ? `<br><small class="fraco">${esc(ed.nome_arquivo)}</small>` : ""}</dd></div>
       </dl></div>
     <div class="abas" role="tablist">${abas.map(([k, t]) => `<button data-aba="${k}" class="${aba === k ? "ativa" : ""}">${t}</button>`).join("")}</div>
     <div id="painel-aba"></div>`;
+  const ad = $("#abrir-doc", el); if (ad) ad.onclick = () => abrirDocumentoEdital(id, ad);
   $("#status", el).onchange = async (ev) => { await api("PATCH", `/api/editais/${id}`, { status: ev.target.value }); toast("Status atualizado.", "ok"); };
   $("#tipo_objeto_ed", el).onchange = async (ev) => { await api("PATCH", `/api/editais/${id}`, { tipo_objeto: ev.target.value }); toast("Tipo de objeto atualizado.", "ok"); };
   $("#segmento_ed", el).onchange = async (ev) => { await api("PATCH", `/api/editais/${id}`, { segmento: ev.target.value }); toast("Segmento atualizado.", "ok"); };
   $$("[data-aba]", el).forEach((b) => b.onclick = () => { sessionStorage.setItem("edital_aba_" + id, b.dataset.aba); V.edital(el, id); });
   const painel = $("#painel-aba", el);
-  if (aba === "analise") painelAnalise(painel, ed, d.analises);
+  if (aba === "analise") painelAnalise(painel, ed, d.analises, d.analise_andamento);
   if (aba === "prazos") painelPrazosEdital(painel, ed, d.prazos);
   if (aba === "concorrentes") painelConcorrentesEdital(painel, ed, d.concorrentes);
   if (aba === "pecas") painelPecasEdital(painel, ed, d.pecas);
 };
 
-function painelAnalise(el, ed, analises) {
+function painelAnalise(el, ed, analises, andamento) {
   const ultima = analises[0];
   el.innerHTML = `
     <div class="acoes nao-imprimir" style="margin-bottom:14px">
       <button class="botao" id="analisar">${icone("radarPing")} ${ultima ? "Analisar novamente" : "Analisar edital"}</button>
       ${!ed.tem_texto ? `<span class="fraco">Envie o PDF do edital para habilitar a análise.</span>` : ""}
       ${ultima ? `<button class="botao secundario" id="imprimir">${icone("imprimir")} Imprimir relatório</button>` : ""}
+      <button class="botao secundario" id="montar-proposta">Montar proposta comercial</button>
     </div>
     <div id="corpo-analise">${ultima ? htmlAnalise(ultima) : guia(`<p>A análise extrai os dados do edital, confere cada exigência de habilitação
       contra o <a href="#/cofre">cofre de documentos</a> da empresa, aponta cláusulas que restringem a competição e recomenda se vale a pena participar.
       Cada cláusula restritiva e cada risco passam por uma segunda IA antes de aparecer aqui.</p>`)}</div>`;
-  $("#analisar", el).onclick = (ev) => ocupado(ev.target, "Analisando (pode levar até 1 minuto)…", async () => {
-    try {
-      await api("POST", `/api/editais/${ed.id}/analisar`);
-      await atualizarConta();
-      toast("Análise concluída.", "ok");
-      // Reabre a tela inteira: a análise pode ter classificado tipo de objeto/segmento
-      // e gerado prazos, e o cabeçalho e as outras abas precisam refletir isso.
-      V.edital($("#conteudo"), ed.id);
-    } catch (e) { avisarErro(e); }
-  });
+  $("#analisar", el).onclick = async () => {
+    try { acompanharAnalise(el, ed, await api("POST", `/api/editais/${ed.id}/analisar`)); }
+    catch (e) { avisarErro(e); }
+  };
   if (ultima) ligarAcoesAnalise(el, ed, ultima);
+  if (andamento) acompanharAnalise(el, ed, andamento);
+  $("#montar-proposta", el).onclick = () => modalNovaProposta(ed.id);
   const imp = $("#imprimir", el); if (imp) imp.onclick = () => window.print();
 }
 
@@ -295,15 +298,93 @@ function abrirParecerConcorrente(a) {
       id: ap.id, titulo: ap.tema, gravidade: ap.forca, pagina: ap.pagina, fundamento: ap.fundamento, corpo: ap.descricao,
       verificacao: ap.verificacao,
     })).join("") : "<p class='fraco'>Nenhum apontamento confirmado neste documento.</p>"}
+    ${(r.cruzamentos_historico || []).length ? `<h3 style="margin-top:16px">Cruzamento com o histórico da empresa</h3>
+      <p class="fraco">Hipóteses a conferir, a partir do dossiê completo (inabilitações e documentos de outros certames).</p>
+      ${r.cruzamentos_historico.map((z) => apontamentoHtml({ id: z.id, titulo: z.tema, gravidade: z.forca, fundamento: (z.fontes || []).join(", "),
+        corpo: `${z.o_que_o_historico_mostra || ""} — Conferir: ${z.o_que_conferir_no_documento_atual || ""}` })).join("")}` : ""}
+    ${(r.sugestoes || []).length ? `<h3 style="margin-top:16px">Sugestões de peça</h3>
+      ${r.sugestoes.map((sg) => apontamentoHtml({ id: sg.id, titulo: `${({ recurso: "Recurso", contrarrazoes: "Contrarrazões", intencao_recurso: "Intenção de recorrer", pedido_diligencia: "Pedido de diligência", impugnacao: "Impugnação", representacao: "Representação" })[sg.peca] || sg.peca}: ${sg.tema}`,
+        gravidade: sg.forca, fundamento: sg.fundamento, corpo: sg.argumento })).join("")}` : ""}
+    ${r.usou_historico === false ? `<p class="fraco" style="margin-top:12px">Dica: monte o <a href="#/concorrentes/${a.concorrente_id}">dossiê completo</a> deste concorrente para a IA cruzar com inabilitações e documentos de outros certames.</p>` : ""}
     ${(r.descartados || []).length ? `<details style="margin-top:10px"><summary class="fraco">${r.descartados.length} apontamento(s) descartado(s) pela verificação cruzada</summary>
       ${r.descartados.map((ap) => apontamentoHtml({ titulo: ap.tema, gravidade: ap.forca, corpo: ap.descricao, verificacao: ap.verificacao, semSelecao: true })).join("")}</details>` : ""}
     `, acoes: `<button class="botao secundario" data-fechar>Fechar</button>
-      ${(r.apontamentos || []).length ? `<button class="botao" id="usar-em-peca">Usar em recurso/contrarrazões</button>` : ""}`,
+      ${(r.apontamentos || []).length || (r.sugestoes || []).length ? `<button class="botao" id="usar-em-peca">Usar em recurso/contrarrazões</button>` : ""}`,
   });
   const bp = $("#usar-em-peca", m);
   if (bp) bp.onclick = () => {
-    const ids = (r.apontamentos || []).map((ap) => ap.id);
+    const marcados = $$(".sel-clausula:checked", m).map((c) => c.value);
+    const ids = marcados.length ? marcados : [...(r.apontamentos || []), ...(r.sugestoes || [])].map((ap) => ap.id);
     sessionStorage.setItem("nova_peca", JSON.stringify({ edital_id: a.edital_id, analise_concorrente_id: a.id, itens: ids }));
     m.fechar(); location.hash = "#/pecas";
   };
+}
+
+// A análise roda em segundo plano no servidor (editais grandes levam alguns minutos).
+// Esta função mostra o andamento e consulta a situação a cada poucos segundos.
+function acompanharAnalise(el, ed, a) {
+  const botao = $("#analisar", el);
+  if (botao) botao.disabled = true;
+  let caixa = $("#andamento-analise", el);
+  if (!caixa) {
+    caixa = document.createElement("div");
+    caixa.id = "andamento-analise";
+    caixa.className = "aviso info andamento-analise";
+    caixa.setAttribute("role", "status");
+    $("#corpo-analise", el).before(caixa);
+  }
+  const inicio = new Date(a.criado_em + (a.criado_em.endsWith("Z") ? "" : "Z"));
+  const desenhar = (x) => {
+    const seg = Math.max(0, Math.round((Date.now() - inicio) / 1000));
+    const tempo = seg < 60 ? `${seg}s` : `${Math.floor(seg / 60)} min ${String(seg % 60).padStart(2, "0")}s`;
+    caixa.innerHTML = `<span class="girando" aria-hidden="true"></span><div><b>Analisando o edital…</b> ${esc(x.etapa || "")} · ${tempo}
+      <br><small>Editais longos levam de 2 a 6 minutos. Pode sair desta tela: a análise continua e fica salva aqui.</small></div>`;
+  };
+  desenhar(a);
+  const passo = async () => {
+    if (!document.body.contains(caixa)) return; // usuário saiu da tela
+    let x;
+    try { x = await api("GET", `/api/editais/${ed.id}/analises/${a.id}`); } catch { setTimeout(passo, 8000); return; }
+    if (x.status === "processando") { a.etapa = x.etapa; desenhar(x); setTimeout(passo, 4000); return; }
+    if (x.status === "concluida") {
+      await atualizarConta();
+      toast("Análise concluída.", "ok");
+      // Reabre a tela inteira: a análise pode ter classificado tipo de objeto/segmento e gerado prazos.
+      V.edital($("#conteudo"), ed.id);
+      return;
+    }
+    caixa.className = "aviso erro";
+    caixa.textContent = x.erro || "A análise não foi concluída. Tente novamente.";
+    if (botao) botao.disabled = false;
+  };
+  const relogio = setInterval(() => { if (!document.body.contains(caixa) || !caixa.querySelector(".girando")) clearInterval(relogio); else desenhar(a); }, 1000);
+  setTimeout(passo, 3000);
+}
+
+// Abre o PDF do edital numa nova aba. A janela é aberta no clique (antes da chamada) para o navegador não bloquear.
+async function abrirDocumentoEdital(id, botao) {
+  const janela = window.open("", "_blank");
+  if (janela) janela.document.write("<p style='font-family:sans-serif;padding:24px'>Carregando o edital…</p>");
+  const original = botao?.innerHTML;
+  if (botao) botao.disabled = true;
+  try {
+    const r = await api("GET", `/api/editais/${id}/documento`);
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const pdf = (blob.type || "").includes("pdf") || (blob.type || "").startsWith("text/");
+    const nomeArq = decodeURIComponent(/filename\*?=(?:UTF-8'')?"?([^";]+)/i.exec(r.headers.get("Content-Disposition") || "")?.[1] || "edital.pdf");
+    if (pdf && janela) {
+      janela.document.open();
+      janela.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(nomeArq)}</title>
+        <style>html,body{margin:0;height:100%;font-family:Inter,Arial,sans-serif}header{display:flex;justify-content:space-between;align-items:center;padding:8px 14px;background:#071D2D;color:#fff;font-size:14px}
+        header a{color:#11B8C8}iframe{border:0;width:100%;height:calc(100% - 38px)}</style></head>
+        <body><header><span>${esc(nomeArq)}</span><a href="${url}" download="${esc(nomeArq)}">Baixar</a></header><iframe src="${url}" title="${esc(nomeArq)}"></iframe></body></html>`);
+      janela.document.close();
+    } else {
+      if (janela) janela.close();
+      const a = document.createElement("a"); a.href = url; a.download = nomeArq; a.click();
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 30 * 60000);
+  } catch (e) { if (janela) janela.close(); avisarErro(e); }
+  finally { if (botao) { botao.disabled = false; botao.innerHTML = original; } }
 }

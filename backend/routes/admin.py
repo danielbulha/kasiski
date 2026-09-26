@@ -8,7 +8,7 @@ from flask import Blueprint, current_app, jsonify, request
 import planos
 from auth import admin_requerido
 from extensions import ErroAPI, db
-from models import Cobranca, Conta, Empresa, Evento, Revisao, UsoIA, Usuario
+from models import Cobranca, Conta, Empresa, Evento, LogErro, Revisao, UsoIA, Usuario
 from routes import dados, para_data, para_float
 
 bp = Blueprint("admin", __name__, url_prefix="/api/admin")
@@ -241,7 +241,8 @@ def receitas():
             serie[m]["estornos"] += c.valor or 0
 
     # Revisões profissionais concluídas contam como receita de serviço (valor combinado na revisão)
-    for r in Revisao.query.filter(Revisao.status == "concluida", Revisao.criado_em >= ini).all():
+    for r in Revisao.query.filter(Revisao.status == "concluida", Revisao.criado_em >= ini,
+                                  Revisao.pago_em.is_(None)).all():
         m = _mes(r.criado_em)
         if m in serie:
             serie[m]["servicos"] += r.valor or 0
@@ -319,3 +320,67 @@ def excluir_receita(rid):
     db.session.delete(c)
     db.session.commit()
     return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------- logs de erros
+@bp.get("/logs")
+@admin_requerido
+def listar_logs():
+    q = LogErro.query
+    if request.args.get("origem") in ("servidor", "tarefa", "navegador"):
+        q = q.filter(LogErro.origem == request.args["origem"])
+    situacao = request.args.get("situacao", "abertos")
+    if situacao == "abertos":
+        q = q.filter(LogErro.resolvido.is_(False))
+    elif situacao == "resolvidos":
+        q = q.filter(LogErro.resolvido.is_(True))
+    dias = max(1, min(int(request.args.get("dias", 30)), 90))
+    q = q.filter(LogErro.ultimo_em >= datetime.utcnow() - timedelta(days=dias))
+    busca = (request.args.get("q") or "").strip()
+    if busca:
+        like = f"%{busca}%"
+        q = q.filter(db.or_(LogErro.mensagem.ilike(like), LogErro.rota.ilike(like), LogErro.usuario_email.ilike(like)))
+    itens = q.order_by(LogErro.ultimo_em.desc()).limit(300).all()
+    abertos = LogErro.query.filter(LogErro.resolvido.is_(False)).count()
+    ult24 = LogErro.query.filter(LogErro.ultimo_em >= datetime.utcnow() - timedelta(hours=24)).count()
+    return jsonify({"logs": [l.to_dict() for l in itens], "abertos": abertos, "ultimas_24h": ult24})
+
+
+@bp.get("/logs/<int:lid>")
+@admin_requerido
+def ver_log(lid):
+    return jsonify(LogErro.query.get_or_404(lid).to_dict(completo=True))
+
+
+@bp.patch("/logs/<int:lid>")
+@admin_requerido
+def resolver_log(lid):
+    l = LogErro.query.get_or_404(lid)
+    l.resolvido = bool(dados().get("resolvido", True))
+    db.session.commit()
+    return jsonify(l.to_dict())
+
+
+@bp.post("/logs/resolver-todos")
+@admin_requerido
+def resolver_todos():
+    n = LogErro.query.filter(LogErro.resolvido.is_(False)).update({"resolvido": True})
+    db.session.commit()
+    return jsonify({"resolvidos": n})
+
+
+@bp.get("/logs/exportar")
+@admin_requerido
+def exportar_logs():
+    """Texto pronto para colar numa conversa de análise (sem dados de pagamento; e-mail do usuário incluído)."""
+    ids = [int(x) for x in (request.args.get("ids") or "").split(",") if x.strip().isdigit()]
+    q = LogErro.query.filter(LogErro.id.in_(ids)) if ids else LogErro.query.filter(LogErro.resolvido.is_(False))
+    linhas = [f"Kasiski — relatório de erros ({datetime.utcnow():%d/%m/%Y %H:%M} UTC)", ""]
+    for l in q.order_by(LogErro.ultimo_em.desc()).limit(50).all():
+        linhas += [f"### #{l.id} · {l.origem} · {l.nivel} · {l.ocorrencias}x · primeiro {l.criado_em:%d/%m %H:%M} · último {l.ultimo_em:%d/%m %H:%M} UTC",
+                   f"Rota: {l.metodo or ''} {l.rota or '-'}{f' (HTTP {l.status})' if l.status else ''}",
+                   f"Usuário: {l.usuario_email or '-'}", f"Navegador: {l.navegador or '-'}", f"Mensagem: {l.mensagem}"]
+        if l.detalhe:
+            linhas += ["Detalhe:", "```", l.detalhe[-6000:], "```"]
+        linhas.append("")
+    return current_app.response_class("\n".join(linhas), mimetype="text/plain; charset=utf-8")

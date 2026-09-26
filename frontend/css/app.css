@@ -385,7 +385,7 @@ body.publico { background: var(--papel); }
 .lp-destaque p { color: #B9C7CE; }
 .lp-destaque-cta { text-align: right; }
 
-.lp-planos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 30px; align-items: stretch; }
+.lp-planos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 30px; align-items: stretch; }
 .lp-plano { position: relative; background: #fff; border: 1px solid var(--linha); border-radius: 10px; padding: 26px; display: flex; flex-direction: column; }
 .lp-plano.destaque { border: 2px solid var(--oficio); box-shadow: 0 16px 40px rgba(7, 29, 45, .1); }
 .lp-selo { position: absolute; top: -12px; left: 24px; background: var(--ciano); color: var(--oficio-escuro); font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; padding: 3px 10px; border-radius: 999px; }
@@ -494,3 +494,37 @@ body.publico { background: var(--papel); }
 #tabela-crm td:nth-child(2) { min-width: 150px; }
 .campo-codigo { font-size: 1.8rem; font-weight: 800; letter-spacing: .5em; text-align: center; padding: 10px 12px; font-variant-numeric: tabular-nums; }
 .campo-codigo::placeholder { color: var(--linha); }
+.andamento-analise { display: flex; gap: 12px; align-items: flex-start; }
+.girando { width: 18px; height: 18px; border: 3px solid var(--linha-forte); border-top-color: var(--oficio); border-radius: 50%; flex-shrink: 0; margin-top: 2px; animation: girar .9s linear infinite; }
+@keyframes girar { to { transform: rotate(360deg); } }
+/* ---------- proposta comercial ---------- */
+.tabela-itens td { padding: 6px; vertical-align: top; }
+.tabela-itens .celula { width: 100%; min-width: 92px; font: inherit; font-size: .88rem; padding: 5px 7px; border: 1px solid var(--linha); border-radius: 4px; background: #fff; }
+.tabela-itens textarea.celula { min-width: 220px; resize: vertical; }
+.tabela-itens .celula.curta { min-width: 60px; max-width: 96px; }
+.tabela-itens td:nth-child(3) .celula { min-width: 86px; }
+.tabela-itens .celula:focus { border-color: var(--oficio); outline: 2px solid var(--ciano-claro); }
+.tabela-itens td.num { text-align: right; white-space: nowrap; font-weight: 600; padding-top: 11px; }
+.tabela-itens small { display: block; margin-top: 2px; }
+.tabela-itens .acoes-celula { white-space: nowrap; }
+.mapa-colunas select { min-width: 0; }
+.lp-plano.novo { border: 2px solid var(--ciano); }
+.lp-selo-ciano { background: var(--oficio) !important; color: #fff !important; }
+.lp-novo { font-size: .66rem; text-transform: uppercase; letter-spacing: .06em; background: var(--ciano-claro); color: var(--ciano-escuro); padding: 1px 6px; border-radius: 999px; margin-left: 4px; vertical-align: 1px; }
+.lp-plano { padding: 24px 20px; }
+.grade-planos { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.grade-planos .plano .preco { font-size: 1.3rem; }
+.destaque-plano { border: 2px solid var(--ciano); background: linear-gradient(180deg, var(--ciano-claro), #fff 70%); }
+/* ---------- elaboração com advogado ---------- */
+.grade-servicos { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
+.servico { background: var(--folha); border: 1px solid var(--linha); border-radius: var(--raio); padding: 18px; display: flex; flex-direction: column; gap: 6px; }
+.servico h3 { margin: 0; }
+.servico p { color: var(--grafite); font-size: .88rem; margin: 0; flex: 1; }
+.servico-rodape { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; gap: 10px; }
+.servico-preco { font-size: 1.25rem; font-weight: 800; }
+.botao-icone { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 6px; border: 1px solid var(--linha); background: #fff; color: var(--oficio); cursor: pointer; vertical-align: middle; }
+.botao-icone:hover { border-color: var(--oficio); background: var(--oficio-claro); }
+.botao-icone:disabled { opacity: .5; cursor: wait; }
+.oculto-visual { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.log-detalhe { white-space: pre-wrap; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .78rem; background: var(--papel); border: 1px solid var(--linha); border-radius: var(--raio); padding: 12px; max-height: 360px; overflow: auto; }
+.fonte { display: inline-block; font-size: .7rem; color: var(--ciano-escuro); background: var(--ciano-claro); border-radius: 999px; padding: 0 6px; margin-left: 2px; vertical-align: 1px; }

@@ -210,7 +210,7 @@ Escreva apenas o texto da peça, em texto simples (sem markdown)."""
 
 
 # ---------------------------------------------------------------- concorrentes
-def analise_concorrente(tipo, texto, exigencias, dossie, edital, contexto_legal, valor_proposta=None):
+def analise_concorrente(tipo, texto, exigencias, dossie, edital, contexto_legal, valor_proposta=None, historico=None):
     foco = ("DOCUMENTOS DE HABILITAÇÃO do concorrente: confira validade de certidões na data da sessão, "
             "compatibilidade dos atestados (objeto e quantitativos), índices contábeis calculados do balanço, "
             "documentos faltantes e compatibilidade do CNAE/objeto social com o objeto licitado."
@@ -222,14 +222,24 @@ def analise_concorrente(tipo, texto, exigencias, dossie, edital, contexto_legal,
     usuario = f"""EDITAL: {_j(edital)}
 EXIGÊNCIAS DO EDITAL: {_j(exigencias)}
 DOSSIÊ PÚBLICO DO CONCORRENTE: {_j(dossie)}
+HISTÓRICO DO CONCORRENTE EM OUTROS CERTAMES (dossiê completo consolidado; cada item cita a fonte): {_j(historico) if historico else "não há histórico consolidado"}
 VALOR DA PROPOSTA INFORMADO PELO USUÁRIO: {valor_proposta or "não informado"}
 REFERÊNCIAS LEGAIS:
 {contexto_legal}
 
+Use o HISTÓRICO para CRUZAR com o documento atual: atestados já conhecidos x atestados apresentados (quantitativos
+e períodos), índices contábeis de exercícios anteriores x balanço atual, responsáveis técnicos, certidões,
+sanções e motivos de inabilitações anteriores que possam se repetir. Cruzamento é hipótese a conferir: diga o que
+conferir e onde; não afirme falha que o documento atual não mostre.
+
 Devolva JSON:
 {{"resumo": "", "apontamentos": [{{"tema": "", "descricao": "", "documento": "", "pagina": "",
   "fundamento": "", "forca": "forte|medio|fraco"}}],
-  "exequibilidade": {{"conclusao": "exequivel|indicio_inexequivel|inexequivel_presumida|nao_se_aplica", "analise": ""}}}}
+  "exequibilidade": {{"conclusao": "exequivel|indicio_inexequivel|inexequivel_presumida|nao_se_aplica", "analise": ""}},
+  "cruzamentos_historico": [{{"tema": "", "o_que_o_historico_mostra": "", "o_que_conferir_no_documento_atual": "", "fontes": [""], "forca": "forte|medio|fraco"}}],
+  "sugestoes": [{{"peca": "recurso|contrarrazoes|intencao_recurso|pedido_diligencia|impugnacao|representacao",
+    "tema": "", "argumento": "tese a sustentar, combinando os apontamentos e o histórico", "base": ["ids ou temas dos apontamentos e fontes do histórico"],
+    "fundamento": "", "forca": "forte|medio|fraco"}}]}}
 
 DOCUMENTO DO CONCORRENTE:
 {texto}"""
@@ -245,7 +255,12 @@ DOCUMENTO DO CONCORRENTE:
                     {"tema": "Índice contábil", "descricao": "Liquidez corrente aparenta ser inferior a 1.",
                      "documento": "Balanço 2025", "pagina": "15", "fundamento": "Lei 14.133, art. 69",
                      "forca": "fraco"}],
-                "exequibilidade": {"conclusao": "nao_se_aplica", "analise": ""}}
+                "exequibilidade": {"conclusao": "nao_se_aplica", "analise": ""},
+                "cruzamentos_historico": [{"tema": "Atestados", "o_que_o_historico_mostra": "Inabilitação anterior por atestado abaixo do quantitativo (doc#1)",
+                                           "o_que_conferir_no_documento_atual": "Somar os quantitativos dos atestados apresentados", "fontes": ["doc#1"], "forca": "forte"}],
+                "sugestoes": [{"peca": "recurso", "tema": "Qualificação técnica insuficiente",
+                               "argumento": "O atestado não alcança o quantitativo mínimo, falha já reconhecida contra a mesma empresa em outro certame.",
+                               "base": ["Atestado incompatível", "doc#1"], "fundamento": "Lei 14.133, art. 67, II", "forca": "forte"}]}
     else:
         demo = {"resumo": "A proposta tem indícios de inexequibilidade na composição de custos de mão de obra.",
                 "apontamentos": [

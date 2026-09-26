@@ -26,17 +26,19 @@ V.conta = async (el) => {
     ${msgRetorno}
     ${assinaturaHtml(p, a)}
     <section class="bloco"><h2>Uso deste mês</h2>
-      <div class="grade grade-3">
+      <div class="grade grade-4">
         ${barraUso("Análises de edital", p.uso.analises, p.analises)}
         ${barraUso("Análises de concorrente", p.uso.concorrentes, p.concorrentes)}
         ${barraUso("Empresas cadastradas", p.uso.empresas, p.empresas)}
+        ${barraUso("Contratos em gestão", p.uso.contratos ?? 0, p.limite_contratos)}
       </div></section>
+    ${pacotesHtml(p)}
     <section class="bloco"><div class="bloco-titulo"><h2>Planos</h2>
       <div class="alternador" role="group" aria-label="Ciclo de cobrança">
         <button data-ciclo="mensal" class="${ciclo === "mensal" ? "ativo" : ""}" aria-pressed="${ciclo === "mensal"}">Mensal</button>
         <button data-ciclo="anual" class="${ciclo === "anual" ? "ativo" : ""}" aria-pressed="${ciclo === "anual"}">Anual <small>${12 - S.cobranca.anual_meses_pagos} meses grátis</small></button>
       </div></div>
-      <div class="grade grade-4">${["trial", "essencial", "profissional", "consultor"].filter((k) => S.planos[k]).map((k) => planoHtml(k, S.planos[k], p.codigo, ciclo)).join("")}</div>
+      <div class="grade-planos">${[...(p.codigo === "trial" ? ["trial"] : []), "essencial", "profissional", "avancado", "consultor"].filter((k) => S.planos[k]).map((k) => planoHtml(k, S.planos[k], p.codigo, ciclo)).join("")}</div>
     </section>
     ${cobrancas.length ? `<section class="bloco"><h2>Histórico de pagamentos</h2><div class="tabela-rolagem"><table>
       <thead><tr><th>Data</th><th>Descrição</th><th>Forma</th><th>Valor</th><th>Situação</th></tr></thead>
@@ -62,6 +64,13 @@ V.conta = async (el) => {
   };
   $$("[data-ciclo]", el).forEach((b) => b.onclick = () => { V.conta.ciclo = b.dataset.ciclo; V.conta(el); });
   $$("[data-assinar]", el).forEach((b) => b.onclick = () => modalCheckout(b.dataset.assinar, V.conta.ciclo || "mensal"));
+  const cp = $("#comprar-pacote", el);
+  if (cp) cp.onclick = () => modalPacote(p);
+  const cpc = $("#cancelar-pacote", el);
+  if (cpc) cpc.onclick = async () => {
+    if (!(await confirmar(`A renovação dos pacotes será cancelada. Os contratos extras seguem liberados até ${fmt.data(p.pacotes.ate)}.`, "Cancelar renovação"))) return;
+    try { await api("POST", "/api/billing/pacotes/cancelar"); toast("Renovação dos pacotes cancelada.", "ok"); V.conta(el); } catch (e) { avisarErro(e); }
+  };
   const canc = $("#cancelar-assinatura", el);
   if (canc) canc.onclick = async () => {
     if (!(await confirmar(`A renovação automática será cancelada. Você continua com acesso ao plano até ${fmt.data(a.pago_ate)}.`, "Cancelar renovação"))) return;
@@ -69,13 +78,45 @@ V.conta = async (el) => {
   };
 };
 
+function pacotesHtml(p) {
+  const pk = p.pacotes || {};
+  if (!p.contratos || p.codigo === "trial") return "";
+  return `<section class="bloco"><div class="bloco-titulo"><h2>Contratos extras</h2>${pk.ativos ? carimbo(`${pk.ativos} pacote(s) ativo(s)`, "ok") : ""}</div>
+    <p>Seu plano inclui <b>${p.contratos}</b> contratos em gestão. Precisa de mais? Cada pacote soma <b>+${pk.contratos} contratos</b> por <b>${fmt.moeda(pk.preco)}/mês</b>.</p>
+    ${pk.ativos ? `<p class="fraco">Total liberado hoje: ${p.limite_contratos} contratos · ${pk.metodo === "recorrente" ? (pk.status === "cancelada" ? "renovação cancelada, válido" : "renova automaticamente, próximo ciclo") : "pago por Pix/boleto, válido"} até ${fmt.data(pk.ate)}</p>` : ""}
+    <div class="acoes"><button class="botao" id="comprar-pacote">${pk.ativos ? (pk.metodo === "recorrente" && pk.status === "ativa" ? "Mudar quantidade" : "Renovar ou mudar") : "Contratar pacote"}</button>
+      ${pk.metodo === "recorrente" && pk.status === "ativa" ? `<button class="botao texto" id="cancelar-pacote">Cancelar renovação dos pacotes</button>` : ""}</div></section>`;
+}
+
+function modalPacote(p) {
+  const pk = p.pacotes;
+  const recorrenteAtivo = pk.metodo === "recorrente" && pk.status === "ativa";
+  const m = modal({ titulo: "Pacotes de +10 contratos", corpo: `<form id="form-pacote">
+    <div class="campo"><label for="pk-qtd">Quantos pacotes</label><select id="pk-qtd" name="quantidade">
+      ${[1, 2, 3, 4, 5, 10].map((n) => `<option value="${n}" ${n === (pk.contratados || 1) ? "selected" : ""}>${n} pacote${n > 1 ? "s" : ""} · +${n * pk.contratos} contratos · ${fmt.moeda(n * pk.preco)}/mês</option>`).join("")}</select></div>
+    <div class="opcoes-pagamento">
+      <button class="opcao-pagamento" type="submit" data-metodo="recorrente" ${recorrenteAtivo ? "disabled" : ""}><b>Cartão, renovação automática</b>
+        <span>Cobrado todo mês junto com o uso.${recorrenteAtivo ? " <em>Cancele a renovação atual para mudar a quantidade.</em>" : ""}</span></button>
+      <button class="opcao-pagamento" type="submit" data-metodo="avulso"><b>Pix, boleto ou cartão — 1 mês</b><span>Vale 30 dias; renove quando quiser.</span></button>
+    </div>
+    <p class="fraco" style="margin-top:10px">Se o pacote vencer, os contratos já cadastrados continuam acessíveis, mas não é possível cadastrar novos acima do limite do plano.</p>
+    <div id="erro-pacote"></div></form>` });
+  $$("[data-metodo]", m).forEach((b) => b.onclick = (ev) => {
+    ev.preventDefault();
+    ocupado(b, "Abrindo o Mercado Pago…", async () => {
+      try { const r = await api("POST", "/api/billing/pacotes", { quantidade: Number($("#pk-qtd", m).value), metodo: b.dataset.metodo }); location.href = r.url; }
+      catch (e) { $("#erro-pacote", m).innerHTML = erroTela(e); }
+    });
+  });
+}
+
 function assinaturaHtml(p, a) {
-  if (!a.status && !["essencial", "profissional", "consultor", "suspenso"].includes(p.codigo)) return "";
+  if (!a.status && !["essencial", "profissional", "avancado", "consultor", "suspenso"].includes(p.codigo)) return "";
   const pago = !!a.pago_ate;
   const forma = a.metodo === "recorrente" ? "Cartão · renova automaticamente" : a.metodo === "avulso" ? "Pix, boleto ou cartão · renovação manual" : "Definido pelo suporte";
   let acao = "";
   if (a.recorrente) acao = `<button class="botao texto" id="cancelar-assinatura">Cancelar renovação automática</button>`;
-  else if (["essencial", "profissional", "consultor"].includes(p.codigo) && a.metodo === "avulso")
+  else if (["essencial", "profissional", "avancado", "consultor"].includes(p.codigo) && a.metodo === "avulso")
     acao = `<button class="botao" data-assinar="${p.codigo}">Renovar agora</button>`;
   else if (p.codigo === "suspenso") acao = `<span class="fraco">Escolha um plano abaixo para reativar.</span>`;
   return `<section class="bloco"><div class="bloco-titulo"><h2>Sua assinatura</h2>${a.status ? carimboStatus(ROTULO_ASSINATURA, a.status) : ""}</div>
@@ -122,7 +163,7 @@ function barraUso(rotulo, usado, limite) {
 }
 
 function planoHtml(codigo, v, atual, ciclo = "mensal") {
-  const limite = (n, unid) => (n === true ? `${unid} ilimitado(a)s` : n === false || n === 0 ? `Sem ${unid}` : `${n} ${unid}${n > 1 ? "s" : ""}/mês`);
+  const limite = (n, sing, plur) => (n === false || n === 0 ? `Sem ${sing}` : `${n} ${n > 1 ? plur : sing}/mês`);
   const valor = precoCiclo(v, ciclo);
   const preco = !v.preco ? "Grátis" : ciclo === "anual"
     ? `${fmt.moeda(valor / 12)}<small>/mês</small><span class="preco-nota">${fmt.moeda(valor)} por ano</span>`
@@ -130,8 +171,10 @@ function planoHtml(codigo, v, atual, ciclo = "mensal") {
   const botao = codigo === atual ? carimbo("Seu plano", "ok")
     : codigo === "trial" ? "" : `<button class="botao ${codigo === "profissional" ? "" : "secundario"}" data-assinar="${codigo}">Assinar</button>`;
   return `<div class="plano ${codigo === atual ? "atual" : ""}"><h3>${esc(v.nome)}</h3><div class="preco">${preco}</div>
-    <ul><li>${v.empresas} empresa(s)</li><li>${limite(v.analises, "análise de edital")}</li><li>${limite(v.concorrentes, "análise de concorrente")}</li>
+    <ul><li>${v.empresas} ${v.empresas > 1 ? "empresas" : "empresa"}</li><li>${limite(v.analises, "análise de edital", "análises de edital")}</li><li>${limite(v.concorrentes, "análise de concorrente", "análises de concorrente")}</li>
       <li>${v.pecas ? "Gerador de peças" : "Sem gerador de peças"}</li><li>${v.precos ? "Inteligência de preços" : "Sem inteligência de preços"}</li>
+      <li>${v.propostas ? "<b>Proposta comercial com IA</b>" : "Sem proposta comercial com IA"}</li>
+      <li>${v.contratos ? `Gestão de até ${v.contratos} contrato${v.contratos > 1 ? "s" : ""}` : "Sem gestão de contratos"}</li>
       ${v.marca ? "<li>Relatórios com sua marca</li>" : ""}</ul>
     ${botao}</div>`;
 }

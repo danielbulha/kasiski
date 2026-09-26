@@ -98,7 +98,8 @@ def excluir(eid):
     if ids_ed:
         Analise.query.filter(Analise.edital_id.in_(ids_ed)).delete(synchronize_session=False)
         AnaliseConcorrente.query.filter(AnaliseConcorrente.edital_id.in_(ids_ed)).delete(synchronize_session=False)
-    for M in (Peca, Prazo, RadarItem, PesquisaPreco, Documento):
+    from models import Proposta
+    for M in (Peca, Prazo, RadarItem, PesquisaPreco, Documento, Proposta):
         M.query.filter_by(empresa_id=e.id).delete(synchronize_session=False)
     for c in Contrato.query.filter_by(empresa_id=e.id):
         db.session.delete(c)

@@ -192,7 +192,7 @@ limpo.
 ## Cobrança (Mercado Pago), CRM, funil e receitas
 
 ### Como funciona
-- **Planos pagos**: Essencial, Profissional e Consultor, com ciclo **mensal** ou **anual** (anual = preço mensal × `ANUAL_MESES_PAGOS`, padrão 10 → "2 meses grátis").
+- **Planos pagos**: Essencial (R$ 197), Profissional (R$ 497), Avançado (R$ 799, inclui a proposta comercial com IA) e Consultor (R$ 1.290), com ciclo **mensal** ou **anual** (anual = preço mensal × `ANUAL_MESES_PAGOS`, padrão 10 → "2 meses grátis").
 - **Duas formas de pagar** (tela *Plano e conta*):
   - **Cartão com renovação automática**: Assinaturas do Mercado Pago (`/preapproval`). Cobra sozinho todo ciclo.
   - **Pix, boleto ou cartão avulso**: Checkout Pro. Vale 1 ciclo; o cliente renova pagando de novo (aparece um aviso 5 dias antes do vencimento).
@@ -229,3 +229,50 @@ As tabelas e colunas novas (`cobranca`, `evento` e campos em `conta`/`usuario`) 
 2. **API Keys → Create** (permissão *Sending access*).
 3. No Render: `RESEND_API_KEY` = a chave; `EMAIL_REMETENTE` = `Kasiski <nao-responda@SEU-DOMINIO>` (precisa ser do domínio verificado).
 4. `VERIFICAR_EMAIL`: `auto` (padrão: exige o código só quando `RESEND_API_KEY` está preenchida), `sim` ou `nao`.
+
+
+## Preços e propostas (inteligência de preços + minuta de proposta comercial)
+
+Menu **Preços e propostas** (grupo "Na disputa"), com três abas. A aba de propostas comerciais é exclusiva dos planos **Avançado** e **Consultor**; os demais veem um convite para mudar de plano.
+- **Propostas comerciais**: escolha um edital e a IA lê o que ele exige da proposta (itens, quantidades, valores estimados, validade mínima, planilha de custos, BDI, documentos, declarações). Para cada item, informe o custo ou busque em **Preços** (tabelas oficiais + Compras.gov.br pelo código CATMAT/CATSER). Defina regime tributário, tributos e BDI (há calculadora pela fórmula do Acórdão TCU 2.622/2013). O sistema calcula preços e alerta: acima do estimado (art. 59, III), abaixo de 75%/85% em obras (art. 59, §§4º e 5º) e abaixo de 50% nos demais (IN SEGES/ME 73/2022, art. 34). **Gerar minuta**: a IA redige a proposta com as condições e declarações do edital e revisa os preços. **Baixar Word**: .docx com a tabela de itens e o valor por extenso.
+- **Pesquisas de preço**: as pesquisas do Compras.gov.br de antes.
+- **Tabelas de referência**: busca nas tabelas oficiais carregadas.
+
+**Administração → Tabelas de preços**: envie planilhas .xlsx/.csv (SINAPI, SICRO, CMED, SIGTAP, CCT, BPS ou outra). O sistema acha o cabeçalho e sugere as colunas de código, descrição, unidade e preço; você confirma, informa UF e data-base e importa. Desative a tabela antiga quando sair nova data-base.
+
+
+## Elaboração com advogado (serviço pago)
+
+- Em **Peças → Elaboração com advogado**: cartões com cada peça, descrição e valor. O cliente escolhe, descreve o caso, indica edital/contrato e prazo e paga pelo Mercado Pago (Checkout Pro: Pix, boleto ou cartão em até 3x). O pedido só entra na fila depois do pagamento aprovado; "Meus pedidos" mostra a situação, com opção de pagar ou cancelar pedidos não pagos.
+- Numa minuta gerada pela IA, **Revisão por advogado** segue o mesmo fluxo e o mesmo valor.
+- Os valores ficam em `PRECO_REVISAO` (backend/config.py). O seletor de tipo de peça não mostra mais preço.
+- Admin → **Pedidos de advogado**: pagos primeiro ("pago · a fazer"), depois em andamento e aguardando pagamento. Na elaboração, escreva a peça no editor e marque "Concluída": ela aparece para o cliente com o parecer. O administrador recebe e-mail (Resend) quando um pedido é pago.
+- Pagamentos de serviço entram em **Receitas** como "serviços" (sem contar em dobro com a revisão concluída).
+
+
+## Gestão de contratos
+
+- **Limites**: teste grátis 1 contrato · Essencial sem gestão · Profissional 10 · Avançado 30 · Consultor 50. **Pacote extra**: +10 contratos por R$ 169,90/mês (Plano e conta → Contratos extras), pago pelo Mercado Pago com cartão recorrente ou Pix/boleto por 1 mês. Pacote vencido: os contratos já cadastrados continuam acessíveis, mas novos acima do limite ficam bloqueados.
+- **Cadastro pelo PDF**: a IA lê número, órgão, objeto, valores, vigência, prorrogação, data-base e índice de reajuste/repactuação, garantia, pagamento, medição, faturamento, fiscal/gestor, penalidades e as **obrigações periódicas** da contratada. Tudo fica editável; o cadastro manual continua disponível.
+- **Agenda de gestão automática**: decidir a prorrogação (120 dias antes) e confirmar o aditivo (60 dias), fim da vigência, renovar a garantia (30 dias antes) e vencimento, preparar reajuste/repactuação (30 dias antes) e aniversário, e as próximas 3 ocorrências de cada rotina (medição, nota fiscal, comprovação de FGTS/INSS etc.), que se renovam sozinhas.
+- **Aviso por e-mail**: o job diário (`jobs/radar_diario.py`, que agora roda todos os dias e chama `jobs/avisos_contratos.py`) envia a cada usuário da conta os prazos vencidos e dos próximos 7 dias, uma vez por dia. Precisa do Resend configurado; no cron do Render, preencha `RESEND_API_KEY`, `EMAIL_REMETENTE` e `FRONTEND_URL`.
+
+
+## Documento do edital
+
+Na lista de **Editais** (e no cabeçalho de cada edital), o ícone de olho abre o PDF numa nova aba, com botão de download. Vale para PDFs enviados pelo usuário e para editais capturados do PNCP: o PDF agora é guardado na importação, e os editais antigos têm o documento baixado do PNCP na primeira vez em que alguém abre. O link "Ver no PNCP" continua ao lado.
+
+## Logs de erros (Administração → Logs de erros)
+
+Guarda os erros que os usuários encontram: falhas do servidor (com rastreamento técnico), tarefas em segundo plano (análise de edital, leitura de contrato, proposta, radar, avisos), integrações (Mercado Pago, Resend, IA, PNCP) e erros de JavaScript/falta de conexão no navegador. Erros iguais são agrupados, com contador. Filtros por situação, origem, período e busca. **Copiar para análise** e **Baixar .txt** geram um relatório pronto para colar na conversa. Retenção de 90 dias. Nenhuma senha, token ou dado de formulário é gravado.
+
+
+## Dossiê completo do concorrente
+
+Na página do concorrente, **Montar/Atualizar dossiê completo** (conta 1 análise de concorrente do plano):
+1. Consulta pública (Receita, TCU, CGU/CEIS/CNEP, contratos no PNCP).
+2. **Busca automática no PNCP**: a partir dos contratos do concorrente, chega à compra de origem e baixa atas, julgamentos, decisões de recurso e relatórios que citem o CNPJ ou a razão social (até 8 compras e 12 documentos). É melhor esforço: muitos órgãos não publicam as atas no PNCP.
+3. **Acervo**: o usuário junta documentos de outros certames (atas, decisões, habilitações, balanços, atestados, certidões), obtidos no portal da disputa, via LAI ou em processos. A IA lê cada um procurando só o que diz respeito à concorrente.
+4. **Consolidação pela IA**: inabilitações e desclassificações anteriores, atestados conhecidos, índices contábeis, certidões, responsáveis técnicos, sanções, fragilidades recorrentes, **pontos de ataque** e lacunas, cada item com a fonte (`doc#N`, `analise#N`, dados públicos).
+
+Nas análises de habilitação/proposta desse concorrente em um edital, a IA recebe o dossiê consolidado e devolve, além dos apontamentos, o **cruzamento com o histórico** (hipóteses a conferir) e **sugestões de peça** (recurso, contrarrazões, intenção de recorrer, pedido de diligência, representação), que podem ser marcadas e enviadas ao gerador de peças.

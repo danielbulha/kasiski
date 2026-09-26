@@ -43,3 +43,10 @@ def executar():
 
 if __name__ == "__main__":
     executar()
+    # avisos de gestão de contratos rodam no mesmo agendamento (todo dia)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "avisos_contratos", os.path.join(os.path.dirname(os.path.abspath(__file__)), "avisos_contratos.py"))
+    avisos = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(avisos)
+    avisos.executar()

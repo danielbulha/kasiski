@@ -31,8 +31,13 @@ def create_app(config=Config):
         from services.llm import modo_demonstracao
         return jsonify({"ok": True, "modo_demonstracao": modo_demonstracao()})
 
+    from services import logs
+    logs.instalar(app)
+
     @app.errorhandler(ErroAPI)
     def erro_api(e):
+        if e.status >= 500:  # falhas de integração (Mercado Pago, IA, e-mail...) mostradas ao usuário
+            logs.registrar("servidor", e.mensagem, getattr(e, "detalhe", None), status=e.status, nivel="aviso")
         return jsonify({"erro": e.mensagem, "codigo": e.codigo}), e.status
 
     @app.errorhandler(HTTPException)
@@ -42,8 +47,8 @@ def create_app(config=Config):
 
     @app.errorhandler(Exception)
     def erro_geral(e):
-        app.logger.exception("Erro inesperado")
         db.session.rollback()
+        app.logger.exception("Erro inesperado: %s", e)
         return jsonify({"erro": "Erro inesperado no servidor. Tente novamente."}), 500
 
     with app.app_context():

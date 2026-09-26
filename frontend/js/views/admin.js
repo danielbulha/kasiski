@@ -19,7 +19,7 @@ V.admin = async (el) => {
   el.innerHTML = `
     <div class="cabecalho"><h1>Administração</h1><button class="botao pequeno secundario" id="teste-email">Testar envio de e-mail</button></div>
     <div class="abas" role="tablist">
-      ${[["crm", "Clientes e testes"], ["funil", "Funil de conversão"], ["receitas", "Receitas"], ["revisoes", "Revisões"]]
+      ${[["crm", "Clientes e testes"], ["funil", "Funil de conversão"], ["receitas", "Receitas"], ["tabelas", "Tabelas de preços"], ["revisoes", "Pedidos de advogado"], ["logs", "Logs de erros"]]
         .map(([k, t]) => `<button role="tab" data-a-aba="${k}" class="${aba === k ? "ativa" : ""}" aria-selected="${aba === k}">${t}</button>`).join("")}
     </div>
     <div id="painel-admin"><p class="carregando">Carregando…</p></div>`;
@@ -47,6 +47,8 @@ V.admin = async (el) => {
     if (aba === "crm") await abaCrm(painel);
     else if (aba === "funil") await abaFunil(painel);
     else if (aba === "receitas") await abaReceitas(painel);
+    else if (aba === "tabelas") await abaTabelasAdmin(painel);
+    else if (aba === "logs") await abaLogs(painel);
     else desenharRevisoes(painel, await api("GET", "/api/admin/revisoes"));
   } catch (e) { painel.innerHTML = erroTela(e); }
 };
@@ -274,9 +276,12 @@ async function modalReceita(aoSalvar) {
 
 // ---------------------------------------------------------------- revisões profissionais
 function desenharRevisoes(el, revisoes) {
-  const pendentes = revisoes.filter((r) => r.status !== "concluida" && r.status !== "cancelada");
+  const ordem = { pendente: 0, em_andamento: 1, aguardando_pagamento: 2 };
+  const pendentes = revisoes.filter((r) => r.status !== "concluida" && r.status !== "cancelada")
+    .sort((a, b) => (ordem[a.status] ?? 9) - (ordem[b.status] ?? 9) || String(a.prazo_desejado || "9").localeCompare(String(b.prazo_desejado || "9")));
   el.innerHTML = `<section class="bloco">${pendentes.length ? pendentes.map((r) => `<div class="lista-item"><div class="corpo">
-      <b>${esc(r.peca_titulo)}</b><p>${esc(r.conta)} · ${carimbo(r.status, r.status === "pendente" ? "aviso" : "neutro")} ${r.valor ? "· " + fmt.moeda(r.valor) : ""}
+      <b>${esc(r.peca_titulo)}</b> ${carimbo(r.servico === "elaboracao" ? "Elaboração" : "Revisão", "oficio")}
+      <p>${esc(r.conta)}${r.email ? ` (${esc(r.email)})` : ""} · ${carimbo({ aguardando_pagamento: "aguardando pagamento", pendente: "pago · a fazer", em_andamento: "em andamento" }[r.status] || r.status, r.status === "pendente" ? "erro" : "aviso")} ${r.valor ? "· " + fmt.moeda(r.valor) : ""}
       ${r.prazo_desejado ? " · prazo " + fmt.data(r.prazo_desejado) : ""}</p>${r.observacoes ? `<p class="fraco">${esc(r.observacoes)}</p>` : ""}</div>
       <button class="botao pequeno secundario" data-rev="${r.id}">${icone("editar", 14)} Gerenciar</button></div>`).join("")
     : vazio("Nenhuma revisão pendente", "")}</section>`;
@@ -289,11 +294,13 @@ function modalRevisaoAdmin(r, elLista) {
     <textarea class="editor" id="conteudo-rev" style="min-height:320px">${esc(r.conteudo)}</textarea>
     <form id="form-rev-admin" style="margin-top:14px">
       <div class="linha-campos"><div class="campo"><label>Status</label><select name="status">
-        <option value="pendente" ${r.status === "pendente" ? "selected" : ""}>Pendente</option>
+        <option value="aguardando_pagamento" ${r.status === "aguardando_pagamento" ? "selected" : ""}>Aguardando pagamento</option>
+        <option value="pendente" ${r.status === "pendente" ? "selected" : ""}>Pago · a fazer</option>
         <option value="em_andamento" ${r.status === "em_andamento" ? "selected" : ""}>Em andamento</option>
         <option value="concluida" ${r.status === "concluida" ? "selected" : ""}>Concluída</option>
         <option value="cancelada" ${r.status === "cancelada" ? "selected" : ""}>Cancelada</option></select></div>
         <div class="campo"><label>Valor (R$)</label><input name="valor" value="${r.valor ?? ""}" inputmode="decimal"></div></div>
+      <p class="fraco">${r.servico === "elaboracao" ? "Elaboração: escreva a peça no campo acima; ao concluir, ela aparece para o cliente." : "Revisão: ajuste a minuta acima e deixe o parecer abaixo."}</p>
       <div class="campo"><label>Parecer para o cliente</label><textarea name="parecer">${esc(r.parecer || "")}</textarea></div>
       <button class="botao" style="width:100%" type="submit">Salvar</button></form>`,
   });
@@ -303,4 +310,134 @@ function modalRevisaoAdmin(r, elLista) {
     await api("PATCH", `/api/admin/revisoes/${r.id}`, d);
     m.fechar(); toast("Revisão atualizada.", "ok"); V.admin(elLista.closest("#conteudo"));
   };
+}
+
+// ---------------------------------------------------------------- tabelas de preços de referência
+async function abaTabelasAdmin(el) {
+  const d = await api("GET", "/api/admin/tabelas");
+  el.innerHTML = `
+    <section class="bloco"><div class="bloco-titulo"><h2>Tabelas carregadas</h2></div>
+      <p class="fraco">Consultadas por todos os clientes na formação de preço e pela IA ao revisar as propostas. Ao sair nova data-base, envie a tabela nova e desative a antiga.</p>
+      ${d.tabelas.length ? `<div class="tabela-rolagem"><table><thead><tr><th>Tabela</th><th>Fonte</th><th>UF</th><th>Data-base</th><th>Itens</th><th>Situação</th><th></th></tr></thead>
+        <tbody>${d.tabelas.map((t) => `<tr><td><b>${esc(t.nome)}</b>${t.observacao ? `<br><small>${esc(t.observacao)}</small>` : ""}</td><td>${esc(d.fontes[t.fonte] || t.fonte)}</td>
+          <td>${esc(t.uf || "todas")}</td><td>${fmt.data(t.data_base)}</td><td>${fmt.num(t.n_itens, 0)}</td>
+          <td>${t.ativa ? carimbo("Ativa", "ok") : carimbo("Inativa", "neutro")}</td>
+          <td class="acoes-celula"><button class="botao pequeno secundario" data-ativar="${t.id}" data-valor="${t.ativa ? "0" : "1"}">${t.ativa ? "Desativar" : "Ativar"}</button>
+            <button class="botao texto pequeno" data-excluir-tab="${t.id}">${icone("excluir", 14)} Excluir</button></td></tr>`).join("")}</tbody></table></div>`
+        : vazio("Nenhuma tabela ainda", "Envie a primeira planilha abaixo.")}</section>
+    <section class="bloco"><h2>Enviar tabela</h2>
+      <p class="fraco">Aceita .xlsx ou .csv (salve arquivos .xls antigos como .xlsx). Fontes oficiais: SINAPI (caixa.gov.br), SICRO (gov.br/dnit), CMED (gov.br/anvisa), SIGTAP (sigtap.datasus.gov.br), convenções coletivas (Mediador/MTE).</p>
+      <form id="form-tab">
+        <div class="campo"><label for="tb-arq">Planilha</label><input id="tb-arq" name="arquivo" type="file" accept=".xlsx,.xlsm,.csv,.txt" required></div>
+        <div id="tb-previa"></div>
+      </form></section>`;
+  $$("[data-ativar]", el).forEach((b) => b.onclick = async () => { await api("PATCH", `/api/admin/tabelas/${b.dataset.ativar}`, { ativa: b.dataset.valor === "1" }); abaTabelasAdmin(el); });
+  $$("[data-excluir-tab]", el).forEach((b) => b.onclick = async () => {
+    if (!(await confirmar("Excluir esta tabela e todos os itens dela?", "Excluir"))) return;
+    await api("DELETE", `/api/admin/tabelas/${b.dataset.excluirTab}`); toast("Tabela excluída.", "ok"); abaTabelasAdmin(el);
+  });
+  const arq = $("#tb-arq", el), previa = $("#tb-previa", el);
+  arq.onchange = async () => {
+    if (!arq.files[0]) return;
+    previa.innerHTML = `<p class="carregando">Lendo a planilha…</p>`;
+    const fd = new FormData(); fd.append("arquivo", arq.files[0]);
+    let pv;
+    try { pv = await api("POST", "/api/admin/tabelas/previa", fd); } catch (e) { previa.innerHTML = erroTela(e); return; }
+    const opcoes = (sel) => `<option value="-1">— não usar —</option>` + pv.colunas.map((c, i) => `<option value="${i}" ${sel === i ? "selected" : ""}>${esc(c || `coluna ${i + 1}`)}</option>`).join("");
+    const nomeArq = arq.files[0].name.replace(/\.[^.]+$/, "");
+    previa.innerHTML = `
+      <p class="fraco">Cabeçalho encontrado na linha ${pv.linha_cabecalho + 1}. Confira as colunas:</p>
+      <div class="linha-campos mapa-colunas">
+        ${[["descricao", "Descrição *"], ["preco", "Preço *"], ["codigo", "Código"], ["unidade", "Unidade"]].map(([k, t]) =>
+          `<div class="campo"><label for="tb-${k}">${t}</label><select id="tb-${k}" name="col_${k}">${opcoes(pv.sugestao[k])}</select></div>`).join("")}
+      </div>
+      <div class="tabela-rolagem" style="margin-bottom:14px"><table><thead><tr>${pv.colunas.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead>
+        <tbody>${pv.exemplos.map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
+      <input type="hidden" name="linha_cabecalho" value="${pv.linha_cabecalho}">
+      <div class="linha-campos">
+        <div class="campo"><label for="tb-nome">Nome da tabela *</label><input id="tb-nome" name="nome" required value="${esc(nomeArq)}" placeholder="Ex.: SINAPI SP 09/2026 não desonerado"></div>
+        <div class="campo"><label for="tb-fonte">Fonte</label><select id="tb-fonte" name="fonte">${Object.entries(d.fontes).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select></div>
+        <div class="campo"><label for="tb-uf">UF</label><input id="tb-uf" name="uf" maxlength="2" placeholder="vazio = nacional"></div>
+        <div class="campo"><label for="tb-data">Data-base</label><input id="tb-data" name="data_base" type="date"></div>
+      </div>
+      <div class="campo"><label for="tb-obs">Observação</label><input id="tb-obs" name="observacao" placeholder="Ex.: preços medianos, não desonerado, sem BDI"></div>
+      <div id="tb-erro"></div><button class="botao" type="submit">Importar tabela</button>`;
+    $("#form-tab", el).onsubmit = async (ev) => {
+      ev.preventDefault();
+      const b = ev.target.querySelector("button[type=submit]");
+      await ocupado(b, "Importando…", async () => {
+        try { const t = await api("POST", "/api/admin/tabelas", new FormData(ev.target)); toast(`${fmt.num(t.n_itens, 0)} itens importados.`, "ok"); abaTabelasAdmin(el); }
+        catch (e) { $("#tb-erro", el).innerHTML = erroTela(e); }
+      });
+    };
+  };
+}
+
+// ---------------------------------------------------------------- logs de erros
+const ORIGEM_LOG = { servidor: ["Servidor", "erro"], tarefa: ["Tarefa em 2º plano", "aviso"], navegador: ["Navegador", "oficio"] };
+
+async function abaLogs(el) {
+  const f = V.admin.filtroLog || { situacao: "abertos", origem: "", dias: 7, q: "" };
+  V.admin.filtroLog = f;
+  const qs = new URLSearchParams({ situacao: f.situacao, origem: f.origem, dias: f.dias, q: f.q }).toString();
+  const d = await api("GET", `/api/admin/logs?${qs}`);
+  el.innerHTML = `
+    <section class="bloco"><div class="grade grade-4 grade-kpi">
+      ${indicador(d.abertos, "erros em aberto", d.abertos > 0)}${indicador(d.ultimas_24h, "com ocorrência nas últimas 24h")}
+      ${indicador(d.logs.reduce((a, l) => a + (l.ocorrencias || 1), 0), "ocorrências na lista")}${indicador(new Set(d.logs.map((l) => l.usuario_email).filter(Boolean)).size, "usuários afetados")}
+    </div><p class="fraco" style="margin:12px 0 0">Erros iguais são agrupados. Para pedir uma análise, selecione os erros e clique em <b>Copiar para análise</b>: o texto vai com a mensagem, a rota, o usuário e o rastreamento técnico, pronto para colar na conversa.</p></section>
+    <div class="filtros-admin">
+      <div class="chips" role="group" aria-label="Situação">${[["abertos", "Em aberto"], ["resolvidos", "Resolvidos"], ["todos", "Todos"]].map(([k, t]) => `<button data-sit="${k}" aria-pressed="${f.situacao === k}">${t}</button>`).join("")}</div>
+      <div class="chips" role="group" aria-label="Origem">${[["", "Todas as origens"], ["servidor", "Servidor"], ["tarefa", "Tarefas"], ["navegador", "Navegador"]].map(([k, t]) => `<button data-org="${k}" aria-pressed="${f.origem === k}">${t}</button>`).join("")}</div>
+      <div class="chips" role="group" aria-label="Período">${[[1, "24h"], [7, "7 dias"], [30, "30 dias"], [90, "90 dias"]].map(([k, t]) => `<button data-dias="${k}" aria-pressed="${f.dias == k}">${t}</button>`).join("")}</div>
+      <input type="search" id="busca-log" placeholder="Buscar mensagem, rota ou e-mail" value="${esc(f.q)}" aria-label="Buscar nos logs">
+    </div>
+    <div class="acoes" style="margin-bottom:12px">
+      <button class="botao" id="copiar-logs">Copiar para análise</button>
+      <button class="botao secundario" id="baixar-logs">${icone("baixar", 14)} Baixar .txt</button>
+      ${f.situacao !== "resolvidos" && d.abertos ? `<button class="botao texto" id="resolver-todos">Marcar todos como resolvidos</button>` : ""}
+      <span class="fraco" id="sel-logs"></span></div>
+    <section class="bloco tabela-rolagem">${d.logs.length ? `<table><thead><tr><th><input type="checkbox" id="todos-logs" aria-label="Selecionar todos"></th><th>Último</th><th>Origem</th><th>Erro</th><th>Onde</th><th>Usuário</th><th>Vezes</th><th></th></tr></thead>
+      <tbody>${d.logs.map((l) => `<tr${l.resolvido ? ' style="opacity:.55"' : ""}>
+        <td><input type="checkbox" data-sel-log="${l.id}" aria-label="Selecionar erro ${l.id}"></td>
+        <td style="white-space:nowrap">${fmt.dataHora(l.ultimo_em + "Z")}</td><td>${carimboStatus(ORIGEM_LOG, l.origem)}${l.nivel === "aviso" ? "<br><small class='fraco'>aviso</small>" : ""}</td>
+        <td style="max-width:420px">${esc((l.mensagem || "").slice(0, 220))}</td>
+        <td><small>${esc([l.metodo, l.rota].filter(Boolean).join(" ") || "—")}${l.status ? ` · ${l.status}` : ""}</small></td>
+        <td><small>${esc(l.usuario_email || "—")}</small></td><td>${l.ocorrencias}</td>
+        <td class="acoes-celula"><button class="botao pequeno secundario" data-ver-log="${l.id}">Detalhes</button></td></tr>`).join("")}</tbody></table>`
+      : vazio("Nenhum erro neste filtro", f.situacao === "abertos" ? "Tudo certo por aqui." : "")}</section>`;
+  const recarregar = () => abaLogs(el);
+  $$("[data-sit]", el).forEach((b) => b.onclick = () => { f.situacao = b.dataset.sit; recarregar(); });
+  $$("[data-org]", el).forEach((b) => b.onclick = () => { f.origem = b.dataset.org; recarregar(); });
+  $$("[data-dias]", el).forEach((b) => b.onclick = () => { f.dias = Number(b.dataset.dias); recarregar(); });
+  let t; $("#busca-log", el).oninput = (ev) => { clearTimeout(t); t = setTimeout(() => { f.q = ev.target.value; recarregar(); }, 400); };
+  const selecionados = () => $$("[data-sel-log]:checked", el).map((c) => c.dataset.selLog);
+  const atualizarSel = () => { const n = selecionados().length; $("#sel-logs", el).textContent = n ? `${n} selecionado(s)` : "Sem seleção: vão todos os erros em aberto (até 50)."; };
+  $$("[data-sel-log]", el).forEach((c) => c.onchange = atualizarSel);
+  const todos = $("#todos-logs", el); if (todos) todos.onchange = () => { $$("[data-sel-log]", el).forEach((c) => { c.checked = todos.checked; }); atualizarSel(); };
+  atualizarSel();
+  const texto = async () => { const r = await api("GET", `/api/admin/logs/exportar?ids=${selecionados().join(",")}`); return r.text(); };
+  $("#copiar-logs", el).onclick = (ev) => ocupado(ev.target, "Copiando…", async () => {
+    try { const txt = await texto(); await navigator.clipboard.writeText(txt); toast("Copiado. É só colar na conversa.", "ok"); }
+    catch (e) { const txt = await texto().catch(() => ""); modal({ titulo: "Copie o texto abaixo", largo: true, corpo: `<textarea class="editor" style="min-height:360px">${esc(txt)}</textarea>` }); }
+  });
+  $("#baixar-logs", el).onclick = async () => {
+    const txt = await texto(); const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([txt], { type: "text/plain" })); a.download = `kasiski-erros-${new Date().toISOString().slice(0, 10)}.txt`; a.click();
+  };
+  const rt = $("#resolver-todos", el);
+  if (rt) rt.onclick = async () => { if (await confirmar("Marcar todos os erros em aberto como resolvidos?", "Marcar")) { await api("POST", "/api/admin/logs/resolver-todos"); recarregar(); } };
+  $$("[data-ver-log]", el).forEach((b) => b.onclick = async () => {
+    const l = await api("GET", `/api/admin/logs/${b.dataset.verLog}`);
+    const m = modal({ titulo: `Erro #${l.id}`, largo: true, corpo: `
+      <div class="meta" style="margin:0 0 12px">${carimboStatus(ORIGEM_LOG, l.origem)}<span>${l.ocorrencias} ocorrência(s)</span>
+        <span>primeiro ${fmt.dataHora(l.criado_em + "Z")}</span><span>último ${fmt.dataHora(l.ultimo_em + "Z")}</span></div>
+      <p><b>${esc(l.mensagem)}</b></p>
+      <p class="fraco">${esc([l.metodo, l.rota].filter(Boolean).join(" ") || "—")}${l.status ? ` · HTTP ${l.status}` : ""} · ${esc(l.usuario_email || "sem usuário")}</p>
+      ${l.navegador ? `<p class="fraco"><small>${esc(l.navegador)}</small></p>` : ""}
+      ${l.detalhe ? `<h3>Rastreamento técnico</h3><div class="log-detalhe">${esc(l.detalhe)}</div>` : ""}`,
+      acoes: `<button class="botao secundario" data-copiar-um>Copiar para análise</button><button class="botao" data-resolver>${l.resolvido ? "Reabrir" : "Marcar como resolvido"}</button>` });
+    $("[data-copiar-um]", m).onclick = async () => { const r = await api("GET", `/api/admin/logs/exportar?ids=${l.id}`); await navigator.clipboard.writeText(await r.text()).then(() => toast("Copiado.", "ok")).catch(() => toast("Não foi possível copiar; use Baixar .txt.", "erro")); };
+    $("[data-resolver]", m).onclick = async () => { await api("PATCH", `/api/admin/logs/${l.id}`, { resolvido: !l.resolvido }); m.fechar(); recarregar(); };
+  });
 }

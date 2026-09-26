@@ -43,7 +43,7 @@ class Config:
     # Limite de texto do edital enviado à IA (caracteres). ~180 mil ≈ 45 mil tokens.
     MAX_CHARS_DOCUMENTO = int(os.getenv("MAX_CHARS_DOCUMENTO", "180000"))
 
-    # Tabela de revisão profissional (R$) por tipo de peça
+    # Serviço de advogado (R$) por tipo de peça: elaboração completa ou revisão da minuta da IA
     PRECO_REVISAO = {
         "esclarecimento": 290, "impugnacao": 690, "intencao_recurso": 190, "recurso": 990,
         "contrarrazoes": 890, "reequilibrio": 1490, "cobranca_pagamento": 490, "defesa_previa": 1190,

@@ -242,3 +242,79 @@ def eventos():
     marketing.registrar(tipo, visitante=vid, toque=_toque(d), dados=info)
     db.session.commit()
     return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------- diagnóstico de maturidade B2G
+@bp.post("/diagnostico")
+def diagnostico():
+    """Calcula e guarda o diagnóstico (anônimo). O e-mail é opcional, depois, para receber o relatório."""
+    from models import DiagnosticoB2G
+    from services import diagnostico as dg
+    d = request.get_json(silent=True) or {}
+    publico.exigir_humano(d)
+    publico.limitar("diagnostico", publico.ip_hash(), por_ip=30)
+    resp = d.get("respostas") if isinstance(d.get("respostas"), dict) else {}
+    r = dg.calcular(resp)
+    if r["respondidas"] < r["total"] - 2:
+        raise ErroAPI("Responda todas as perguntas para ver o diagnóstico.")
+    perfil = d.get("perfil") if isinstance(d.get("perfil"), dict) else {}
+    diag = DiagnosticoB2G(id=publico.novo_token(), visitante_id=_visitante(d), ip_hash=publico.ip_hash(), respostas=resp,
+                          eixos={e["id"]: e["nota"] for e in r["eixos"]}, nota=r["nota"], nivel=r["nivel"],
+                          segmento=str(perfil.get("segmento") or "")[:80] or None, porte=str(perfil.get("porte") or "")[:30] or None,
+                          versao=dg.definicao().get("versao", 1))
+    db.session.add(diag)
+    lead = marketing.obter_lead(visitante=diag.visitante_id) if diag.visitante_id else None
+    if lead:
+        diag.lead_id = lead.id
+        lead.segmento = lead.segmento or diag.segmento
+    marketing.registrar("diagnostic_completed", visitante=diag.visitante_id, lead=lead, toque=_toque(d),
+                        dados={"nota": r["nota"], "nivel": r["nivel"]})
+    db.session.commit()
+    return jsonify({"id": diag.id, **r, "mercado": dg.media_mercado()})
+
+
+@bp.post("/diagnostico/<did>/email")
+def diagnostico_email(did):
+    """Envia o relatório completo por e-mail e transforma o visitante em lead."""
+    from models import DiagnosticoB2G
+    from services import diagnostico as dg
+    diag = DiagnosticoB2G.query.get(did[:40])
+    if not diag:
+        raise ErroAPI("Diagnóstico não encontrado. Refaça o teste.", 404)
+    d = dados()
+    publico.exigir_humano(d)
+    _consentimento(d)
+    email = _email(d)
+    publico.limitar("lead", publico.ip_hash(), por_ip=20)
+    lead = _lead({**d, "visitante": diag.visitante_id or d.get("visitante"), "segmento": d.get("segmento") or diag.segmento}, "diagnostico", email)
+    diag.lead_id = lead.id
+    marketing.registrar("generate_lead", lead=lead, dados={"lead_magnet": "diagnostico", "nota": diag.nota})
+    marketing.recalcular(lead)
+    db.session.commit()
+    _enviar_relatorio(diag, lead, dg.calcular(diag.respostas))
+    return jsonify({"ok": True})
+
+
+def _enviar_relatorio(diag, lead, r):
+    from services import email as em
+    if not em.configurado():
+        return
+    site, app = current_app.config["SITE_URL"], current_app.config["FRONTEND_URL"]
+    barras = "".join(
+        f"<tr><td style='padding:6px 12px 6px 0;white-space:nowrap'>{em.esc(e['nome'])}</td><td style='width:100%'>"
+        + (f"<div style='background:#E7ECEF;border-radius:4px;height:12px'><div style='background:#2E6CA4;height:12px;border-radius:0 4px 4px 0;width:{e['nota']}%'></div></div>"
+           if e["nota"] is not None else "<span style='color:#91A5B3'>não se aplica</span>")
+        + f"</td><td style='padding-left:10px;font-weight:700'>{'' if e['nota'] is None else e['nota']}</td></tr>" for e in r["eixos"])
+    recs = "".join(f"<li style='margin-bottom:10px'><b>{em.esc(x['nome'])} ({x['nota']}/100).</b> {em.esc(x['texto'])} "
+                   f"<a href='{site}{x['recurso']['url']}'>{em.esc(x['recurso']['nome'])}</a></li>" for x in r["recomendacoes"])
+    corpo = em.layout_marketing(
+        f"Maturidade B2G: {r['nota']}/100 — {r['nivel_nome']}",
+        f"<p>{em.esc(r['nivel_texto'])}</p><table style='width:100%;border-collapse:collapse;margin:14px 0'>{barras}</table>"
+        + (f"<h2 style='font-size:16px;margin:20px 0 8px'>Plano de ação — por onde começar</h2><ol style='padding-left:18px'>{recs}</ol>" if recs else
+           "<p>Sua empresa está bem estruturada em todos os eixos. O Kasiski ajuda a ganhar escala com radar, análise e pipeline automatizados.</p>"),
+        "Começar gratuitamente no Kasiski", f"{app}/#/cadastro?utm_source=kasiski&utm_medium=email&utm_campaign=diagnostico",
+        descadastro=(f"{current_app.config['BACKEND_URL']}/api/public/sair?t={lead.token}" if current_app.config.get("BACKEND_URL") else None))
+    try:
+        em.enviar(lead.email, f"Seu diagnóstico de maturidade B2G: {r['nota']}/100", f"Nota {r['nota']}/100 — {r['nivel_nome']}", corpo)
+    except Exception:
+        current_app.logger.warning("Falha ao enviar relatório do diagnóstico %s", diag.id)

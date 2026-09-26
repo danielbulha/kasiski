@@ -587,6 +587,23 @@ class AnalisePublica(db.Model):
     concluido_em = db.Column(db.DateTime)
 
 
+class DiagnosticoB2G(db.Model):
+    """Diagnóstico de maturidade para vendas ao governo feito no site (/diagnostico)."""
+    __tablename__ = "diagnostico_b2g"
+    id = db.Column(db.String(40), primary_key=True)
+    visitante_id = db.Column(db.String(40), index=True)
+    lead_id = db.Column(db.Integer, index=True)
+    ip_hash = db.Column(db.String(64))
+    respostas = db.Column(db.JSON)
+    eixos = db.Column(db.JSON)          # {eixo: nota 0-100 ou None (não se aplica)}
+    nota = db.Column(db.Integer)
+    nivel = db.Column(db.String(30))
+    segmento = db.Column(db.String(80))
+    porte = db.Column(db.String(30))
+    versao = db.Column(db.Integer, default=1)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+
 class UsoPublico(db.Model):
     """Registro de uso das ferramentas gratuitas, para limitar abuso por IP e por e-mail."""
     id = db.Column(db.Integer, primary_key=True)

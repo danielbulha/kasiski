@@ -7,6 +7,7 @@
   --fonte: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif; --largura: 1160px;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { scroll-behavior: smooth; }
 body { margin: 0; font-family: var(--fonte); color: var(--tinta); background: var(--papel); line-height: 1.6; font-size: 16px; -webkit-font-smoothing: antialiased; }
 a { color: var(--ciano-escuro); }
@@ -256,3 +257,48 @@ input:focus, textarea:focus, select:focus, button:focus-visible, a:focus-visible
 @media (max-width: 960px) { .s-planos { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 640px) { .s-planos { grid-template-columns: 1fr; } }
 section[id] { scroll-margin-top: 76px; }
+
+/* diagnóstico de maturidade B2G */
+.s-diag-progresso { height: 6px; background: var(--linha); border-radius: 999px; overflow: hidden; margin-bottom: 12px; }
+.s-diag-progresso i { display: block; height: 100%; width: 0; background: var(--ciano); transition: width .25s; }
+.s-diag-passo { font-size: .8rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ciano-escuro); margin: 0 0 10px; }
+.s-diag-q { border: 0; padding: 0; margin: 0 0 18px; }
+.s-diag-q legend { font-weight: 700; margin-bottom: 8px; padding: 0; }
+.s-diag-op { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--linha); border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; cursor: pointer; background: #fff; transition: border-color .12s, background .12s; }
+.s-diag-op:hover { border-color: var(--linha-forte); }
+.s-diag-op input { margin-top: 3px; flex: none; }
+.s-diag-op:has(input:checked) { border-color: var(--tinta); background: var(--ciano-claro); }
+.s-diag-nav { display: flex; justify-content: space-between; gap: 10px; margin-top: 8px; }
+.s-diag-nav [data-diag-avancar] { margin-left: auto; }
+.s-diag-res { max-width: 880px; margin: 0 auto; }
+.s-diag-topo { display: grid; grid-template-columns: 200px 1fr; gap: 28px; align-items: center; margin-bottom: 26px; }
+.s-diag-nota { background: var(--tinta); color: #fff; border-radius: 14px; padding: 22px; text-align: center; display: grid; gap: 4px; }
+.s-diag-nota small { font-size: .72rem; letter-spacing: .14em; text-transform: uppercase; color: #C9D4DB; }
+.s-diag-nota b { font-size: 3.4rem; line-height: 1; font-weight: 800; }
+.s-diag-nota b span { font-size: 1.1rem; color: #C9D4DB; font-weight: 600; }
+.s-diag-nota em { font-style: normal; font-weight: 700; color: #7fdde6; }
+.s-barras { display: grid; gap: 12px; background: #fff; border: 1px solid var(--linha); border-radius: 12px; padding: 20px; }
+.s-barra-linha { display: grid; grid-template-columns: 140px 1fr 90px; gap: 14px; align-items: center; }
+.s-barra-nome { font-weight: 600; font-size: .95rem; }
+.s-barra-trilho { position: relative; height: 20px; background: #E7ECEF; border-radius: 4px; }
+.s-barra-trilho i { position: absolute; left: 0; top: 0; bottom: 0; background: #2E6CA4; border-radius: 0 4px 4px 0; }
+.s-barra-media { position: absolute; top: -4px; bottom: -4px; width: 3px; background: var(--tinta); margin-left: -1.5px; border-radius: 2px; box-shadow: 0 0 0 2px #fff; }
+.s-barra-media-leg { position: relative; display: inline-block; height: 14px; vertical-align: middle; top: auto; bottom: auto; margin: 0 6px 0 0; }
+.s-barras-legenda { margin-top: 8px; }
+.s-barra-valor { font-weight: 800; font-size: 1.05rem; }
+.s-barra-valor small { font-weight: 500; color: var(--grafite); font-size: .8rem; }
+.s-recs { display: grid; gap: 12px; }
+.s-rec { display: flex; gap: 14px; background: #fff; border: 1px solid var(--linha); border-radius: 10px; padding: 16px; }
+.s-rec > span { width: 30px; height: 30px; flex: none; border-radius: 50%; background: var(--tinta); color: #fff; font-weight: 800; display: grid; place-items: center; }
+.s-rec p { margin: 4px 0 6px; color: var(--grafite); }
+.s-rec a { font-weight: 700; text-decoration: none; }
+.s-diag-cta { display: flex; gap: 20px; align-items: center; justify-content: space-between; background: var(--tinta); color: #fff; border-radius: 14px; padding: 22px 24px; margin: 26px 0; flex-wrap: wrap; }
+.s-diag-cta p { color: #C9D4DB; margin: 4px 0 0; max-width: 520px; }
+.s-diag-cta .s-botao { background: var(--ciano); color: var(--tinta) !important; }
+.s-diag-email { margin-bottom: 16px; }
+.s-diag-rodape { text-align: center; font-size: .92rem; }
+@media (max-width: 640px) {
+  .s-diag-topo { grid-template-columns: 1fr; }
+  .s-barra-linha { grid-template-columns: 1fr 64px; }
+  .s-barra-nome { grid-column: 1 / -1; }
+}

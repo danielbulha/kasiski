@@ -52,6 +52,16 @@ _FONTE_CANAL = {"google": "busca_paga", "google_ads": "busca_paga", "linkedin": 
                 "meta": "social_pago", "facebook": "social_pago", "instagram": "social_pago"}
 
 
+def _diagnosticos(desde):
+    from models import DiagnosticoB2G
+    ds = DiagnosticoB2G.query.filter(DiagnosticoB2G.criado_em >= desde).all()
+    niveis = {}
+    for x in ds:
+        niveis[x.nivel] = niveis.get(x.nivel, 0) + 1
+    return {"total": len(ds), "com_email": sum(1 for x in ds if x.lead_id), "media": round(sum(x.nota or 0 for x in ds) / len(ds)) if ds else None,
+            "por_nivel": niveis}
+
+
 @bp.get("/visao")
 @admin_requerido
 def visao():
@@ -133,6 +143,7 @@ def visao():
                                              .filter(AnalisePublica.criado_em >= desde).scalar() or 0), 4),
         "consultas_concorrente": Evento.query.filter(Evento.tipo == "competitor_search", Evento.criado_em >= desde).count(),
         "newsletter_ativos": Lead.query.filter(Lead.newsletter.is_(True), Lead.newsletter_confirmada.is_(True)).count(),
+        "diagnosticos": _diagnosticos(desde),
         "por_isca": sorted(({"isca": k, **v} for k, v in magnets.items()), key=lambda x: -x["leads"]),
     }
 
@@ -208,7 +219,14 @@ def ver_lead(lid):
                               "trial_fim": conta.trial_fim.isoformat() if conta.trial_fim else None} if conta else None,
                     "analises_gratuitas": [{"id": a.id, "nome_arquivo": a.nome_arquivo, "status": a.status,
                                             "nota": (a.resultado or {}).get("nota"), "criado_em": a.criado_em.isoformat()}
-                                           for a in AnalisePublica.query.filter_by(lead_id=l.id).order_by(AnalisePublica.criado_em.desc())]})
+                                           for a in AnalisePublica.query.filter_by(lead_id=l.id).order_by(AnalisePublica.criado_em.desc())],
+                    "diagnosticos": _diag_do_lead(l.id)})
+
+
+def _diag_do_lead(lid):
+    from models import DiagnosticoB2G
+    return [{"nota": x.nota, "nivel": x.nivel, "eixos": x.eixos, "criado_em": x.criado_em.isoformat()}
+            for x in DiagnosticoB2G.query.filter_by(lead_id=lid).order_by(DiagnosticoB2G.criado_em.desc())]
 
 
 @bp.patch("/leads/<int:lid>")

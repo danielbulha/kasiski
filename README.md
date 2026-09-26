@@ -395,3 +395,14 @@ Nas análises de habilitação/proposta desse concorrente em um edital, a IA rec
    - em `CORS_ORIGINS`, acrescente `https://app.kasiski.com.br`.
 4. **Mercado Pago, Resend e webhook:** nada muda. Os links de retorno saem do backend, pelo `FRONTEND_URL`.
 5. **Usuários:** entram de novo uma vez no app (a sessão fica guardada por domínio).
+
+## Diagnóstico de maturidade B2G (`kasiski.com.br/diagnostico/`)
+- São 12 perguntas de múltipla escolha, em 6 etapas: perfil da empresa e os eixos Oportunidades, Documentação, Estratégia, Concorrência e Contratos.
+- O resultado sai na hora e sem cadastro:
+  - nota de 0 a 100 e nível (Inicial, Em desenvolvimento, Estruturada, Avançada);
+  - nota por eixo;
+  - média do mercado, a partir de 20 diagnósticos feitos;
+  - plano de ação com os 3 eixos mais fracos, cada um ligado à funcionalidade do Kasiski correspondente.
+- **Relatório por e-mail:** transforma o visitante em lead (isca `diagnostico`) e envia o relatório.
+- Evento `diagnostic_completed` (+8 pontos no score do lead). No Admin → Marketing → Ferramentas grátis: total, quantos deixaram e-mail, nota média e distribuição por nível. O diagnóstico também aparece no detalhe do lead.
+- As perguntas, os pesos e os textos ficam em `backend/data/diagnostico.json`, usado pelo backend (cálculo) e pelo gerador do site (página). Depois de editar, rode `python site/gerar.py` e publique o `publico/` e o backend.

@@ -50,3 +50,9 @@ if __name__ == "__main__":
     avisos = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(avisos)
     avisos.executar()
+    # Kanban de oportunidades: eventos públicos do PNCP (resultado, homologação, contrato)
+    spec = importlib.util.spec_from_file_location(
+        "sincronizar_oportunidades", os.path.join(os.path.dirname(os.path.abspath(__file__)), "sincronizar_oportunidades.py"))
+    sinc = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sinc)
+    sinc.executar()

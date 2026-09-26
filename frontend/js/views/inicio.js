@@ -2,11 +2,11 @@
 // Tom de voz conforme o manual da marca: precisa, clara, proativa e sóbria — sem superlativos.
 
 const PLANOS_RESERVA = { // usado só se a API estiver fora do ar; a fonte oficial é GET /api/planos
-  trial: { nome: "Teste grátis", preco: 0, empresas: 1, analises: 2, concorrentes: 1, pecas: true, precos: true, propostas: false, contratos: 1, marca: false },
-  essencial: { nome: "Essencial", preco: 197, empresas: 1, analises: 5, concorrentes: 0, pecas: false, precos: false, propostas: false, contratos: 0, marca: false },
-  profissional: { nome: "Profissional", preco: 497, empresas: 1, analises: 20, concorrentes: 5, pecas: true, precos: true, propostas: false, contratos: 10, marca: false },
-  avancado: { nome: "Avançado", preco: 799, empresas: 3, analises: 40, concorrentes: 15, pecas: true, precos: true, propostas: true, contratos: 30, marca: false },
-  consultor: { nome: "Consultor", preco: 1290, empresas: 10, analises: 60, concorrentes: 30, pecas: true, precos: true, propostas: true, contratos: 50, marca: true },
+  trial: { nome: "Teste grátis", preco: 0, empresas: 1, analises: 2, concorrentes: 1, possiveis: 1, pecas: true, precos: true, propostas: false, contratos: 1, marca: false },
+  essencial: { nome: "Essencial", preco: 197, empresas: 1, analises: 5, concorrentes: 0, possiveis: 2, pecas: false, precos: false, propostas: false, contratos: 0, marca: false },
+  profissional: { nome: "Profissional", preco: 497, empresas: 1, analises: 20, concorrentes: 5, possiveis: 5, pecas: true, precos: true, propostas: false, contratos: 10, marca: false },
+  avancado: { nome: "Avançado", preco: 799, empresas: 3, analises: 40, concorrentes: 15, possiveis: 15, pecas: true, precos: true, propostas: true, contratos: 30, marca: false },
+  consultor: { nome: "Consultor", preco: 1290, empresas: 10, analises: 60, concorrentes: 30, possiveis: 25, pecas: true, precos: true, propostas: true, contratos: 50, marca: true },
 };
 
 const PUBLICO_PLANO = {
@@ -28,7 +28,7 @@ V.inicio = async (raiz) => {
   <div class="lp">
     <header class="lp-topo">
       <div class="lp-conteiner lp-topo-linha">
-        <a class="lp-marca" href="#/">${simboloMarca(26)}<span class="texto"><strong>${esc(CERTAME.NOME)}</strong><span>public market intelligence</span></span></a>
+        <a class="lp-marca" href="#/">${simboloMarca(34)}<span class="texto"><strong>${esc(CERTAME.NOME)}</strong><span>public market intelligence</span></span></a>
         <nav class="lp-ancoras" aria-label="Seções">
           <button data-rolar="como">Como funciona</button><button data-rolar="recursos">Recursos</button>
           <button data-rolar="planos">Planos</button><button data-rolar="duvidas">Dúvidas</button>
@@ -141,7 +141,7 @@ V.inicio = async (raiz) => {
 
     <footer class="lp-rodape">
       <div class="lp-conteiner lp-rodape-linha">
-        <span class="lp-marca">${simboloMarca(20)}<span class="texto"><strong>${esc(CERTAME.NOME)}</strong><span>public market intelligence</span></span></span>
+        <span class="lp-marca">${simboloMarca(28)}<span class="texto"><strong>${esc(CERTAME.NOME)}</strong><span>public market intelligence</span></span></span>
         <span>Lei 14.133/2021 · dados públicos do PNCP, Receita Federal, TCU e CGU</span>
         <span><a href="#/entrar">Entrar</a> · <a href="#/cadastro">Criar conta</a></span>
       </div>
@@ -179,6 +179,7 @@ function cartaoPlano(codigo, v) {
       ${item(true, qtd(v.empresas, "empresa (CNPJ)", "empresas (CNPJs)"))}
       ${item(true, `${qtd(v.analises, "análise", "análises")} de edital por mês`)}
       ${item(!!v.concorrentes, v.concorrentes ? `${qtd(v.concorrentes, "análise", "análises")} de concorrente por mês` : "Análise de concorrentes")}
+      ${item(!!v.possiveis, `${qtd(v.possiveis, "avaliação", "avaliações")} de possíveis concorrentes por mês`)}
       ${item(true, "Radar diário, cofre e agenda de prazos")}
       ${item(!!v.pecas, "Gerador de peças")}
       ${item(!!v.precos, "Inteligência de preços")}

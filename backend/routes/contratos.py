@@ -89,6 +89,8 @@ def criar(eid):
     if d.get("edital_id"):  # a partir de um edital ganho
         ed = edital_da_conta(int(d["edital_id"]))
         c.edital_id, c.orgao, c.objeto = ed.id, ed.orgao, ed.objeto
+        from services import oportunidades
+        oportunidades.avancar(ed, "contrato_ativo", "Contrato cadastrado na Gestão de contratos.", autor=g.usuario.nome)
         ed.status = "ganho"
     _preencher(c, {k: v for k, v in d.items() if v not in ("", None)})
     com_pdf = _anexar_pdf(c)

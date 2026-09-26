@@ -23,6 +23,7 @@ V.painel = async (el) => {
       <div class="indicador"><b>${p.taxa_sucesso === null ? "—" : p.taxa_sucesso + "%"}</b><span>taxa de sucesso (${e.ganho} ganhos, ${e.perdido} perdidos)</span></div>
       <div class="indicador ${p.pagamentos_atrasados.quantidade ? "alerta" : ""}"><b>${fmt.moeda(p.pagamentos_atrasados.valor)}</b><span>${p.pagamentos_atrasados.quantidade} pagamento(s) em atraso</span></div>
     </div>
+    ${todas ? "" : await resumoPipelineHtml()}
     <div class="grade grade-2">
       <section class="bloco"><div class="bloco-titulo"><h2>Próximos prazos</h2><a href="#/agenda">Agenda completa</a></div>
         ${p.proximos_prazos.length ? p.proximos_prazos.map((x) => `<div class="lista-item"><div class="corpo"><b>${esc(x.titulo)}</b>

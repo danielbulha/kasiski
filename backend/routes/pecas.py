@@ -84,6 +84,9 @@ def gerar(eid):
     p = Peca(empresa_id=eid, edital_id=edital.id if edital else None, contrato_id=contrato.id if contrato else None,
              tipo=tipo, titulo=titulo[:300], conteudo=texto, demonstracao=r.demonstracao)
     db.session.add(p)
+    if edital and tipo in ("intencao_recurso", "recurso", "contrarrazoes"):
+        from services import oportunidades
+        oportunidades.avancar(edital, "recurso", f"{TIPOS_PECA[tipo]} gerada no Kasiski.", autor=g.usuario.nome)
     planos.registrar_uso(g.conta, "pecas", [r], cobravel=False)
     db.session.commit()
     return jsonify(p.to_dict()), 201
@@ -185,6 +188,9 @@ def pedir_elaboracao(eid):
                 conteudo="")
     db.session.add(peca)
     db.session.flush()
+    if edital and tipo in ("intencao_recurso", "recurso", "contrarrazoes"):
+        from services import oportunidades
+        oportunidades.avancar(edital, "recurso", f"{TIPOS_PECA[tipo]} encomendada ao advogado.", autor=g.usuario.nome)
     r, url = _criar_pedido(peca, "elaboracao", d)
     return jsonify({**r.to_dict(), "url_pagamento": url, "peca_id": peca.id}), 201
 

@@ -6,6 +6,7 @@ const _ICONES = {
   painel: '<path d="M3 3h6v8H3zM11 3h6v5h-6zM11 10h6v7h-6zM3 13h6v4H3z"/>',
   radar: '<circle cx="10" cy="10" r="7"/><circle cx="10" cy="10" r="3.2"/><path d="M10 3v2M10 15v2M3 10h2M15 10h2" stroke-linecap="round"/>',
   editais: '<path d="M5 2.5h7l3 3V17a.5.5 0 0 1-.5.5h-9A.5.5 0 0 1 5 17V3a.5.5 0 0 1 .5-.5Z"/><path d="M12 2.5V6h3.2M7.5 9h5M7.5 12h5M7.5 15h3"/>',
+  kanban: '<rect x="2.5" y="3" width="4.2" height="14" rx="1"/><rect x="7.9" y="3" width="4.2" height="9" rx="1"/><rect x="13.3" y="3" width="4.2" height="11.5" rx="1"/>',
   cofre: '<rect x="4" y="8.5" width="12" height="8.5" rx="1.2"/><path d="M6.5 8.5V6a3.5 3.5 0 0 1 7 0v2.5"/><circle cx="10" cy="12.5" r="1.4"/><path d="M10 13.9V15.3"/>',
   concorrentes: '<circle cx="7" cy="6.5" r="2.6"/><path d="M2 17v-1.2A4.3 4.3 0 0 1 6.3 11.5h1.4A4.3 4.3 0 0 1 12 15.8V17"/><circle cx="14.5" cy="7.5" r="2.1"/><path d="M13.3 11.6a4 4 0 0 1 4.7 3.9V17"/>',
   pecas: '<path d="M5 2.5h6.5L15 6v10.5a.5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5V3a.5.5 0 0 1 .5-.5Z"/><path d="M11.2 2.5V6h3.5"/><path d="M7 10.3 12 9l-.6 1.9-4.4 4.4-2 .4.4-2Z"/>',
@@ -42,16 +43,8 @@ function icone(nome, tamanho = 18) {
   return `<svg width="${tamanho}" height="${tamanho}" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">${miolo}</svg>`;
 }
 
-// Símbolo da marca: interpretação do "padrão emergindo de dados" descrito no manual
-// (grade de traços de comprimentos variados, majoritariamente escuros com destaques em ciano).
-// Provisório até o arquivo vetorial oficial ser recebido — ver README.
+// Símbolo da marca (arquivo vetorial oficial KASISKI_logo_vetorial.pdf): 7 linhas de traços em azul-noite,
+// ciano e cinza. Os traços azul-noite usam currentColor para ficarem claros sobre fundos escuros.
 function simboloMarca(tamanho = 28) {
-  return `<svg width="${tamanho}" height="${Math.round(tamanho * 44 / 62)}" viewBox="0 0 62 44" fill="currentColor" aria-hidden="true">
-    <rect x="0" y="2" width="12" height="5" rx="2.5"/><rect x="16" y="2" width="7" height="5" rx="2.5"/>
-    <rect x="27" y="2" width="18" height="5" rx="2.5" fill="#11B8C8"/><rect x="49" y="2" width="9" height="5" rx="2.5"/>
-    <rect x="4" y="11" width="17" height="5" rx="2.5"/><rect x="25" y="11" width="10" height="5" rx="2.5"/><rect x="39" y="11" width="7" height="5" rx="2.5"/>
-    <rect x="0" y="20" width="9" height="5" rx="2.5"/><rect x="13" y="20" width="14" height="5" rx="2.5" fill="#11B8C8"/><rect x="31" y="20" width="9" height="5" rx="2.5"/><rect x="44" y="20" width="12" height="5" rx="2.5"/>
-    <rect x="6" y="29" width="15" height="5" rx="2.5"/><rect x="25" y="29" width="7" height="5" rx="2.5"/><rect x="36" y="29" width="14" height="5" rx="2.5"/>
-    <rect x="0" y="38" width="7" height="5" rx="2.5"/><rect x="11" y="38" width="19" height="5" rx="2.5"/><rect x="34" y="38" width="9" height="5" rx="2.5"/>
-  </svg>`;
+  return `<svg class="simbolo-marca" width="${tamanho}" height="${Math.round(tamanho * 308 / 375)}" viewBox="0 0 375 308" fill="currentColor" aria-hidden="true"><rect x="0" y="0" width="20" height="20" rx="10" fill="#11B8C8"/><rect x="45" y="0" width="130" height="20" rx="10"/><rect x="210" y="0" width="105" height="20" rx="10"/><rect x="0" y="48" width="125" height="20" rx="10" fill="#11B8C8"/><rect x="150" y="48" width="100" height="20" rx="10" fill="#11B8C8"/><rect x="275" y="48" width="75" height="20" rx="10"/><rect x="0" y="96" width="70" height="20" rx="10" fill="#11B8C8"/><rect x="95" y="96" width="105" height="20" rx="10" fill="#11B8C8"/><rect x="225" y="96" width="80" height="20" rx="10"/><rect x="0" y="144" width="20" height="20" rx="10" fill="#11B8C8"/><rect x="45" y="144" width="130" height="20" rx="10" fill="#11B8C8"/><rect x="195" y="144" width="75" height="20" rx="10"/><rect x="0" y="192" width="55" height="20" rx="10"/><rect x="75" y="192" width="70" height="20" rx="10" fill="#11B8C8"/><rect x="165" y="192" width="100" height="20" rx="10" fill="#11B8C8"/><rect x="290" y="192" width="20" height="20" rx="10"/><rect x="335" y="192" width="20" height="20" rx="10" fill="#11B8C8"/><rect x="0" y="240" width="85" height="20" rx="10" fill="#91A5B3"/><rect x="105" y="240" width="65" height="20" rx="10"/><rect x="195" y="240" width="105" height="20" rx="10" fill="#11B8C8"/><rect x="320" y="240" width="55" height="20" rx="10"/><rect x="0" y="288" width="20" height="20" rx="10" fill="#91A5B3"/><rect x="45" y="288" width="145" height="20" rx="10"/><rect x="215" y="288" width="105" height="20" rx="10"/></svg>`;
 }

@@ -276,3 +276,45 @@ Na página do concorrente, **Montar/Atualizar dossiê completo** (conta 1 análi
 4. **Consolidação pela IA**: inabilitações e desclassificações anteriores, atestados conhecidos, índices contábeis, certidões, responsáveis técnicos, sanções, fragilidades recorrentes, **pontos de ataque** e lacunas, cada item com a fonte (`doc#N`, `analise#N`, dados públicos).
 
 Nas análises de habilitação/proposta desse concorrente em um edital, a IA recebe o dossiê consolidado e devolve, além dos apontamentos, o **cruzamento com o histórico** (hipóteses a conferir) e **sugestões de peça** (recurso, contrarrazões, intenção de recorrer, pedido de diligência, representação), que podem ser marcadas e enviadas ao gerador de peças.
+
+## Assistente virtual (chatbot de atendimento)
+
+- Widget em `frontend/chat/` (`widget.css` + `widget.js`), carregado em todas as telas pelo `index.html`. Funciona para visitantes e para clientes logados.
+- As respostas vêm de `POST /api/chat` (`backend/routes/chat.py`). A IA (rota "barata") recebe uma base oficial montada com os planos, os preços, os limites e os serviços do próprio código (`services/atendimento.py`), então muda sozinha quando os planos mudam. Sem chave de IA, ou em caso de falha, a resposta sai de regras por palavra-chave.
+- **Falar com atendimento**: o visitante deixa nome, e-mail e WhatsApp. A conversa vira um chamado e os `ADMIN_EMAILS` recebem um e-mail com o histórico.
+- **Administração → Atendimento**: chamados abertos, conversa completa, links de e-mail e WhatsApp, situação (aguardando, em atendimento, resolvida) e anotações internas.
+- Limites: 1.200 caracteres por mensagem e 60 mensagens por conversa. A conversa fica salva no navegador; o botão ↺ começa uma nova.
+
+## Logomarca
+
+- O símbolo (`simboloMarca()` em `frontend/js/icones.js`) e o favicon usam a geometria exata do arquivo oficial `frontend/assets/KASISKI_logo_vetorial.pdf`. Os traços azul-noite seguem a cor do texto, então ficam brancos sobre fundos escuros.
+- O logotipo completo em SVG, para e-mails, apresentações ou redes, fica em `frontend/assets/kasiski-logo.svg`.
+
+## Possíveis concorrentes (Editais → Análise)
+
+- Botão **Avaliar possíveis concorrentes**, separado da análise do edital. O Kasiski procura no PNCP contratos e atas de registro de preços com objeto parecido (termos sugeridos pela IA na extração, mais o núcleo do objeto) e consulta quem venceu cada um: o fornecedor do contrato ou os homologados por item.
+- As empresas são ordenadas por número de vitórias, semelhança do objeto, data, mesma UF e mesmo órgão, com relevância alta, média ou baixa. Cada empresa mostra nome, CNPJ, valor contratado, onde atua e as contratações, com link para o PNCP.
+- Botões: **Montar dossiê**, que abre o dossiê completo do concorrente, e **Analisar documento**, que abre a aba Concorrentes com o CNPJ já preenchido.
+- **Limite mensal por plano** (recurso `possiveis` em `backend/planos.py`): Teste 1, Essencial 2, Profissional 5, Avançado 15 e Consultor 25. Cada avaliação concluída desconta 1, inclusive "Avaliar novamente". Se o PNCP não responder, nada é descontado. O uso aparece em Plano e conta e no próprio bloco do edital.
+- A consulta roda em segundo plano (`POST /api/editais/<id>/possiveis-concorrentes`) e tem tempo máximo de cerca de 100 segundos.
+- Código: `backend/services/possiveis_concorrentes.py` e as funções `buscar_documentos`, `fornecedor_do_contrato` e `vencedores_da_compra` em `services/pncp.py`.
+
+## Oportunidades (Kanban do ciclo comercial)
+
+- Nova tela **Oportunidades** (`#/oportunidades`) com um quadro de 11 etapas: Identificada → Em análise → Decisão Go / No-Go → Preparação → Pronta para disputa → Em disputa → Classificada / Habilitação → Recurso / Contrarrazões → Adjudicada / Homologada → Contratação → Contrato ativo. Há duas saídas laterais, **Perdida** e **Desistência / No-Go**, que pedem o motivo.
+- O cartão mostra número, órgão, objeto, valor, sessão, responsável, fit, risco e dias para a sessão.
+  - **Fit** = 70% aderência da habilitação (checklist da análise) + 30% recomendação da IA. Antes da análise, vale a nota do radar.
+  - **Risco** = pior nível entre os riscos e as cláusulas restritivas.
+- Ao abrir o cartão, aparece o dossiê em painel lateral: dados, UASG/unidade, datas e prazos, análise, preços e proposta, itens e lotes (PNCP), documentos e peças, concorrentes, histórico do órgão e movimentações. O painel também tem a decisão Go / No-Go e o responsável (usuário da conta ou texto livre).
+- **Movimentos automáticos** (só avançam; o usuário pode mover para qualquer etapa):
+  - edital capturado ou enviado → Identificada;
+  - análise iniciada → Em análise; análise concluída → Decisão;
+  - Go → Preparação; No-Go → Desistência;
+  - sessão iniciada → Em disputa;
+  - resultado registrado → Classificada; peça de recurso ou contrarrazões → Recurso;
+  - PNCP com resultado homologado para a empresa → Homologada; para outra empresa → Perdida;
+  - PNCP com licitação revogada ou anulada → Perdida;
+  - contrato publicado no PNCP ou cadastrado na Gestão de contratos → Contrato ativo.
+- A sincronização com o PNCP roda todo dia no mesmo cron do radar (`jobs/sincronizar_oportunidades.py`) e também pelo botão **Sincronizar com o PNCP**.
+- O Painel ganhou o bloco **Pipeline de oportunidades**. A tela do edital tem um atalho para o cartão.
+- Código: `backend/services/oportunidades.py`, `backend/routes/oportunidades.py` e `frontend/js/views/oportunidades.js`. Os dados ficam nos campos novos de `Edital` e na tabela `Movimento`, criados automaticamente.

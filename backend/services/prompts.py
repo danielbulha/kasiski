@@ -27,7 +27,8 @@ def extracao_edital(texto):
  "exigencias_habilitacao": [{{"categoria": "juridica|fiscal|trabalhista|economica|tecnica|declaracao|setorial",
    "descricao": "", "pagina": ""}}],
  "exigencias_tecnicas_objeto": [""], "garantia_proposta": "", "garantia_contrato": "",
- "penalidades": [""], "prazo_execucao": "", "condicoes_pagamento": "", "reajuste": ""
+ "penalidades": [""], "prazo_execucao": "", "condicoes_pagamento": "", "reajuste": "",
+ "termos_busca_pncp": ["2 ou 3 expressões curtas (2 a 4 palavras) com o núcleo do objeto, como aparecem em contratos públicos, para achar contratações parecidas. Ex.: 'limpeza predial', 'conservação e limpeza'"]
 }}
 
 Regras de classificação:
@@ -56,6 +57,7 @@ EDITAL:
         ],
         "exigencias_tecnicas_objeto": ["Equipe mínima de 24 serventes", "Uniformes e EPIs por conta da contratada"],
         "garantia_proposta": "Não exigida", "garantia_contrato": "5% do valor do contrato",
+        "termos_busca_pncp": ["limpeza predial", "limpeza e conservação"],
         "penalidades": ["Multa de 0,5% ao dia de atraso", "Impedimento de licitar por até 3 anos"],
         "prazo_execucao": "12 meses, prorrogável", "condicoes_pagamento": "Até 30 dias após o atesto",
         "reajuste": "Repactuação anual (mão de obra) e IPCA (insumos)",

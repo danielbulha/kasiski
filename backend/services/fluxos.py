@@ -130,6 +130,7 @@ def analisar_edital(edital, empresa, analise=None):
             it["verificacao"] = mapa.get(it["id"], {"confirmado": None, "comentario": "Sem retorno do revisor."})
 
     resultado["extracao"] = extracao
+
     if analise is None:
         analise = Analise(edital_id=edital.id)
         db.session.add(analise)

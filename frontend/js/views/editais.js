@@ -90,7 +90,8 @@ V.edital = async (el, id) => {
     <div class="capa">
       <div class="capa-topo"><div><div class="processo">${esc(ed.numero || ed.numero_controle || "Sem número")} · ${esc(ed.modalidade || "")}</div>
           <h1>${esc(ed.objeto || "Edital ainda sem objeto — clique em Analisar para extrair")}</h1></div>
-        <div class="acoes">${carimbo(ROTULOS.statusEdital[ed.status] || ed.status, ed.status === "ganho" ? "ok" : ed.status === "perdido" ? "erro" : "neutro")}
+        <div class="acoes"><a class="botao pequeno secundario" href="#/oportunidades/${ed.id}" title="Abrir no quadro de oportunidades">${icone("kanban", 14)} ${esc(ETAPA_NOMES_OP[ed.etapa] || "Ver no quadro")}</a>
+          ${carimbo(ROTULOS.statusEdital[ed.status] || ed.status, ed.status === "ganho" ? "ok" : ed.status === "perdido" ? "erro" : "neutro")}
           <select id="status" aria-label="Alterar status">${Object.entries(ROTULOS.statusEdital).map(([k, v]) => `<option value="${k}" ${ed.status === k ? "selected" : ""}>${v}</option>`).join("")}</select></div></div>
       <dl class="capa-campos">
         <div><dt>Órgão</dt><dd>${esc(ed.orgao || "—")}</dd></div>
@@ -135,12 +136,14 @@ function painelAnalise(el, ed, analises, andamento) {
     </div>
     <div id="corpo-analise">${ultima ? htmlAnalise(ultima) : guia(`<p>A análise extrai os dados do edital, confere cada exigência de habilitação
       contra o <a href="#/cofre">cofre de documentos</a> da empresa, aponta cláusulas que restringem a competição e recomenda se vale a pena participar.
-      Cada cláusula restritiva e cada risco passam por uma segunda IA antes de aparecer aqui.</p>`)}</div>`;
+      Cada cláusula restritiva e cada risco passam por uma segunda IA antes de aparecer aqui.</p>`)}</div>
+    <div id="possiveis-conc"></div>`;
   $("#analisar", el).onclick = async () => {
     try { acompanharAnalise(el, ed, await api("POST", `/api/editais/${ed.id}/analisar`)); }
     catch (e) { avisarErro(e); }
   };
   if (ultima) ligarAcoesAnalise(el, ed, ultima);
+  desenharPossiveis($("#possiveis-conc", el), ed);
   if (andamento) acompanharAnalise(el, ed, andamento);
   $("#montar-proposta", el).onclick = () => modalNovaProposta(ed.id);
   const imp = $("#imprimir", el); if (imp) imp.onclick = () => window.print();
@@ -265,6 +268,8 @@ function painelConcorrentesEdital(el, ed, analises) {
         <p>${fmt.cnpj(a.concorrente?.cnpj)} · ${fmt.dataHora(a.criado_em)} · ${(a.resultado.apontamentos || []).length} apontamento(s) confirmado(s)</p></div>
         <a class="botao pequeno secundario" data-abrir-conc="${a.id}">${icone("olho",14)} Ver parecer</a></div>`).join("")
       : vazio("Nenhuma análise ainda", "Envie o primeiro documento de um concorrente acima.")}</section>`;
+  const pre = sessionStorage.getItem("cnpj_concorrente_" + ed.id);
+  if (pre) { $("#cnpj_c", el).value = fmt.cnpj(pre); sessionStorage.removeItem("cnpj_concorrente_" + ed.id); $("#arquivo_c", el).focus(); }
   const sel = $("#tipo_c", el);
   sel.onchange = () => $("#campos-proposta", el).classList.toggle("oculto", sel.value !== "proposta");
   $("#form-concorrente", el).onsubmit = async (ev) => {
@@ -387,4 +392,83 @@ async function abrirDocumentoEdital(id, botao) {
     setTimeout(() => URL.revokeObjectURL(url), 30 * 60000);
   } catch (e) { if (janela) janela.close(); avisarErro(e); }
   finally { if (botao) { botao.disabled = false; botao.innerHTML = original; } }
+}
+
+// ---------------------------------------------------------------- possíveis concorrentes (histórico do PNCP)
+const RELEVANCIA_CONC = { alta: ["Alta", "aviso"], media: ["Média", "oficio"], baixa: ["Baixa", "neutro"] };
+
+function desenharPossiveis(el, ed) {
+  if (!el) return;
+  const pc = ed.possiveis_concorrentes;
+  const buscando = pc?.status === "buscando";
+  const itens = pc?.itens || [];
+  const pl = S.plano || {}, lim = pl.possiveis, usados = pl.uso?.possiveis ?? 0;
+  const esgotado = !lim || usados >= lim;
+  const cota = lim ? `${usados} de ${lim} ${lim === 1 ? "avaliação usada" : "avaliações usadas"} neste mês` : "Não incluído no seu plano";
+  const cab = `<div class="bloco-titulo"><h2>Possíveis concorrentes</h2>
+      <div class="acoes nao-imprimir">${itens.length ? carimbo(`${itens.length} empresa(s)`, "neutro") : ""}
+        <button class="botao pequeno ${pc ? "secundario" : ""}" id="buscar-possiveis" ${buscando || !ed.objeto ? "disabled" : ""}>${buscando ? "Avaliando…" : pc ? "Avaliar novamente" : "Avaliar possíveis concorrentes"}</button></div></div>
+    <p class="fraco nao-imprimir" style="margin:-4px 0 8px"><small>${esc(cota)}${esgotado && lim !== undefined ? ` · <a href="#/conta">Ver planos</a>` : ""}</small></p>
+    <p class="fraco">Empresas que venceram contratações com objeto parecido no PNCP (contratos e atas de registro de preços),
+      ordenadas por quantas vezes venceram, semelhança do objeto, mesma UF, mesmo órgão e data. É um indicativo de quem costuma disputar esse objeto.</p>`;
+  let corpo;
+  if (buscando) corpo = `<div class="andamento-analise"><span class="carregando">Consultando atas e contratos anteriores no PNCP… isso leva até 2 minutos.</span></div>`;
+  else if (!pc) corpo = `<p class="fraco">${ed.objeto ? "Clique em <b>Avaliar possíveis concorrentes</b> para consultar no PNCP quem venceu contratações com objeto parecido. Cada avaliação conta no limite mensal do seu plano." : "Analise o edital (ou preencha o objeto) para avaliar os possíveis concorrentes."}</p>`;
+  else if (!itens.length) corpo = `<div class="aviso ${pc.status === "erro" ? "erro" : "info"}">${esc(pc.erro || pc.aviso || "Nenhuma empresa encontrada.")}</div>`;
+  else corpo = `${pc.status === "erro" ? `<div class="aviso erro">${esc(pc.erro)}</div>` : ""}
+    <div class="tabela-rolagem"><table class="tabela-possiveis"><thead><tr><th>Empresa</th><th>Relevância</th><th>Vitórias</th><th>Valor contratado</th><th>Onde atua</th><th>Última</th><th class="nao-imprimir"></th></tr></thead>
+    <tbody>${itens.map((c, i) => `<tr>
+      <td><b>${esc(c.nome)}</b><br><small class="fraco">${fmt.cnpj(c.cnpj)}</small>
+        ${c.mesmo_orgao ? `<br><small class="etiqueta-conc">já venceu neste órgão</small>` : c.mesma_uf ? `<br><small class="etiqueta-conc">atua em ${esc(ed.uf)}</small>` : ""}</td>
+      <td>${carimboStatus(RELEVANCIA_CONC, c.relevancia)}</td>
+      <td>${c.vitorias}<br><small class="fraco">${[c.contratos ? `${c.contratos} contrato(s)` : "", c.atas ? `${c.atas} ata(s)` : ""].filter(Boolean).join(" · ")}</small></td>
+      <td>${c.valor_total ? fmt.moeda(c.valor_total) : "—"}</td>
+      <td><small>${esc((c.ufs || []).join(", ") || "—")}${c.orgaos?.length ? `<br><span class="fraco">${esc(c.orgaos.join("; ")).slice(0, 160)}</span>` : ""}</small></td>
+      <td style="white-space:nowrap">${c.ultima_data ? fmt.data(c.ultima_data) : "—"}</td>
+      <td class="nao-imprimir"><div class="acoes-conc">
+        <button class="botao pequeno texto" data-exemplos="${i}" aria-expanded="false">Contratações</button>
+        ${c.concorrente_id ? `<a class="botao pequeno secundario" href="#/concorrentes/${c.concorrente_id}">Ver dossiê</a>`
+          : `<button class="botao pequeno secundario" data-dossie="${esc(c.cnpj)}">Montar dossiê</button>`}
+        <button class="botao pequeno texto" data-analisar-doc="${esc(c.cnpj)}">Analisar documento</button></div></td></tr>
+      <tr class="oculto" data-exemplos-linha="${i}"><td colspan="7"><ul class="exemplos-conc">${(c.exemplos || []).map((x) => `<li>
+        <b>${x.tipo === "ata" ? "Ata/registro de preços" : "Contrato"}</b> · ${esc(x.orgao || "—")}${x.uf ? "/" + esc(x.uf) : ""} · ${x.data ? fmt.data(x.data) : "—"}${x.valor ? " · " + fmt.moeda(x.valor) : ""}
+        <br><span class="fraco">${esc(x.objeto || "")}</span>${x.link ? ` <a href="${esc(x.link)}" target="_blank" rel="noopener">Ver no PNCP</a>` : ""}</li>`).join("")}</ul></td></tr>`).join("")}</tbody></table></div>
+    <p class="fraco" style="margin-top:10px"><small>Termos pesquisados: ${esc((pc.termos || []).join(" · "))} · ${pc.documentos_analisados || 0} contratação(ões) conferida(s) · consultado em ${fmt.dataHora(pc.consultado_em + "Z")}</small></p>`;
+  el.innerHTML = `<section class="bloco">${cab}${corpo}</section>`;
+
+  const b = $("#buscar-possiveis", el);
+  if (b) b.onclick = async () => {
+    if (esgotado) {
+      toast(lim ? `Você já usou ${lim === 1 ? "a avaliação" : `as ${lim} avaliações`} de possíveis concorrentes deste mês. Faça upgrade ou aguarde a renovação.` : "Seu plano não inclui a avaliação de possíveis concorrentes.", "erro");
+      return;
+    }
+    if (pc && !(await confirmar(`Avaliar novamente usa 1 das ${lim} avaliações do mês (${usados} já usada(s)). Continuar?`, "Avaliar"))) return;
+    try { ed.possiveis_concorrentes = await api("POST", `/api/editais/${ed.id}/possiveis-concorrentes`); desenharPossiveis(el, ed); }
+    catch (e) { avisarErro(e); }
+  };
+  $$("[data-exemplos]", el).forEach((x) => x.onclick = () => {
+    const linha = $(`[data-exemplos-linha="${x.dataset.exemplos}"]`, el);
+    const abrir = linha.classList.toggle("oculto") === false;
+    x.setAttribute("aria-expanded", String(abrir));
+  });
+  $$("[data-dossie]", el).forEach((x) => x.onclick = () => ocupado(x, "Criando…", async () => {
+    try { const c = await api("POST", "/api/concorrentes", { cnpj: x.dataset.dossie }); location.hash = `#/concorrentes/${c.id}`; }
+    catch (e) { avisarErro(e); }
+  }));
+  $$("[data-analisar-doc]", el).forEach((x) => x.onclick = () => {
+    sessionStorage.setItem("cnpj_concorrente_" + ed.id, x.dataset.analisarDoc);
+    sessionStorage.setItem("edital_aba_" + ed.id, "concorrentes");
+    V.edital($("#conteudo"), ed.id);
+  });
+  if (buscando) {
+    clearTimeout(desenharPossiveis.t);
+    desenharPossiveis.t = setTimeout(async () => {
+      if (!document.body.contains(el)) return;
+      try {
+        const d = await api("GET", `/api/editais/${ed.id}`); ed.possiveis_concorrentes = d.edital.possiveis_concorrentes;
+        if (ed.possiveis_concorrentes?.status !== "buscando") await atualizarConta();
+      } catch { /* tenta de novo */ }
+      if (document.body.contains(el)) desenharPossiveis(el, ed);
+    }, 4000);
+  }
 }

@@ -226,3 +226,107 @@ def documentos_de_julgamento(numero_controle_compra, limite=3):
         if len(saida) >= limite:
             break
     return saida
+
+
+# ---------------------------------------------------------------- vencedores de contratações anteriores
+def buscar_documentos(termo, tipo, limite=20, timeout=20):
+    """Busca textual do PNCP por tipo de documento ('contrato' ou 'ata'), mais recentes primeiro."""
+    dados = _get(BASE_BUSCA, {"q": termo, "tipos_documento": tipo, "ordenacao": "-data", "pagina": 1,
+                              "tam_pagina": limite}, timeout=timeout) or {}
+    saida = []
+    for it in dados.get("items") or []:
+        saida.append({"tipo": tipo, "numero_controle": it.get("numero_controle_pncp") or it.get("numeroControlePNCP"),
+                      "numero_controle_compra": it.get("numero_controle_pncp_compra") or it.get("numeroControlePNCPCompra"),
+                      "orgao": it.get("orgao_nome"), "objeto": it.get("description") or it.get("title") or "",
+                      "valor": it.get("valor_global"), "uf": it.get("uf"), "municipio": it.get("municipio_nome"),
+                      "data": it.get("data_publicacao_pncp") or it.get("data_inicio_vigencia") or it.get("data_assinatura")})
+    return saida
+
+
+def _cnpj_fornecedor(d):
+    ni = re.sub(r"\D", "", str(d.get("niFornecedor") or d.get("ni_fornecedor") or ""))
+    return ni if len(ni) == 14 else None  # CPF (pessoa física) fica de fora
+
+
+def fornecedor_do_contrato(numero_controle_contrato, timeout=15):
+    """'CNPJ-2-000140/2026' -> {cnpj, nome, valor, objeto, data, orgao, uf} ou None."""
+    try:
+        cnpj, _, resto = numero_controle_contrato.split("-")[:3]
+        seq, ano = resto.split("/")
+        d = _get(f"{BASE_PNCP}/orgaos/{cnpj}/contratos/{ano}/{int(seq)}", timeout=timeout) or {}
+    except Exception as e:
+        log.info("Contrato PNCP %s indisponível: %s", numero_controle_contrato, e)
+        return None
+    ni = _cnpj_fornecedor(d)
+    if not ni:
+        return None
+    return {"cnpj": ni, "nome": d.get("nomeRazaoSocialFornecedor") or "", "valor": d.get("valorGlobal") or d.get("valorInicial"),
+            "objeto": d.get("objetoContrato") or "", "data": d.get("dataAssinatura") or d.get("dataPublicacaoPncp"),
+            "orgao": (d.get("orgaoEntidade") or {}).get("razaoSocial"), "uf": (d.get("unidadeOrgao") or {}).get("ufSigla")}
+
+
+def vencedores_da_compra(numero_controle, max_itens=4, timeout=15):
+    """Fornecedores homologados nos itens de uma compra (atas de registro de preços, pregões).
+    Aceita o número da compra ou da ata ('CNPJ-1-000123/2025-000001'). Devolve [{cnpj, nome, valor}]."""
+    partes = partes_controle(numero_controle)
+    if not partes:
+        return []
+    cnpj, ano, seq = partes
+    base = f"{BASE_PNCP}/orgaos/{cnpj}/compras/{ano}/{seq}/itens"
+    try:
+        itens = _get(base, {"pagina": 1, "tamanhoPagina": 20}, timeout=timeout) or []
+    except Exception as e:
+        log.info("Itens da compra %s indisponíveis: %s", numero_controle, e)
+        return []
+    if isinstance(itens, dict):
+        itens = itens.get("data") or []
+    saida = {}
+    for it in [i for i in itens if i.get("temResultado", True)][:max_itens]:
+        try:
+            res = _get(f"{base}/{it.get('numeroItem')}/resultados", timeout=timeout) or []
+        except Exception:
+            continue
+        for r in res if isinstance(res, list) else []:
+            ni = _cnpj_fornecedor(r)
+            if not ni:
+                continue
+            atual = saida.setdefault(ni, {"cnpj": ni, "nome": r.get("nomeRazaoSocialFornecedor") or "", "valor": 0.0})
+            atual["valor"] += float(r.get("valorTotalHomologado") or 0)
+    return list(saida.values())
+
+
+# ---------------------------------------------------------------- acompanhamento da oportunidade
+def situacao_compra(numero_controle, timeout=20):
+    """Situação atual da compra no PNCP: {situacao, unidade_codigo, unidade_nome, data_abertura, data_encerramento}."""
+    partes = partes_controle(numero_controle)
+    if not partes:
+        return None
+    cnpj, ano, seq = partes
+    d = _get(f"{BASE_CONSULTA}/orgaos/{cnpj}/compras/{ano}/{seq}", timeout=timeout) or {}
+    un = d.get("unidadeOrgao") or {}
+    return {"situacao": d.get("situacaoCompraNome") or d.get("situacaoCompra") or "",
+            "unidade_codigo": str(un.get("codigoUnidade") or "") or None, "unidade_nome": un.get("nomeUnidade"),
+            "data_abertura": d.get("dataAberturaProposta"), "data_encerramento": d.get("dataEncerramentoProposta"),
+            "modalidade": d.get("modalidadeNome"), "valor_estimado": d.get("valorTotalEstimado"),
+            "valor_homologado": d.get("valorTotalHomologado")}
+
+
+def itens_da_compra(numero_controle, limite=50, timeout=20):
+    """Itens/lotes da compra: [{numero, descricao, quantidade, unidade, valor_unitario, valor_total, situacao, tem_resultado}]."""
+    partes = partes_controle(numero_controle)
+    if not partes:
+        return []
+    cnpj, ano, seq = partes
+    itens = _get(f"{BASE_PNCP}/orgaos/{cnpj}/compras/{ano}/{seq}/itens", {"pagina": 1, "tamanhoPagina": limite},
+                 timeout=timeout) or []
+    if isinstance(itens, dict):
+        itens = itens.get("data") or []
+    return [{"numero": i.get("numeroItem"), "descricao": i.get("descricao") or i.get("materialOuServicoNome"),
+             "quantidade": i.get("quantidade"), "unidade": i.get("unidadeMedida"),
+             "valor_unitario": i.get("valorUnitarioEstimado"), "valor_total": i.get("valorTotal"),
+             "situacao": i.get("situacaoCompraItemNome"), "tem_resultado": bool(i.get("temResultado"))} for i in itens]
+
+
+def contratos_do_orgao(cnpj_orgao, limite=15, timeout=20):
+    """Contratos mais recentes publicados pelo órgão (histórico de compras do órgão)."""
+    return buscar_documentos(cnpj_orgao, "contrato", limite, timeout=timeout)

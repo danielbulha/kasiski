@@ -19,7 +19,7 @@ V.admin = async (el) => {
   el.innerHTML = `
     <div class="cabecalho"><h1>Administração</h1><button class="botao pequeno secundario" id="teste-email">Testar envio de e-mail</button></div>
     <div class="abas" role="tablist">
-      ${[["crm", "Clientes e testes"], ["funil", "Funil de conversão"], ["receitas", "Receitas"], ["tabelas", "Tabelas de preços"], ["revisoes", "Pedidos de advogado"], ["logs", "Logs de erros"]]
+      ${[["crm", "Clientes e testes"], ["funil", "Funil de conversão"], ["receitas", "Receitas"], ["tabelas", "Tabelas de preços"], ["revisoes", "Pedidos de advogado"], ["atendimento", "Atendimento"], ["logs", "Logs de erros"]]
         .map(([k, t]) => `<button role="tab" data-a-aba="${k}" class="${aba === k ? "ativa" : ""}" aria-selected="${aba === k}">${t}</button>`).join("")}
     </div>
     <div id="painel-admin"><p class="carregando">Carregando…</p></div>`;
@@ -49,6 +49,7 @@ V.admin = async (el) => {
     else if (aba === "receitas") await abaReceitas(painel);
     else if (aba === "tabelas") await abaTabelasAdmin(painel);
     else if (aba === "logs") await abaLogs(painel);
+    else if (aba === "atendimento") await abaAtendimento(painel);
     else desenharRevisoes(painel, await api("GET", "/api/admin/revisoes"));
   } catch (e) { painel.innerHTML = erroTela(e); }
 };
@@ -439,5 +440,61 @@ async function abaLogs(el) {
       acoes: `<button class="botao secundario" data-copiar-um>Copiar para análise</button><button class="botao" data-resolver>${l.resolvido ? "Reabrir" : "Marcar como resolvido"}</button>` });
     $("[data-copiar-um]", m).onclick = async () => { const r = await api("GET", `/api/admin/logs/exportar?ids=${l.id}`); await navigator.clipboard.writeText(await r.text()).then(() => toast("Copiado.", "ok")).catch(() => toast("Não foi possível copiar; use Baixar .txt.", "erro")); };
     $("[data-resolver]", m).onclick = async () => { await api("PATCH", `/api/admin/logs/${l.id}`, { resolvido: !l.resolvido }); m.fechar(); recarregar(); };
+  });
+}
+
+// ---------------------------------------------------------------- atendimento (assistente virtual)
+const STATUS_CHAT = { bot: ["Só com o assistente", "neutro"], encaminhada: ["Aguardando equipe", "aviso"],
+  em_atendimento: ["Em atendimento", "oficio"], resolvida: ["Resolvida", "ok"] };
+const PAPEL_CHAT = { usuario: "Cliente", assistente: "Assistente", sistema: "Sistema", atendente: "Equipe" };
+
+async function abaAtendimento(el) {
+  const f = V.admin.filtroChat || { status: "encaminhada", dias: 30 };
+  V.admin.filtroChat = f;
+  const d = await api("GET", `/api/admin/atendimentos?status=${f.status}&dias=${f.dias}`);
+  el.innerHTML = `
+    <section class="bloco"><div class="grade grade-4 grade-kpi">
+      ${indicador(d.abertos, "chamados aguardando a equipe", d.abertos > 0)}${indicador(d.conversas_7d, "conversas com o assistente em 7 dias")}
+      ${indicador(d.conversas.length, "conversas neste filtro")}${indicador(d.conversas.filter((c) => c.conta_id).length, "de clientes logados")}
+    </div><p class="fraco" style="margin:12px 0 0">Quando o visitante pede para falar com a equipe, o chamado aparece aqui e um e-mail é enviado aos administradores. Abra a conversa para ver o histórico completo e responder por e-mail ou WhatsApp.</p></section>
+    <div class="filtros-admin">
+      <div class="chips" role="group" aria-label="Situação">${[["encaminhada", "Chamados abertos"], ["resolvida", "Resolvidos"], ["bot", "Só com o assistente"], ["todos", "Todas"]].map(([k, t]) => `<button data-cst="${k}" aria-pressed="${f.status === k}">${t}</button>`).join("")}</div>
+      <div class="chips" role="group" aria-label="Período">${[[7, "7 dias"], [30, "30 dias"], [90, "90 dias"]].map(([k, t]) => `<button data-cdias="${k}" aria-pressed="${f.dias == k}">${t}</button>`).join("")}</div>
+    </div>
+    <section class="bloco tabela-rolagem">${d.conversas.length ? `<table><thead><tr><th>Atualizada</th><th>Situação</th><th>Contato</th><th>Assunto</th><th>Msgs</th><th>Página</th><th></th></tr></thead>
+      <tbody>${d.conversas.map((c) => `<tr>
+        <td style="white-space:nowrap">${fmt.dataHora(c.atualizado_em + "Z")}</td><td>${carimboStatus(STATUS_CHAT, c.status)}</td>
+        <td>${esc(c.nome || "Visitante")}<br><small class="fraco">${esc(c.email || c.usuario_email || "—")}</small></td>
+        <td style="max-width:360px">${esc((c.assunto || "—").slice(0, 160))}</td><td>${c.n_mensagens || 0}</td>
+        <td><small>${esc(c.pagina || "—")}</small></td>
+        <td class="acoes-celula"><button class="botao pequeno secundario" data-ver-chat="${esc(c.id)}">Abrir</button></td></tr>`).join("")}</tbody></table>`
+      : vazio("Nenhuma conversa neste filtro", f.status === "encaminhada" ? "Nenhum chamado aguardando a equipe." : "")}</section>`;
+  const recarregar = () => abaAtendimento(el);
+  $$("[data-cst]", el).forEach((b) => b.onclick = () => { f.status = b.dataset.cst; recarregar(); });
+  $$("[data-cdias]", el).forEach((b) => b.onclick = () => { f.dias = Number(b.dataset.cdias); recarregar(); });
+  $$("[data-ver-chat]", el).forEach((b) => b.onclick = () => modalAtendimento(b.dataset.verChat, recarregar));
+}
+
+async function modalAtendimento(id, aoSalvar) {
+  const c = await api("GET", `/api/admin/atendimentos/${encodeURIComponent(id)}`);
+  const email = c.email || c.usuario_email;
+  const fone = (c.telefone || "").replace(/\D/g, "");
+  const wa = fone ? `https://wa.me/${fone.length <= 11 ? "55" + fone : fone}` : "";
+  const assuntoMail = encodeURIComponent("Kasiski — seu atendimento");
+  const m = modal({ titulo: `Atendimento — ${c.nome || "Visitante"}`, largo: true, corpo: `
+    <div class="meta" style="margin:0 0 12px">${carimboStatus(STATUS_CHAT, c.status)}<span>iniciada ${fmt.dataHora(c.criado_em + "Z")}</span>
+      ${c.encaminhada_em ? `<span>encaminhada ${fmt.dataHora(c.encaminhada_em + "Z")}</span>` : ""}<span>${esc(c.pagina || "")}</span></div>
+    <p>${email ? `<a href="mailto:${esc(email)}?subject=${assuntoMail}">${esc(email)}</a>` : "Sem e-mail"}${c.telefone ? ` · ${wa ? `<a href="${wa}" target="_blank" rel="noopener">WhatsApp ${esc(c.telefone)}</a>` : esc(c.telefone)}` : ""}${c.usuario_email && c.usuario_email !== c.email ? ` · conta: ${esc(c.usuario_email)}` : ""}</p>
+    ${c.assunto ? `<div class="aviso"><b>Assunto:</b> ${esc(c.assunto)}</div>` : ""}
+    <h3>Conversa</h3>
+    <div class="transcricao-chat">${c.mensagens.map((x) => `<div class="msg-chat ${x.papel}"><small>${esc(PAPEL_CHAT[x.papel] || x.papel)} · ${fmt.dataHora(x.criado_em + "Z")}</small><div>${esc(String(x.texto || "").replace(/\*\*(.+?)\*\*/g, "$1").replace(/`([^`]+)`/g, "$1"))}</div></div>`).join("") || "<p class='fraco'>Sem mensagens.</p>"}</div>
+    <form id="form-chat-adm" style="margin-top:14px">
+      <div class="campo"><label for="chat-status">Situação</label><select id="chat-status" name="status">${Object.entries(STATUS_CHAT).map(([k, [t]]) => `<option value="${k}"${c.status === k ? " selected" : ""}>${t}</option>`).join("")}</select></div>
+      <div class="campo"><label for="chat-notas">Anotações internas</label><textarea id="chat-notas" name="notas" rows="3">${esc(c.notas || "")}</textarea></div>
+    </form>`,
+    acoes: `${email ? `<a class="botao secundario" href="mailto:${esc(email)}?subject=${assuntoMail}">Responder por e-mail</a>` : ""}<button class="botao" data-salvar-chat>Salvar</button>` });
+  $("[data-salvar-chat]", m).onclick = async (ev) => ocupado(ev.target, "Salvando…", async () => {
+    await api("PATCH", `/api/admin/atendimentos/${encodeURIComponent(id)}`, dadosForm($("#form-chat-adm", m)));
+    toast("Atendimento atualizado.", "ok"); m.fechar(); aoSalvar();
   });
 }

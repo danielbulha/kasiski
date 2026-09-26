@@ -7,17 +7,17 @@ from extensions import ErroAPI, db
 from models import Empresa, UsoIA
 
 PLANOS = {
-    "trial": {"nome": "Teste grátis", "preco": 0, "empresas": 1, "analises": 2, "concorrentes": 1,
+    "trial": {"nome": "Teste grátis", "preco": 0, "empresas": 1, "analises": 2, "concorrentes": 1, "possiveis": 1,
               "pecas": True, "precos": True, "propostas": False, "contratos": 1, "marca": False},
-    "essencial": {"nome": "Essencial", "preco": 197, "empresas": 1, "analises": 5, "concorrentes": 0,
+    "essencial": {"nome": "Essencial", "preco": 197, "empresas": 1, "analises": 5, "concorrentes": 0, "possiveis": 2,
                   "pecas": False, "precos": False, "propostas": False, "contratos": 0, "marca": False},
-    "profissional": {"nome": "Profissional", "preco": 497, "empresas": 1, "analises": 20, "concorrentes": 5,
+    "profissional": {"nome": "Profissional", "preco": 497, "empresas": 1, "analises": 20, "concorrentes": 5, "possiveis": 5,
                      "pecas": True, "precos": True, "propostas": False, "contratos": 10, "marca": False},
-    "avancado": {"nome": "Avançado", "preco": 799, "empresas": 3, "analises": 40, "concorrentes": 15,
+    "avancado": {"nome": "Avançado", "preco": 799, "empresas": 3, "analises": 40, "concorrentes": 15, "possiveis": 15,
                  "pecas": True, "precos": True, "propostas": True, "contratos": 30, "marca": False},
-    "consultor": {"nome": "Consultor", "preco": 1290, "empresas": 10, "analises": 60, "concorrentes": 30,
+    "consultor": {"nome": "Consultor", "preco": 1290, "empresas": 10, "analises": 60, "concorrentes": 30, "possiveis": 25,
                   "pecas": True, "precos": True, "propostas": True, "contratos": 50, "marca": True},
-    "suspenso": {"nome": "Suspenso", "preco": 0, "empresas": 0, "analises": 0, "concorrentes": 0,
+    "suspenso": {"nome": "Suspenso", "preco": 0, "empresas": 0, "analises": 0, "concorrentes": 0, "possiveis": 0,
                  "pecas": False, "precos": False, "propostas": False, "contratos": 0, "marca": False},
 }
 
@@ -74,8 +74,13 @@ def verificar_vencimento(conta):
 
 NOMES_RECURSO = {"propostas": "a elaboração de propostas comerciais (disponível a partir do plano Avançado)",
                  "analises": "análises de edital", "concorrentes": "análises de concorrentes",
+                 "possiveis": "avaliações de possíveis concorrentes",
                  "pecas": "o gerador de peças", "precos": "a inteligência de preços",
                  "contratos": "a gestão de contratos (disponível a partir do plano Profissional)", "empresas": "empresas cadastradas"}
+
+
+NOMES_SINGULAR = {"analises": "análise de edital", "concorrentes": "análise de concorrentes",
+                  "possiveis": "avaliação de possíveis concorrentes"}
 
 
 def _inicio_mes():
@@ -101,6 +106,7 @@ def resumo(conta):
         "teste_expirado": teste_expirado(conta),
         "trial_fim": conta.trial_fim.isoformat() if conta.trial_fim else None,
         "uso": {"analises": uso_mes(conta, "analises"), "concorrentes": uso_mes(conta, "concorrentes"),
+                "possiveis": uso_mes(conta, "possiveis"),
                 "empresas": Empresa.query.filter_by(conta_id=conta.id).count(), "contratos": contar_contratos(conta)},
         "limite_contratos": limite_contratos(conta),
         "pacotes": {"ativos": pacotes_ativos(conta), "contratados": conta.pacotes_contratos or 0,
@@ -146,7 +152,8 @@ def exigir(conta, recurso):
         raise ErroAPI(f"Seu plano permite até {limite} empresa(s). Faça upgrade para o plano {proximo} "
                       f"para gerenciar mais CNPJs.", 402, "limite_atingido")
     if atual >= limite:
-        raise ErroAPI(f"Você atingiu o limite de {limite} {NOMES_RECURSO.get(recurso, recurso)} do seu plano "
+        nome = NOMES_SINGULAR.get(recurso, NOMES_RECURSO.get(recurso, recurso)) if limite == 1 else NOMES_RECURSO.get(recurso, recurso)
+        raise ErroAPI(f"Você atingiu o limite de {limite} {nome} do seu plano "
                       f"neste mês. Faça upgrade ou aguarde a renovação.", 402, "limite_atingido")
 
 

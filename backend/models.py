@@ -96,6 +96,8 @@ class Empresa(db.Model):
     valor_max = db.Column(db.Float)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
+    oportunidades_sync = db.Column(db.JSON)  # {status, iniciado_em, concluido_em, movidos}
+
     def to_dict(self):
         return {"id": self.id, "razao_social": self.razao_social, "cnpj": self.cnpj, "porte": self.porte,
                 "cnaes": self.cnaes, "segmentos": self.segmentos, "palavras_chave": self.palavras_chave, "ufs": self.ufs,
@@ -169,6 +171,20 @@ class Edital(db.Model):
     texto = db.Column(db.Text)
     status = db.Column(db.String(20), default="acompanhando")  # acompanhando, participando, ganho, perdido, descartado
     resultado_em = db.Column(db.Date)
+    # empresas que venceram contratações parecidas no PNCP: {status, itens, termos, consultado_em, erro}
+    possiveis_concorrentes = db.Column(db.JSON)
+    # Kanban da oportunidade (ciclo comercial): ver services/oportunidades.py
+    etapa = db.Column(db.String(30), index=True)
+    etapa_em = db.Column(db.DateTime)
+    responsavel = db.Column(db.String(120))
+    responsavel_id = db.Column(db.Integer)
+    decisao = db.Column(db.String(10))            # go, no_go
+    decisao_motivo = db.Column(db.Text)
+    motivo_saida = db.Column(db.Text)             # por que foi perdida / desistência
+    unidade_codigo = db.Column(db.String(30))     # UASG / código da unidade compradora
+    unidade_nome = db.Column(db.String(300))
+    pncp_situacao = db.Column(db.String(80))
+    pncp_sincronizado_em = db.Column(db.DateTime)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     def to_dict(self, completo=False):
@@ -180,9 +196,30 @@ class Edital(db.Model):
              "nome_arquivo": self.nome_arquivo, "tem_texto": bool(self.texto), "status": self.status,
              "tem_documento": bool(self.arquivo or self.numero_controle),
              "resultado_em": _iso(self.resultado_em), "criado_em": _iso(self.criado_em)}
+        d.update({"etapa": self.etapa, "etapa_em": _iso(self.etapa_em), "responsavel": self.responsavel,
+                  "responsavel_id": self.responsavel_id, "decisao": self.decisao, "decisao_motivo": self.decisao_motivo,
+                  "motivo_saida": self.motivo_saida, "unidade_codigo": self.unidade_codigo, "unidade_nome": self.unidade_nome,
+                  "pncp_situacao": self.pncp_situacao, "pncp_sincronizado_em": _iso(self.pncp_sincronizado_em)})
         if completo:
             d["caracteres_texto"] = len(self.texto or "")
+            d["possiveis_concorrentes"] = self.possiveis_concorrentes
         return d
+
+
+class Movimento(db.Model):
+    """Histórico do cartão no Kanban de oportunidades (quem moveu, de onde para onde e por quê)."""
+    id = db.Column(db.Integer, primary_key=True)
+    edital_id = db.Column(db.Integer, db.ForeignKey("edital.id"), nullable=False, index=True)
+    de = db.Column(db.String(30))
+    para = db.Column(db.String(30))
+    origem = db.Column(db.String(20), default="usuario")  # usuario, automatico
+    autor = db.Column(db.String(200))
+    motivo = db.Column(db.Text)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {"id": self.id, "de": self.de, "para": self.para, "origem": self.origem, "autor": self.autor,
+                "motivo": self.motivo, "criado_em": _iso(self.criado_em)}
 
 
 class Analise(db.Model):
@@ -578,3 +615,40 @@ class LogErro(db.Model):
         if completo:
             d.update({"detalhe": self.detalhe, "navegador": self.navegador})
         return d
+
+
+class ChatConversa(db.Model):
+    """Conversa do assistente virtual (visitante ou usuário logado). Vira chamado quando pede atendimento humano."""
+    id = db.Column(db.String(40), primary_key=True)
+    conta_id = db.Column(db.Integer, index=True)
+    usuario_email = db.Column(db.String(200))
+    visitante_id = db.Column(db.String(40), index=True)
+    pagina = db.Column(db.String(300))
+    status = db.Column(db.String(20), default="bot", index=True)  # bot, encaminhada, em_atendimento, resolvida
+    nome = db.Column(db.String(200))
+    email = db.Column(db.String(200))
+    telefone = db.Column(db.String(40))
+    assunto = db.Column(db.Text)
+    n_mensagens = db.Column(db.Integer, default=0)
+    notas = db.Column(db.Text)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    atualizado_em = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    encaminhada_em = db.Column(db.DateTime)
+
+    def to_dict(self):
+        return {"id": self.id, "conta_id": self.conta_id, "usuario_email": self.usuario_email, "pagina": self.pagina,
+                "status": self.status, "nome": self.nome, "email": self.email, "telefone": self.telefone,
+                "assunto": self.assunto, "n_mensagens": self.n_mensagens, "notas": self.notas,
+                "criado_em": _iso(self.criado_em), "atualizado_em": _iso(self.atualizado_em),
+                "encaminhada_em": _iso(self.encaminhada_em)}
+
+
+class ChatMensagem(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    conversa_id = db.Column(db.String(40), db.ForeignKey("chat_conversa.id"), nullable=False, index=True)
+    papel = db.Column(db.String(12))  # usuario, assistente, sistema, atendente
+    texto = db.Column(db.Text)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {"id": self.id, "papel": self.papel, "texto": self.texto, "criado_em": _iso(self.criado_em)}

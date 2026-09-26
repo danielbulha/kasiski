@@ -1,6 +1,6 @@
 // Roteador, layout com navegação por fase da licitação e telas de entrada/cadastro.
 const ROTAS = [
-  [/^#\/painel$/, "painel"], [/^#\/radar$/, "radar"], [/^#\/editais$/, "editais"], [/^#\/editais\/(\d+)$/, "edital"],
+  [/^#\/painel$/, "painel"], [/^#\/oportunidades$/, "oportunidades"], [/^#\/oportunidades\/(\d+)$/, "oportunidades"], [/^#\/radar$/, "radar"], [/^#\/editais$/, "editais"], [/^#\/editais\/(\d+)$/, "edital"],
   [/^#\/cofre$/, "cofre"], [/^#\/concorrentes$/, "concorrentes"], [/^#\/concorrentes\/(\d+)$/, "concorrente"],
   [/^#\/pecas$/, "pecas"], [/^#\/pecas\/advogado$/, "advogado"], [/^#\/pecas\/(\d+)$/, "peca"], [/^#\/agenda$/, "agenda"],
   [/^#\/contratos$/, "contratos"], [/^#\/contratos\/(\d+)$/, "contrato"], [/^#\/precos$/, "precos"], [/^#\/propostas\/(\d+)$/, "proposta"],
@@ -28,14 +28,14 @@ function layout() {
     aviso.push(`<div class="faixa-aviso"><span>Seu plano vence ${fmt.prazo(S.plano.assinatura.pago_ate)} (${fmt.data(S.plano.assinatura.pago_ate)}).</span><a href="#/conta">Renovar</a></div>`);
   else if (S.plano?.codigo === "trial") aviso.push(`<div class="faixa-aviso"><span>Teste grátis até ${fmt.data(S.plano.trial_fim)}: ${S.plano.uso.analises} de ${S.plano.analises} análises usadas.</span><a href="#/conta">Ver planos</a></div>`);
   return `
-  <div class="topo-movel"><a class="marca" href="#/painel">${simboloMarca(22)}<strong>${esc(CERTAME.NOME)}</strong></a>
+  <div class="topo-movel"><a class="marca" href="#/painel">${simboloMarca(28)}<strong>${esc(CERTAME.NOME)}</strong></a>
     <button id="abrir-menu" aria-label="Abrir menu">${icone("menu", 16)} Menu</button></div>
   <div class="app">
     <aside class="lateral" id="lateral">
-      <a class="marca" href="#/painel">${simboloMarca(26)}<span class="texto"><strong>${esc(CERTAME.NOME)}</strong><span>public market intelligence</span></span></a>
+      <a class="marca" href="#/painel">${simboloMarca(34)}<span class="texto"><strong>${esc(CERTAME.NOME)}</strong><span>public market intelligence</span></span></a>
       ${S.empresas.length ? `<div class="seletor-empresa"><label for="sel-empresa">Empresa</label>
         <select id="sel-empresa">${opcoes}</select></div>` : ""}
-      <nav class="nav-grupo">${link(["#/painel", "Painel", "painel"])}</nav>
+      <nav class="nav-grupo">${link(["#/painel", "Painel", "painel"])}${link(["#/oportunidades", "Oportunidades", "kanban"])}</nav>
       ${NAV.map(([g, itens]) => `<nav class="nav-grupo"><span>${g}</span>${itens.map((it) => link(it, it[0] === "#/radar" ? S.resumoNav?.radar_novos : 0)).join("")}</nav>`).join("")}
       <nav class="nav-grupo"><span>Conta</span>
         ${link(["#/empresas", S.plano?.empresas > 1 ? "Empresas atendidas" : "Minha empresa", "empresa"])}
@@ -110,7 +110,7 @@ async function atualizarConta() { try { await carregarConta(); } catch { /* segu
 function telaEntrada(cadastro) {
   return `<div class="entrada">
     <section class="entrada-lado">
-      <div class="entrada-topo"><a class="marca-completa" href="#/">${simboloMarca(30)}<span class="texto"><strong>${esc(CERTAME.NOME)}</strong><span>public market intelligence</span></span></a>
+      <div class="entrada-topo"><a class="marca-completa" href="#/">${simboloMarca(40)}<span class="texto"><strong>${esc(CERTAME.NOME)}</strong><span>public market intelligence</span></span></a>
         <a class="entrada-voltar" href="#/">← Conhecer o Kasiski</a></div>
       <div>
         <p style="color:var(--ciano);font-weight:600;font-size:.95rem;margin-bottom:6px">Encontre o padrão. Descubra a oportunidade.</p>
@@ -188,7 +188,7 @@ function telaVerificacao(raiz) {
   if (!v?.token) { location.hash = "#/entrar"; return; }
   raiz.innerHTML = `<div class="entrada">
     <section class="entrada-lado">
-      <div class="entrada-topo"><a class="marca-completa" href="#/">${simboloMarca(30)}<span class="texto"><strong>${esc(CERTAME.NOME)}</strong><span>public market intelligence</span></span></a></div>
+      <div class="entrada-topo"><a class="marca-completa" href="#/">${simboloMarca(40)}<span class="texto"><strong>${esc(CERTAME.NOME)}</strong><span>public market intelligence</span></span></a></div>
       <div><h1>Falta só confirmar seu e-mail.</h1>
         <p>Assim garantimos que só você acessa a conta e que os avisos de prazos e editais chegam no endereço certo.</p></div>
       <small style="color:var(--linha-forte)">O código vale por 15 minutos.</small>

@@ -26,9 +26,10 @@ V.conta = async (el) => {
     ${msgRetorno}
     ${assinaturaHtml(p, a)}
     <section class="bloco"><h2>Uso deste mês</h2>
-      <div class="grade grade-4">
+      <div class="grade grade-3">
         ${barraUso("Análises de edital", p.uso.analises, p.analises)}
         ${barraUso("Análises de concorrente", p.uso.concorrentes, p.concorrentes)}
+        ${barraUso("Possíveis concorrentes", p.uso.possiveis ?? 0, p.possiveis)}
         ${barraUso("Empresas cadastradas", p.uso.empresas, p.empresas)}
         ${barraUso("Contratos em gestão", p.uso.contratos ?? 0, p.limite_contratos)}
       </div></section>
@@ -171,7 +172,7 @@ function planoHtml(codigo, v, atual, ciclo = "mensal") {
   const botao = codigo === atual ? carimbo("Seu plano", "ok")
     : codigo === "trial" ? "" : `<button class="botao ${codigo === "profissional" ? "" : "secundario"}" data-assinar="${codigo}">Assinar</button>`;
   return `<div class="plano ${codigo === atual ? "atual" : ""}"><h3>${esc(v.nome)}</h3><div class="preco">${preco}</div>
-    <ul><li>${v.empresas} ${v.empresas > 1 ? "empresas" : "empresa"}</li><li>${limite(v.analises, "análise de edital", "análises de edital")}</li><li>${limite(v.concorrentes, "análise de concorrente", "análises de concorrente")}</li>
+    <ul><li>${v.empresas} ${v.empresas > 1 ? "empresas" : "empresa"}</li><li>${limite(v.analises, "análise de edital", "análises de edital")}</li><li>${limite(v.concorrentes, "análise de concorrente", "análises de concorrente")}</li><li>${limite(v.possiveis, "avaliação de possíveis concorrentes", "avaliações de possíveis concorrentes")}</li>
       <li>${v.pecas ? "Gerador de peças" : "Sem gerador de peças"}</li><li>${v.precos ? "Inteligência de preços" : "Sem inteligência de preços"}</li>
       <li>${v.propostas ? "<b>Proposta comercial com IA</b>" : "Sem proposta comercial com IA"}</li>
       <li>${v.contratos ? `Gestão de até ${v.contratos} contrato${v.contratos > 1 ? "s" : ""}` : "Sem gestão de contratos"}</li>

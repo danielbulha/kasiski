@@ -56,3 +56,14 @@ if __name__ == "__main__":
     sinc = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(sinc)
     sinc.executar()
+    # Marketing: automações (reforço do agendador do servidor), expiração das análises gratuitas, leads perdidos
+    with app.app_context():
+        from services import automacoes, marketing, publico
+        try:
+            automacoes.rodar()
+            publico.limpar_expiradas()
+            marketing.marcar_perdidos()
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            log.warning("Rotinas de marketing falharam: %s", e)

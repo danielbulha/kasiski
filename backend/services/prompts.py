@@ -287,3 +287,40 @@ Nota de 0 a 100: 80+ muito aderente; 50-79 possível; abaixo de 50 pouco aderent
     demo = {"notas": [{"numero_controle": e["numero_controle"], "nota": 60, "motivo": "Objeto relacionado às palavras-chave."}
                       for e in editais]}
     return sistema, usuario, demo
+
+
+def triagem_publica(texto, extracao):
+    """Triagem gratuita do site: pontos de atenção do edital, sem dados da empresa (resposta curta e barata)."""
+    sistema = BASE + " Você faz uma TRIAGEM rápida do edital para um licitante que ainda não é cliente. Seja objetivo e fiel ao texto."
+    usuario = f"""Com base no edital abaixo (e nos dados já extraídos), devolva JSON:
+{{
+ "resumo": "2 frases sobre o objeto e o que mais chama atenção",
+ "pontos_atencao": [{{"titulo": "curto", "gravidade": "alta|media|baixa", "explicacao": "1-2 frases", "pagina": "",
+                      "tipo": "clausula_restritiva|risco|exigencia"}}],
+ "documentos_criticos": [{{"documento": "", "por_que": "exigência incomum, prazo curto, índice alto etc."}}],
+ "prazo_minimo_ok": true
+}}
+Regras: no máximo 8 pontos de atenção e 5 documentos críticos; só aponte o que está no texto; "gravidade" alta = pode inabilitar ou
+restringir indevidamente a competição (Lei 14.133/2021); não invente artigos.
+
+DADOS EXTRAÍDOS: {extracao}
+
+EDITAL:
+{texto}"""
+    demo = {
+        "resumo": "Serviços contínuos de limpeza predial com fornecimento de materiais. Destaque para o atestado de 100% da área e o índice de liquidez elevado.",
+        "pontos_atencao": [
+            {"titulo": "Atestado de 100% da área licitada", "gravidade": "alta", "tipo": "clausula_restritiva", "pagina": "15",
+             "explicacao": "A exigência de atestado com 100% do quantitativo supera o limite usual de 50% e pode ser impugnada."},
+            {"titulo": "Liquidez corrente maior que 1,5", "gravidade": "media", "tipo": "exigencia", "pagina": "14",
+             "explicacao": "Índice acima do usual sem justificativa no processo."},
+            {"titulo": "Multa diária sem teto", "gravidade": "media", "tipo": "risco", "pagina": "22",
+             "explicacao": "Multa de 0,5% ao dia sem limite definido aumenta o risco contratual."},
+            {"titulo": "Visita técnica obrigatória", "gravidade": "baixa", "tipo": "exigencia", "pagina": "9",
+             "explicacao": "A visita obrigatória pode ser substituída por declaração, segundo a jurisprudência do TCU."},
+        ],
+        "documentos_criticos": [{"documento": "Atestado de capacidade técnica", "por_que": "quantitativo mínimo elevado"},
+                                {"documento": "Balanço patrimonial", "por_que": "índices de liquidez acima do usual"}],
+        "prazo_minimo_ok": True,
+    }
+    return sistema, usuario, demo

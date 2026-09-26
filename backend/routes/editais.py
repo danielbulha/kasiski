@@ -86,8 +86,9 @@ def _importar_pncp(empresa_id, numero_controle, base=None, como="Importada do PN
     db.session.add(ed)
     db.session.flush()
     fluxos.gerar_prazos_edital(ed)
-    from services import oportunidades
+    from services import oportunidades, marketing
     oportunidades.registrar_criacao(ed, como)
+    marketing.evento_conta(getattr(g, "conta", None), "edital_added", {"origem": "pncp"})
     return ed
 
 
@@ -132,6 +133,8 @@ def criar(eid):
     fluxos.gerar_prazos_edital(ed)
     from services import oportunidades
     oportunidades.registrar_criacao(ed, "Edital enviado pelo usuário.")
+    from services import marketing
+    marketing.evento_conta(g.conta, "edital_added", {"origem": "upload"})
     db.session.commit()
     return jsonify(ed.to_dict()), 201
 
@@ -247,21 +250,30 @@ def _expirar_travadas(edid):
     db.session.commit()
 
 
-def _rodar_analise(app, analise_id, edital_id, empresa_id, conta_id):
+def _rodar_analise(app, analise_id, edital_id, empresa_id, conta_id, cortesia=False):
     """Executa em segundo plano: a análise de um edital grande leva vários minutos e passaria do
     tempo máximo de uma requisição web."""
     with app.app_context():
         from models import Conta, Empresa
+        import time
         analise = Analise.query.get(analise_id)
+        for _ in range(10):  # disparada logo antes do commit de quem a criou (ex.: importação da análise gratuita)
+            if analise:
+                break
+            time.sleep(1)
+            db.session.remove()
+            analise = Analise.query.get(analise_id)
         ed, empresa, conta = Edital.query.get(edital_id), Empresa.query.get(empresa_id), Conta.query.get(conta_id)
         try:
             analise_ok, respostas = fluxos.analisar_edital(ed, empresa, analise)
-            planos.registrar_uso(conta, "analises", respostas)
+            planos.registrar_uso(conta, "analises", respostas, cobravel=not cortesia)
             from services import oportunidades
             dec = ((analise_ok.resultado or {}).get("recomendacao") or {}).get("decisao")
             rotulo = {"participar": "participar", "participar_com_ressalvas": "participar com ressalvas",
                       "nao_participar": "não participar"}.get(dec, "—")
             oportunidades.avancar(ed, "decisao", f"Análise concluída. Recomendação da IA: {rotulo}. Aguardando Go / No-Go.")
+            from services import marketing
+            marketing.evento_conta(conta, "edital_analyzed", {"edital_id": ed.id, "decisao": dec})
             db.session.commit()
         except Exception as e:
             db.session.rollback()

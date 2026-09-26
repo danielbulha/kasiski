@@ -26,6 +26,11 @@ def create_app(config=Config):
     from routes import registrar
     registrar(app)
 
+    @app.before_request
+    def _automacoes():  # só no servidor web (não nos jobs): a 1ª requisição liga o agendador de e-mails
+        from services import automacoes
+        automacoes.iniciar_agendador(app)
+
     @app.get("/api/saude")
     def saude():
         from services.llm import modo_demonstracao

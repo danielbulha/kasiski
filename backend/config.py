@@ -64,4 +64,15 @@ class Config:
     EMAIL_REMETENTE = os.getenv("EMAIL_REMETENTE", "Kasiski <nao-responda@kasiski.com.br>")
     # auto = exige o código só quando há como enviar e-mail (RESEND_API_KEY preenchida); sim / nao forçam
     VERIFICAR_EMAIL = os.getenv("VERIFICAR_EMAIL", "auto").lower()
-    USD_BRL = float(os.getenv("USD_BRL", "5.5"))                # câmbio para converter o custo de IA em R$
+    USD_BRL = float(os.getenv("USD_BRL", "5.5"))
+    # ------------------------------------------------------------ ferramentas gratuitas do site (/api/public)
+    PUBLICO_ANALISES_DIA = int(os.getenv("PUBLICO_ANALISES_DIA", "40"))       # teto global/dia (controle de custo de IA)
+    PUBLICO_ANALISES_IP_DIA = int(os.getenv("PUBLICO_ANALISES_IP_DIA", "2"))  # por IP a cada 24h
+    PUBLICO_ANALISES_EMAIL_MES = int(os.getenv("PUBLICO_ANALISES_EMAIL_MES", "2"))  # por e-mail a cada 30 dias
+    PUBLICO_CONSULTAS_IP_DIA = int(os.getenv("PUBLICO_CONSULTAS_IP_DIA", "10"))    # consulta de concorrente por IP/24h
+    PUBLICO_MAX_MB = int(os.getenv("PUBLICO_MAX_MB", "15"))
+    PUBLICO_MAX_CHARS = int(os.getenv("PUBLICO_MAX_CHARS", "90000"))          # texto do edital enviado à IA na triagem
+    TURNSTILE_SECRET = os.getenv("TURNSTILE_SECRET", "")                      # Cloudflare Turnstile (opcional)
+    # ------------------------------------------------------------ automações de e-mail (onboarding/trial)
+    AUTOMACOES_ATIVAS = os.getenv("AUTOMACOES_ATIVAS", "sim").lower() in ("sim", "1", "true")
+    AUTOMACOES_INTERVALO_S = int(os.getenv("AUTOMACOES_INTERVALO_S", "600"))                # câmbio para converter o custo de IA em R$

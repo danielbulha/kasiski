@@ -75,6 +75,8 @@ def criar(eid):
     if ed and ed.texto:
         p.status, p.etapa = "lendo_edital", "Lendo as regras da proposta no edital"
     db.session.add(p)
+    from services import marketing
+    marketing.evento_conta(g.conta, "proposal_generated", {"edital_id": p.edital_id})
     db.session.commit()
     if p.status == "lendo_edital":
         tarefas.rodar(_ler_edital, p.id, ed.id, g.conta.id)

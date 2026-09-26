@@ -8,8 +8,8 @@ from models import Contrato, Edital, Empresa
 
 
 def registrar(app):
-    from routes import conta, empresas, editais, pecas, concorrentes, precos, contratos, agenda, billing, admin, propostas, chat, oportunidades
-    for m in (conta, empresas, editais, pecas, concorrentes, precos, contratos, agenda, billing, admin, propostas, chat, oportunidades):
+    from routes import conta, empresas, editais, pecas, concorrentes, precos, contratos, agenda, billing, admin, propostas, chat, oportunidades, publico, marketing
+    for m in (conta, empresas, editais, pecas, concorrentes, precos, contratos, agenda, billing, admin, propostas, chat, oportunidades, publico, marketing):
         app.register_blueprint(m.bp)
 
 

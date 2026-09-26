@@ -211,6 +211,8 @@ def analisar(edid):
         db.session.rollback()
         raise ErroAPI(f"Não foi possível concluir a análise agora. Tente novamente. ({e})", 502)
     planos.registrar_uso(g.conta, "concorrentes", respostas)
+    from services import marketing
+    marketing.evento_conta(g.conta, "competitor_analyzed", {"edital_id": edid})
     db.session.commit()
     return jsonify(ac.to_dict()), 201
 

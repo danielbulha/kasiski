@@ -617,3 +617,8 @@ body.publico { background: var(--papel); }
   .op-funil { grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: 12px; }
   .op-sinc-info { margin-left: 0; }
 }
+.lp-rodape-links { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.12); font-size: .85rem; }
+.lp-rodape-links a { color: var(--linha-forte); text-decoration: none; }
+.lp-rodape-links a:hover { color: #fff; }
+.mk-abas { margin-bottom: 14px; }
+.mk-jornada { max-height: 300px; overflow-y: auto; padding-right: 8px; }

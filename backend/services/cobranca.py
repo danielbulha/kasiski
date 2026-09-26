@@ -55,6 +55,8 @@ def ativar(conta, plano, ciclo, metodo):
     conta.assinatura_status = "ativa"
     conta.cancelado_em = None
     conta.assinante_desde = conta.assinante_desde or datetime.utcnow()
+    from services import marketing
+    marketing.evento_conta(conta, "purchase", {"plano": plano, "ciclo": ciclo, "metodo": metodo})
 
 
 def estender_acesso(conta, ciclo):

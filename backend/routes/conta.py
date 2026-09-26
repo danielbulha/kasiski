@@ -44,6 +44,10 @@ def registro():
     u = Usuario(conta_id=conta.id, nome=nome, email=email, senha_hash=generate_password_hash(senha),
                 modo_guiado=d.get("perfil") != "experiente", email_verificado=not exigir)
     db.session.add(u)
+    db.session.flush()
+    from services import marketing
+    aq = d.get("aquisicao") if isinstance(d.get("aquisicao"), dict) else {}
+    marketing.vincular_cadastro(conta, u, aq.get("primeiro"), aq.get("ultimo"))
     db.session.commit()
     if exigir:
         return _pedir_verificacao(u, primeiro=True), 201

@@ -42,6 +42,8 @@ def checkout():
                                            titulo=titulo, referencia=ref)
     db.session.add(Evento(tipo="checkout", conta_id=conta.id, visitante_id=conta.visitante_id,
                           dados={"plano": plano, "ciclo": ciclo, "metodo": metodo, "valor": valor}))
+    from services import marketing
+    marketing.evento_conta(conta, "begin_checkout", {"plano": plano, "ciclo": ciclo, "valor": valor})
     db.session.commit()
     return jsonify({"url": url, "valor": valor})
 
@@ -63,6 +65,8 @@ def cancelar():
     mp.cancelar_assinatura(conta.mp_assinatura_id)
     conta.assinatura_status = "cancelada"
     conta.cancelado_em = datetime.utcnow()
+    from services import marketing
+    marketing.evento_conta(conta, "subscription_cancelled", {"plano": conta.plano})
     db.session.commit()
     return jsonify({"ok": True, "pago_ate": conta.pago_ate.isoformat() if conta.pago_ate else None})
 

@@ -33,6 +33,11 @@ class Conta(db.Model):
     origem = db.Column(db.String(80))             # utm_source ou site de origem
     campanha = db.Column(db.String(120))          # utm_campaign
     visitante_id = db.Column(db.String(40), index=True)
+    # atribuição de marketing: {"primeiro": {utm_source, utm_medium, utm_campaign, utm_content, utm_term, gclid, ref,
+    # landing, referrer, em}, "ultimo": {...}} — o primeiro toque e o último antes do cadastro
+    aquisicao = db.Column(db.JSON)
+    lead_id = db.Column(db.Integer, index=True)
+    marketing_optout = db.Column(db.Boolean, default=False)  # não quer receber e-mails de dicas/automação
 
     # Pacotes extras de contratos (mensal)
     pacotes_contratos = db.Column(db.Integer, default=0)
@@ -503,7 +508,130 @@ class Evento(db.Model):
     origem = db.Column(db.String(80))
     campanha = db.Column(db.String(120))
     dados = db.Column(db.JSON)
+    lead_id = db.Column(db.Integer, index=True)
+    canal = db.Column(db.String(30))
     criado_em = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+
+class Lead(db.Model):
+    """Pessoa que ainda não criou conta (ou que já criou: fica ligada à conta para ver o funil inteiro)."""
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(200))
+    email = db.Column(db.String(200), unique=True, index=True)
+    telefone = db.Column(db.String(40))
+    whatsapp = db.Column(db.String(40))
+    empresa = db.Column(db.String(250))
+    cnpj = db.Column(db.String(14))
+    cargo = db.Column(db.String(120))
+    segmento = db.Column(db.String(80))
+    cidade = db.Column(db.String(120))
+    uf = db.Column(db.String(2))
+    origem = db.Column(db.String(80))
+    canal = db.Column(db.String(30), index=True)       # busca_paga, busca_organica, social_pago, social, email, indicacao, parceiro, direto, outro
+    campanha = db.Column(db.String(120))
+    utm_source = db.Column(db.String(80))
+    utm_medium = db.Column(db.String(80))
+    utm_campaign = db.Column(db.String(120))
+    utm_content = db.Column(db.String(120))
+    utm_term = db.Column(db.String(120))
+    gclid = db.Column(db.String(200))
+    ref_parceiro = db.Column(db.String(60))
+    lead_magnet = db.Column(db.String(60))             # analisar_edital, consultar_concorrente, newsletter, checklist, contato
+    landing_page = db.Column(db.String(300))
+    primeira_visita = db.Column(db.DateTime)
+    ultima_visita = db.Column(db.DateTime)
+    visitante_id = db.Column(db.String(40), index=True)
+    score = db.Column(db.Integer, default=0)
+    status = db.Column(db.String(20), default="novo", index=True)  # novo, engajado, mql, sql, trial, ativado, assinante, perdido
+    responsavel = db.Column(db.String(120))
+    notas = db.Column(db.Text)
+    usuario_id = db.Column(db.Integer)
+    conta_id = db.Column(db.Integer, index=True)
+    newsletter = db.Column(db.Boolean, default=False)
+    newsletter_confirmada = db.Column(db.Boolean, default=False)
+    token = db.Column(db.String(40), index=True)        # confirmação/descadastro sem login
+    consentimento_em = db.Column(db.DateTime)
+    marketing_optout = db.Column(db.Boolean, default=False)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    atualizado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    convertido_em = db.Column(db.DateTime)
+
+    def to_dict(self):
+        campos = ("id", "nome", "email", "telefone", "whatsapp", "empresa", "cnpj", "cargo", "segmento", "cidade", "uf",
+                  "origem", "canal", "campanha", "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
+                  "ref_parceiro", "lead_magnet", "landing_page", "score", "status", "responsavel", "notas", "usuario_id",
+                  "conta_id", "newsletter", "newsletter_confirmada", "marketing_optout")
+        d = {k: getattr(self, k) for k in campos}
+        for k in ("primeira_visita", "ultima_visita", "criado_em", "convertido_em", "atualizado_em"):
+            d[k] = _iso(getattr(self, k))
+        return d
+
+
+class AnalisePublica(db.Model):
+    """Análise gratuita de edital feita pelo site (sem conta). O arquivo expira em 7 dias."""
+    id = db.Column(db.String(40), primary_key=True)     # token aleatório (vai na URL do resultado)
+    lead_id = db.Column(db.Integer, index=True)
+    email = db.Column(db.String(200), index=True)
+    ip_hash = db.Column(db.String(64), index=True)
+    arquivo = db.Column(db.String(300))
+    nome_arquivo = db.Column(db.String(250))
+    texto = db.Column(db.Text)
+    status = db.Column(db.String(20), default="processando")  # processando, concluida, erro
+    etapa = db.Column(db.String(80))
+    resultado = db.Column(db.JSON)
+    erro = db.Column(db.Text)
+    custo_usd = db.Column(db.Float, default=0)
+    conta_id = db.Column(db.Integer)                    # conta que importou depois do cadastro
+    edital_id = db.Column(db.Integer)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    concluido_em = db.Column(db.DateTime)
+
+
+class UsoPublico(db.Model):
+    """Registro de uso das ferramentas gratuitas, para limitar abuso por IP e por e-mail."""
+    id = db.Column(db.Integer, primary_key=True)
+    tipo = db.Column(db.String(30), index=True)        # analisar_edital, concorrente, newsletter, lead
+    ip_hash = db.Column(db.String(64), index=True)
+    email = db.Column(db.String(200), index=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+
+class Automacao(db.Model):
+    """Regra de e-mail automático: gatilho + atraso + condição + modelo."""
+    id = db.Column(db.Integer, primary_key=True)
+    chave = db.Column(db.String(40), unique=True, nullable=False)
+    nome = db.Column(db.String(120))
+    gatilho = db.Column(db.String(40))                 # cadastro, empresa, radar, analise, trial_fim
+    atraso_min = db.Column(db.Integer, default=0)      # para trial_fim: minutos ANTES do fim do teste
+    condicao = db.Column(db.String(60))
+    assunto = db.Column(db.String(200))
+    ativo = db.Column(db.Boolean, default=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AutomacaoEnvio(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    automacao_id = db.Column(db.Integer, db.ForeignKey("automacao.id"), nullable=False, index=True)
+    conta_id = db.Column(db.Integer, nullable=False, index=True)
+    email = db.Column(db.String(200))
+    status = db.Column(db.String(20), default="enviado")  # enviado, falhou, ignorado
+    detalhe = db.Column(db.Text)
+    enviado_em = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    __table_args__ = (db.UniqueConstraint("automacao_id", "conta_id"),)
+
+
+class InvestimentoCanal(db.Model):
+    """Quanto foi investido por canal em um mês (para calcular o CAC)."""
+    id = db.Column(db.Integer, primary_key=True)
+    mes = db.Column(db.String(7), index=True)          # AAAA-MM
+    canal = db.Column(db.String(80))                   # utm_source (google, linkedin, meta...) ou canal
+    campanha = db.Column(db.String(120))
+    valor = db.Column(db.Float, default=0)
+    notas = db.Column(db.String(300))
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {"id": self.id, "mes": self.mes, "canal": self.canal, "campanha": self.campanha, "valor": self.valor, "notas": self.notas}
 
 
 class CodigoVerificacao(db.Model):

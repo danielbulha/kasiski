@@ -88,6 +88,8 @@ def gerar(eid):
         from services import oportunidades
         oportunidades.avancar(edital, "recurso", f"{TIPOS_PECA[tipo]} gerada no Kasiski.", autor=g.usuario.nome)
     planos.registrar_uso(g.conta, "pecas", [r], cobravel=False)
+    from services import marketing
+    marketing.evento_conta(g.conta, "legal_document_generated", {"tipo": tipo})
     db.session.commit()
     return jsonify(p.to_dict()), 201
 

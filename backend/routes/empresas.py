@@ -72,6 +72,12 @@ def criar():
     e = Empresa(conta_id=g.conta.id, cnpj=cnpj, razao_social=d["razao_social"].strip())
     _preencher(e, d)
     db.session.add(e)
+    db.session.flush()
+    from services import marketing, publico
+    marketing.evento_conta(g.conta, "company_created", {"empresa_id": e.id})
+    if (e.palavras_chave or "").strip():
+        marketing.evento_conta(g.conta, "radar_configured", {"empresa_id": e.id})
+    publico.importar_analises(g.conta, g.usuario, e)
     db.session.commit()
     return jsonify(e.to_dict()), 201
 
@@ -80,7 +86,11 @@ def criar():
 @login_requerido
 def editar(eid):
     e = empresa_da_conta(eid)
+    antes = (e.palavras_chave or "").strip()
     _preencher(e, dados())
+    if not antes and (e.palavras_chave or "").strip():
+        from services import marketing
+        marketing.evento_conta(g.conta, "radar_configured", {"empresa_id": e.id})
     db.session.commit()
     return jsonify(e.to_dict())
 
@@ -131,6 +141,8 @@ def novo_documento(eid):
     if "arquivo" in request.files and request.files["arquivo"].filename:
         doc.arquivo, doc.nome_arquivo = arquivos.salvar(request.files["arquivo"], f"cofre/{eid}")
     db.session.add(doc)
+    from services import marketing
+    marketing.evento_conta(g.conta, "document_uploaded", {"tipo": doc.tipo})
     db.session.commit()
     return jsonify(doc.to_dict()), 201
 

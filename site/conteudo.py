@@ -4,9 +4,24 @@ Edite aqui textos de soluções, landing pages, glossário e dados do controlado
 /inteligencia ficam em site/artigos/*.md (front matter simples: titulo, descricao, categoria, data).
 """
 
-SITE_URL = "https://kasiski.com.br"
-APP_CADASTRO = "/#/cadastro"
-APP_ENTRAR = "/#/entrar"
+SITE_URL = "https://kasiski.com.br"            # site público (esta pasta gera publico/)
+APP_URL = "https://app.kasiski.com.br"         # aplicativo (pasta frontend/)
+APP_CADASTRO = APP_URL + "/#/cadastro"
+APP_ENTRAR = APP_URL + "/#/entrar"
+
+# Planos exibidos na página inicial. A fonte oficial é backend/planos.py: a página confere os valores na API
+# (/api/planos) ao carregar, então mudanças de preço aparecem mesmo sem gerar o site de novo.
+TRIAL_DIAS = 7
+PLANOS = {
+    "trial": {"nome": "Teste grátis", "preco": 0, "empresas": 1, "analises": 2, "concorrentes": 1, "possiveis": 1, "pecas": True, "precos": True, "propostas": False, "contratos": 1, "marca": False},
+    "essencial": {"nome": "Essencial", "preco": 197, "empresas": 1, "analises": 5, "concorrentes": 0, "possiveis": 2, "pecas": False, "precos": False, "propostas": False, "contratos": 0, "marca": False},
+    "profissional": {"nome": "Profissional", "preco": 497, "empresas": 1, "analises": 20, "concorrentes": 5, "possiveis": 5, "pecas": True, "precos": True, "propostas": False, "contratos": 10, "marca": False},
+    "avancado": {"nome": "Avançado", "preco": 799, "empresas": 3, "analises": 40, "concorrentes": 15, "possiveis": 15, "pecas": True, "precos": True, "propostas": True, "contratos": 30, "marca": False},
+    "consultor": {"nome": "Consultor", "preco": 1290, "empresas": 10, "analises": 60, "concorrentes": 30, "possiveis": 25, "pecas": True, "precos": True, "propostas": True, "contratos": 50, "marca": True},
+}
+PUBLICO_PLANO = {"essencial": "Para quem está começando a licitar", "profissional": "Para empresas que disputam todo mês",
+                 "avancado": "Para quem quer a proposta pronta, com preço calculado", "consultor": "Para escritórios e consultorias de licitação"}
+SELO_PLANO = {"profissional": "Indicado para PMEs", "avancado": "Proposta comercial com IA"}
 
 # Controlador dos dados pessoais (Política de Privacidade, Termos). Preencha CNPJ e endereço antes de publicar.
 EMPRESA = {

@@ -50,15 +50,11 @@ function layout() {
 
 async function navegar() {
   $$(".fundo-modal").forEach((m) => (m.fechar ? m.fechar() : m.remove())); // fecha modais abertos ao trocar de tela
-  const hash = location.hash && location.hash !== "#" ? location.hash : "#/";
+  let hash = location.hash && location.hash !== "#" ? location.hash.split("?")[0] : "#/";  // ?utm_... no hash não muda a rota
   const raiz = $("#raiz");
-  if (hash === "#/" || hash === "#/inicio") {
-    if (S.token) { location.hash = "#/painel"; return; }
-    document.body.classList.add("publico");
-    await V.inicio(raiz);
-    window.scrollTo(0, 0);
-    return;
-  }
+  // A apresentação pública mora no site (kasiski.com.br); o app abre direto no login ou no painel.
+  if (hash === "#planos" || hash === "#/inicio") { location.replace(CERTAME.SITE_URL + "/" + (hash === "#planos" ? "#planos" : "")); return; }
+  if (hash === "#/") { location.hash = S.token ? "#/painel" : "#/entrar"; return; }
   document.body.classList.remove("publico");
   if (hash === "#/verificar") {
     if (S.token) { location.hash = "#/painel"; return; }
@@ -68,6 +64,10 @@ async function navegar() {
   if (["#/entrar", "#/cadastro"].includes(hash)) {
     if (S.token) { location.hash = "#/painel"; return; }
     raiz.innerHTML = telaEntrada(hash === "#/cadastro");
+    try { // pré-preenche com o que a pessoa já informou nas ferramentas gratuitas do site
+      const pre = window.Kasiski ? Kasiski.lerJson("kasiski_cadastro") : JSON.parse(localStorage.getItem("kasiski_cadastro") || "null");
+      if (pre) { const n = $("#nome"), e = $("#email"); if (n && !n.value) n.value = pre.nome || ""; if (e && !e.value) e.value = pre.email || ""; }
+    } catch { /* ok */ }
     ligarEntrada(hash === "#/cadastro");
     return;
   }
@@ -111,7 +111,7 @@ function telaEntrada(cadastro) {
   return `<div class="entrada">
     <section class="entrada-lado">
       <div class="entrada-topo"><a class="marca-completa" href="#/">${simboloMarca(40)}<span class="texto"><strong>${esc(CERTAME.NOME)}</strong><span>public market intelligence</span></span></a>
-        <a class="entrada-voltar" href="#/">← Conhecer o Kasiski</a></div>
+        <a class="entrada-voltar" href="${CERTAME.SITE_URL}/">← Conhecer o Kasiski</a></div>
       <div>
         <p style="color:var(--ciano);font-weight:600;font-size:.95rem;margin-bottom:6px">Encontre o padrão. Descubra a oportunidade.</p>
         <h1>Participe de licitações sem perder prazo nem documento.</h1>
@@ -150,8 +150,10 @@ function ligarEntrada(cadastro) {
     await ocupado(b, "Aguarde…", async () => {
       try {
         const corpo = dadosForm(f);
-        if (cadastro) Object.assign(corpo, { visitante: FUNIL.visitante, origem: FUNIL.origem(), campanha: FUNIL.campanha() });
+        if (cadastro) Object.assign(corpo, { visitante: FUNIL.visitante, origem: FUNIL.origem(), campanha: FUNIL.campanha(),
+          aquisicao: window.Kasiski ? Kasiski.aquisicao() : null });
         const d = await api("POST", cadastro ? "/api/auth/registro" : "/api/auth/login", corpo);
+        marcar(cadastro ? "sign_up" : "login", { method: "email" });
         if (d.verificacao_pendente) {
           try { sessionStorage.setItem("kasiski_verificacao", JSON.stringify({ token: d.token_verificacao, email: d.email, novo: d.novo_cadastro, aviso: d.aviso })); } catch { /* segue */ }
           location.hash = "#/verificar";

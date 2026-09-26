@@ -145,12 +145,24 @@ V.inicio = async (raiz) => {
         <span>Lei 14.133/2021 · dados públicos do PNCP, Receita Federal, TCU e CGU</span>
         <span><a href="#/entrar">Entrar</a> · <a href="#/cadastro">Criar conta</a></span>
       </div>
+      <nav class="lp-conteiner lp-rodape-links" aria-label="Mais do Kasiski">
+        <a href="/analisar-edital/">Analisar edital grátis</a><a href="/consultar-concorrente/">Consultar concorrente</a>
+        <a href="/consultorias/">Para consultorias</a><a href="/inteligencia/">Inteligência</a><a href="/glossario/">Glossário</a>
+        <a href="/newsletter/">Newsletter</a><a href="/privacidade/">Privacidade</a><a href="/cookies/">Cookies</a><a href="/termos/">Termos</a>
+        <a href="#" data-preferencias-cookies>Preferências de cookies</a>
+      </nav>
     </footer>
   </div>`;
 
   $$("[data-rolar]", raiz).forEach((b) => b.onclick = () => {
     document.getElementById(b.dataset.rolar)?.scrollIntoView({ behavior: "smooth", block: "start" });
   });
+  const secPlanos = document.getElementById("planos");
+  if (sessionStorage.getItem("kasiski_rolar") === "planos") { sessionStorage.removeItem("kasiski_rolar"); setTimeout(() => secPlanos?.scrollIntoView({ block: "start" }), 50); }
+  if (secPlanos && "IntersectionObserver" in window) {
+    const obs = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) { marcar("pricing_view"); obs.disconnect(); } }, { threshold: 0.3 });
+    obs.observe(secPlanos);
+  }
 };
 
 function passo(n, titulo, texto) {

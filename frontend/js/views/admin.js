@@ -19,7 +19,7 @@ V.admin = async (el) => {
   el.innerHTML = `
     <div class="cabecalho"><h1>Administração</h1><button class="botao pequeno secundario" id="teste-email">Testar envio de e-mail</button></div>
     <div class="abas" role="tablist">
-      ${[["crm", "Clientes e testes"], ["funil", "Funil de conversão"], ["receitas", "Receitas"], ["tabelas", "Tabelas de preços"], ["revisoes", "Pedidos de advogado"], ["atendimento", "Atendimento"], ["logs", "Logs de erros"]]
+      ${[["crm", "Clientes e testes"], ["marketing", "Marketing"], ["funil", "Funil de conversão"], ["receitas", "Receitas"], ["tabelas", "Tabelas de preços"], ["revisoes", "Pedidos de advogado"], ["atendimento", "Atendimento"], ["logs", "Logs de erros"]]
         .map(([k, t]) => `<button role="tab" data-a-aba="${k}" class="${aba === k ? "ativa" : ""}" aria-selected="${aba === k}">${t}</button>`).join("")}
     </div>
     <div id="painel-admin"><p class="carregando">Carregando…</p></div>`;
@@ -46,6 +46,7 @@ V.admin = async (el) => {
   try {
     if (aba === "crm") await abaCrm(painel);
     else if (aba === "funil") await abaFunil(painel);
+    else if (aba === "marketing") await abaMarketing(painel);
     else if (aba === "receitas") await abaReceitas(painel);
     else if (aba === "tabelas") await abaTabelasAdmin(painel);
     else if (aba === "logs") await abaLogs(painel);
@@ -497,4 +498,195 @@ async function modalAtendimento(id, aoSalvar) {
     await api("PATCH", `/api/admin/atendimentos/${encodeURIComponent(id)}`, dadosForm($("#form-chat-adm", m)));
     toast("Atendimento atualizado.", "ok"); m.fechar(); aoSalvar();
   });
+}
+
+// ---------------------------------------------------------------- marketing (aquisição → receita)
+const STATUS_LEAD = { novo: ["Novo", "neutro"], engajado: ["Engajado", "neutro"], mql: ["MQL", "aviso"], sql: ["SQL — quente", "erro"],
+  trial: ["Trial", "oficio"], ativado: ["Ativado", "oficio"], oportunidade: ["Oportunidade", "aviso"], assinante: ["Assinante", "ok"], perdido: ["Perdido", "neutro"] };
+const NOMES_CANAL_ADM = { busca_paga: "Busca paga (Google Ads)", social_pago: "Social pago", busca_organica: "Busca orgânica (SEO)", social: "Redes sociais",
+  email: "E-mail / newsletter", parceiro: "Parceiros", indicacao: "Sites que indicaram", direto: "Direto / desconhecido" };
+const ISCAS = { analisar_edital: "Analisador de edital", consultar_concorrente: "Consulta de concorrente", newsletter: "Newsletter", consultorias: "Página de consultorias",
+  contato: "Contato", checklist: "Checklist", "cadastro direto": "Cadastro direto" };
+const moedaOuTraco = (v) => (v === null || v === undefined ? "—" : fmt.moeda(v));
+const pctOuTraco = (v) => (v === null || v === undefined ? "—" : `${fmt.num(v, 1)}%`);
+
+async function abaMarketing(el) {
+  const sub = V.admin.mk || "visao";
+  el.innerHTML = `<div class="chips mk-abas" role="tablist" aria-label="Marketing">${[["visao", "Visão geral"], ["canais", "Canais e campanhas"], ["leads", "Leads"],
+    ["ferramentas", "Ferramentas grátis"], ["automacoes", "Automações de e-mail"], ["investimentos", "Investimentos"]]
+    .map(([k, t]) => `<button data-mk="${k}" aria-pressed="${sub === k}">${t}</button>`).join("")}</div><div id="mk-corpo"><p class="carregando">Carregando…</p></div>`;
+  $$("[data-mk]", el).forEach((b) => b.onclick = () => { V.admin.mk = b.dataset.mk; abaMarketing(el); });
+  const c = $("#mk-corpo", el);
+  try {
+    if (sub === "leads") await mkLeads(c);
+    else if (sub === "automacoes") await mkAutomacoes(c);
+    else if (sub === "investimentos") await mkInvestimentos(c);
+    else await mkVisao(c, sub);
+  } catch (e) { c.innerHTML = erroTela(e); }
+}
+
+async function mkVisao(el, sub) {
+  const dias = V.admin.mkDias || 30;
+  const d = await api("GET", `/api/admin/marketing/visao?dias=${dias}`);
+  const periodo = `<div class="filtros-admin"><div class="chips" role="group" aria-label="Período">${[7, 30, 90, 365].map((n) => `<button data-mdias="${n}" aria-pressed="${n === dias}">${n === 365 ? "12 meses" : `${n} dias`}</button>`).join("")}</div></div>`;
+  const i = d.indicadores;
+  let corpo = "";
+  if (sub === "visao") {
+    const topo = Math.max(1, ...d.funil.map((e) => e.total));
+    corpo = `
+      <section class="bloco"><h2>Funil — últimos ${dias} dias</h2>
+        <div class="funil">${d.funil.map((e, k) => {
+          const ant = k ? d.funil[k - 1].total : null;
+          return `<div class="funil-linha"><span class="funil-rotulo">${esc(e.rotulo)}</span>
+            <div class="funil-trilho"><i style="width:${Math.max(e.total ? 1.5 : 0, (100 * e.total) / topo)}%"></i></div>
+            <span class="funil-valor"><b>${fmt.num(e.total)}</b>${ant !== null ? `<small>${ant && e.total <= ant ? `↓ ${fmt.num((100 * e.total) / ant, 1)}%` : "—"}</small>` : ""}</span></div>`;
+        }).join("")}</div>
+        <p class="fraco" style="margin-top:10px">Visitantes = navegadores únicos com visita registrada (site público e página inicial). Trials, ativados e assinantes contam as contas criadas no período, acompanhadas até hoje.</p></section>
+      <section class="bloco"><h2>Indicadores de receita</h2><div class="grade grade-4 grade-kpi">
+        ${indicador(fmt.moeda(i.mrr), "MRR (receita recorrente mensal)")}${indicador(fmt.moeda(i.arr), "ARR (MRR × 12)")}
+        ${indicador(moedaOuTraco(i.arpu), `ARPU (${i.pagantes} pagante(s))`)}${indicador(fmt.moeda(i.mrr_novo), "MRR novo no período")}
+        ${indicador(moedaOuTraco(i.cac), `CAC (investimento ${fmt.moeda(i.investimento)})`)}${indicador(moedaOuTraco(i.ltv), "LTV (ARPU ÷ churn)")}
+        ${indicador(i.payback_meses === null ? "—" : `${fmt.num(i.payback_meses, 1)} mês(es)`, "Payback do CAC")}${indicador(pctOuTraco(i.churn_mensal), "Churn mensal")}
+        ${indicador(pctOuTraco(i.visitante_para_lead), "Visitante → lead")}${indicador(pctOuTraco(i.lead_para_trial), "Lead → trial")}
+        ${indicador(pctOuTraco(i.ativacao), "Taxa de ativação")}${indicador(pctOuTraco(i.trial_para_pago), "Trial → pago")}</div>
+        <p class="fraco" style="margin-top:12px">O CAC usa os valores lançados em <b>Investimentos</b>. Sem investimento lançado, CAC e payback ficam em branco.</p></section>
+      <section class="bloco"><div class="bloco-titulo"><h2>Leads quentes — entrar em contato</h2><button class="botao pequeno texto" data-ir-leads>Ver todos os leads</button></div>
+        ${d.leads_quentes.length ? d.leads_quentes.map((l) => `<div class="lista-item"><div class="corpo"><b>${esc(l.nome || l.email)}</b> ${carimboStatus(STATUS_LEAD, l.status)} <small class="fraco">score ${l.score}</small>
+          <p>${esc(l.email || "")}${l.empresa ? " · " + esc(l.empresa) : ""} · ${esc(NOMES_CANAL_ADM[l.canal] || l.canal || "—")}${l.utm_campaign ? " · " + esc(l.utm_campaign) : ""}</p></div>
+          <button class="botao pequeno secundario" data-lead="${l.id}">Abrir</button></div>`).join("") : vazio("Nenhum lead quente agora", "Leads com score acima de 50 (MQL) ou 80 (SQL) aparecem aqui.")}</section>`;
+  } else if (sub === "canais") {
+    corpo = `
+      <section class="bloco tabela-rolagem"><h2>Por canal</h2>${d.canais.length ? `<table><thead><tr><th>Canal</th><th>Visitantes</th><th>Leads</th><th>Trials</th><th>Ativados</th><th>Assinantes</th><th>MRR</th><th>Investido</th><th>CAC</th></tr></thead>
+        <tbody>${d.canais.map((c) => `<tr><td><b>${esc(c.nome)}</b></td><td>${fmt.num(c.visitantes)}</td><td>${c.leads}</td><td>${c.trials}</td><td>${c.ativados}</td><td>${c.assinantes}</td>
+          <td>${fmt.moeda(c.mrr)}</td><td>${c.investimento ? fmt.moeda(c.investimento) : "—"}</td><td>${moedaOuTraco(c.cac)}</td></tr>`).join("")}</tbody></table>` : vazio("Sem dados no período", "")}
+        <p class="fraco" style="margin-top:10px">O canal vem do primeiro toque (UTM, gclid, site de origem ou <code>?ref=</code> de parceiro) e acompanha a pessoa até a assinatura.</p></section>
+      <section class="bloco tabela-rolagem"><h2>Por campanha (utm_campaign)</h2>${d.campanhas.length ? `<table><thead><tr><th>Campanha</th><th>Leads</th><th>Trials</th><th>Ativados</th><th>Assinantes</th><th>Trial → pago</th></tr></thead>
+        <tbody>${d.campanhas.map((c) => `<tr><td>${esc(c.campanha)}</td><td>${c.leads}</td><td>${c.trials}</td><td>${c.ativados}</td><td>${c.assinantes}</td><td>${c.trials ? pct(c.assinantes, c.trials) + "%" : "—"}</td></tr>`).join("")}</tbody></table>`
+        : vazio("Nenhuma campanha com UTM no período", "Use links como ?utm_source=google&utm_medium=cpc&utm_campaign=analise_edital.")}</section>
+      <section class="bloco tabela-rolagem"><h2>Cohort: trials de 60+ dias atrás</h2>${d.cohorts.length ? `<table><thead><tr><th>Canal</th><th>Trials</th><th>Pagaram</th><th>Seguem pagando</th><th>Retenção</th></tr></thead>
+        <tbody>${d.cohorts.map((c) => `<tr><td>${esc(c.nome)}</td><td>${c.trials}</td><td>${c.pagaram}</td><td>${c.retidos}</td><td>${c.pagaram ? pct(c.retidos, c.pagaram) + "%" : "—"}</td></tr>`).join("")}</tbody></table>`
+        : vazio("Ainda sem contas com 60 dias", "")}
+        <p class="fraco" style="margin-top:10px">Responde qual canal traz clientes que <b>permanecem</b> assinantes, e não só quem clica.</p></section>`;
+  } else {
+    const f = d.ferramentas;
+    corpo = `<section class="bloco"><div class="grade grade-4 grade-kpi">
+        ${indicador(f.analises_gratuitas, "análises gratuitas de edital")}${indicador("US$ " + fmt.num(f.custo_ia_analises_usd, 2), "custo de IA dessas análises")}
+        ${indicador(f.consultas_concorrente, "consultas de concorrente")}${indicador(f.newsletter_ativos, "assinantes da newsletter (confirmados)")}</div></section>
+      <section class="bloco tabela-rolagem"><h2>Leads por isca</h2>${f.por_isca.length ? `<table><thead><tr><th>Isca</th><th>Leads</th><th>Viraram trial</th><th>Assinaram</th><th>Lead → trial</th></tr></thead>
+        <tbody>${f.por_isca.map((x) => `<tr><td>${esc(ISCAS[x.isca] || x.isca)}</td><td>${x.leads}</td><td>${x.trials}</td><td>${x.assinantes}</td><td>${pct(x.trials, x.leads)}%</td></tr>`).join("")}</tbody></table>` : vazio("Sem leads no período", "")}</section>
+      <section class="bloco"><h2>Newsletter</h2><p class="fraco">Exporte a lista de inscritos confirmados para enviar a edição da semana pela sua ferramenta de e-mail.</p>
+        <button class="botao secundario" data-csv="newsletter">${icone("baixar", 14)} Baixar inscritos (.csv)</button></section>`;
+  }
+  el.innerHTML = periodo + corpo;
+  $$("[data-mdias]", el).forEach((b) => b.onclick = () => { V.admin.mkDias = Number(b.dataset.mdias); mkVisao(el, sub); });
+  $$("[data-lead]", el).forEach((b) => b.onclick = () => modalLead(Number(b.dataset.lead), () => mkVisao(el, sub)));
+  const ir = $("[data-ir-leads]", el); if (ir) ir.onclick = () => { V.admin.mk = "leads"; V.admin.mkFiltro = { status: "quentes", q: "" }; abaMarketing(el.parentElement); };
+  $$("[data-csv]", el).forEach((b) => b.onclick = () => baixarCsv(b.dataset.csv === "newsletter"));
+}
+
+async function baixarCsv(soNewsletter) {
+  const r = await api("GET", `/api/admin/marketing/leads.csv${soNewsletter ? "?newsletter=1" : ""}`);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([await r.text()], { type: "text/csv" }));
+  a.download = soNewsletter ? "kasiski-newsletter.csv" : "kasiski-leads.csv"; a.click();
+}
+
+async function mkLeads(el) {
+  const f = V.admin.mkFiltro || { status: "", q: "" };
+  V.admin.mkFiltro = f;
+  const qs = new URLSearchParams({ status: f.status, q: f.q }).toString();
+  const d = await api("GET", `/api/admin/marketing/leads?${qs}`);
+  const cont = d.contagem || {};
+  const quentes = (cont.mql || 0) + (cont.sql || 0) + (cont.oportunidade || 0);
+  el.innerHTML = `
+    <div class="filtros-admin">
+      <div class="chips" role="group" aria-label="Status">${[["", "Todos"], ["quentes", `Quentes (${quentes})`], ...Object.entries(STATUS_LEAD).map(([k, [t]]) => [k, `${t} (${cont[k] || 0})`])]
+        .map(([k, t]) => `<button data-lst="${k}" aria-pressed="${f.status === k}">${esc(t)}</button>`).join("")}</div>
+      <input type="search" id="busca-lead" placeholder="Buscar nome, e-mail, empresa ou campanha" value="${esc(f.q)}" aria-label="Buscar leads">
+      <button class="botao secundario" data-csv>${icone("baixar", 14)} Exportar .csv</button></div>
+    <section class="bloco tabela-rolagem">${d.leads.length ? `<table><thead><tr><th>Lead</th><th>Status</th><th>Score</th><th>Canal / campanha</th><th>Isca</th><th>Última visita</th><th></th></tr></thead>
+      <tbody>${d.leads.map((l) => `<tr><td><b>${esc(l.nome || "—")}</b><br><small class="fraco">${esc(l.email || "")}${l.empresa ? " · " + esc(l.empresa) : ""}</small></td>
+        <td>${carimboStatus(STATUS_LEAD, l.status)}</td><td><b>${l.score}</b></td>
+        <td><small>${esc(NOMES_CANAL_ADM[l.canal] || l.canal || "—")}${l.utm_campaign ? "<br>" + esc(l.utm_campaign) : ""}</small></td>
+        <td><small>${esc(ISCAS[l.lead_magnet] || l.lead_magnet || "—")}</small></td>
+        <td style="white-space:nowrap"><small>${l.ultima_visita ? fmt.dataHora(l.ultima_visita + "Z") : "—"}</small></td>
+        <td class="acoes-celula"><button class="botao pequeno secundario" data-lead="${l.id}">Abrir</button></td></tr>`).join("")}</tbody></table>`
+      : vazio("Nenhum lead neste filtro", "Os leads chegam pelas ferramentas gratuitas, newsletter, formulários do site e cadastros.")}</section>`;
+  const rec = () => mkLeads(el);
+  $$("[data-lst]", el).forEach((b) => b.onclick = () => { f.status = b.dataset.lst; rec(); });
+  let t; $("#busca-lead", el).oninput = (ev) => { clearTimeout(t); t = setTimeout(() => { f.q = ev.target.value; rec(); }, 400); };
+  $$("[data-lead]", el).forEach((b) => b.onclick = () => modalLead(Number(b.dataset.lead), rec));
+  $("[data-csv]", el).onclick = () => baixarCsv(false);
+}
+
+const NOMES_EVENTO = { page_view: "Visitou o site", cta_click: "Clicou em um CTA", pricing_view: "Viu os planos", generate_lead: "Deixou o contato", tool_started: "Usou uma ferramenta grátis",
+  edital_free_analysis: "Análise gratuita de edital", competitor_search: "Consultou concorrente", sign_up: "Criou conta", trial_started: "Iniciou o teste", company_created: "Cadastrou a empresa",
+  radar_configured: "Configurou o radar", edital_added: "Adicionou edital", edital_analyzed: "Analisou edital (IA)", competitor_analyzed: "Analisou concorrente", document_uploaded: "Enviou documento ao cofre",
+  proposal_generated: "Gerou proposta", legal_document_generated: "Gerou peça", begin_checkout: "Abriu o pagamento", purchase: "Pagou", subscription_cancelled: "Cancelou a assinatura", visita: "Visitou a página inicial", cta: "Clicou em testar grátis" };
+
+async function modalLead(id, aoSalvar) {
+  const l = await api("GET", `/api/admin/marketing/leads/${id}`);
+  const fone = (l.whatsapp || l.telefone || "").replace(/\D/g, "");
+  const m = modal({ titulo: l.nome || l.email || `Lead ${l.id}`, largo: true, corpo: `
+    <div class="meta" style="margin:0 0 12px">${carimboStatus(STATUS_LEAD, l.status)}<span>score <b>${l.score}</b></span><span>${esc(NOMES_CANAL_ADM[l.canal] || l.canal || "—")}</span>
+      ${l.utm_campaign ? `<span>campanha ${esc(l.utm_campaign)}</span>` : ""}<span>desde ${fmt.data(l.criado_em)}</span></div>
+    <p>${l.email ? `<a href="mailto:${esc(l.email)}">${esc(l.email)}</a>` : ""}${fone ? ` · <a href="https://wa.me/${fone.length <= 11 ? "55" + fone : fone}" target="_blank" rel="noopener">WhatsApp ${esc(l.whatsapp || l.telefone)}</a>` : ""}
+      ${l.empresa ? ` · ${esc(l.empresa)}` : ""}${l.cargo ? ` · ${esc(l.cargo)}` : ""}</p>
+    <p class="fraco">Primeiro toque: ${esc([l.utm_source, l.utm_medium, l.utm_campaign, l.utm_term].filter(Boolean).join(" / ") || l.origem || "direto")} · entrada: ${esc(l.landing_page || "—")}${l.ref_parceiro ? ` · parceiro <b>${esc(l.ref_parceiro)}</b>` : ""}</p>
+    ${l.conta ? `<div class="aviso info">Conta <b>${esc(l.conta.nome)}</b> · plano ${esc(l.conta.plano)}${l.conta.trial_fim ? ` · teste até ${fmt.data(l.conta.trial_fim)}` : ""} <button class="botao pequeno texto" data-abrir-conta="${l.conta.id}">Abrir no CRM</button></div>` : ""}
+    ${l.analises_gratuitas.length ? `<p><b>Análises gratuitas:</b> ${l.analises_gratuitas.map((a) => `${esc(a.nome_arquivo || "edital")} (nota ${a.nota ?? "—"}, ${fmt.data(a.criado_em)})`).join("; ")}</p>` : ""}
+    <h3>Jornada</h3><ol class="op-linha-tempo mk-jornada">${l.eventos.map((e) => `<li><small>${fmt.dataHora(e.criado_em + "Z")}${e.canal ? " · " + esc(NOMES_CANAL_ADM[e.canal] || e.canal) : ""}</small>
+      <div>${esc(NOMES_EVENTO[e.tipo] || e.tipo)} ${l.pontos_por_evento[e.tipo] ? `<small class="fraco">+${l.pontos_por_evento[e.tipo]}</small>` : ""}${e.dados?.pagina ? ` <small class="fraco">${esc(e.dados.pagina)}</small>` : ""}</div></li>`).join("") || "<li>Sem eventos.</li>"}</ol>
+    <form id="form-lead" style="margin-top:14px"><div class="linha-campos">
+      <div class="campo"><label for="ld-status">Status</label><select id="ld-status" name="status">${Object.entries(STATUS_LEAD).map(([k, [t]]) => `<option value="${k}" ${l.status === k ? "selected" : ""}>${t}</option>`).join("")}</select></div>
+      <div class="campo"><label for="ld-resp">Responsável</label><input id="ld-resp" name="responsavel" value="${esc(l.responsavel || "")}"></div></div>
+      <div class="campo"><label for="ld-notas">Anotações</label><textarea id="ld-notas" name="notas" rows="3">${esc(l.notas || "")}</textarea></div></form>`,
+    acoes: `<button class="botao" data-salvar-lead>Salvar</button>` });
+  const ac = $("[data-abrir-conta]", m); if (ac) ac.onclick = () => { m.fechar(); modalConta(Number(ac.dataset.abrirConta), aoSalvar); };
+  $("[data-salvar-lead]", m).onclick = (ev) => ocupado(ev.target, "Salvando…", async () => {
+    await api("PATCH", `/api/admin/marketing/leads/${id}`, dadosForm($("#form-lead", m))); toast("Lead atualizado.", "ok"); m.fechar(); aoSalvar && aoSalvar();
+  });
+}
+
+const GATILHOS = { cadastro: "após o cadastro", empresa: "após cadastrar a empresa", radar: "após configurar o radar", analise: "após a 1ª análise", trial_fim: "antes do fim do teste" };
+const CONDICOES = { sem_empresa: "se ainda não cadastrou a empresa", sem_radar: "se ainda não configurou o radar", sem_analise: "se ainda não analisou edital", em_teste: "se ainda está no teste" };
+const tempo = (min) => (min >= 1440 ? `${fmt.num(min / 1440, 1)} dia(s)` : min >= 60 ? `${fmt.num(min / 60, 1)} h` : `${min} min`);
+
+async function mkAutomacoes(el) {
+  const d = await api("GET", "/api/admin/marketing/automacoes");
+  el.innerHTML = `${d.email_configurado ? "" : `<div class="aviso">O envio de e-mail não está configurado (RESEND_API_KEY). As automações ficam prontas e passam a enviar assim que a chave for preenchida no Render.</div>`}
+    <section class="bloco"><div class="bloco-titulo"><h2>Sequência do onboarding e do fim do teste</h2><button class="botao pequeno secundario" id="rodar-auto">Rodar agora</button></div>
+      <p class="fraco">Cada e-mail é enviado uma única vez por conta, respeitando o descadastro. O servidor verifica a cada 10 minutos; o job diário faz um reforço.</p>
+      <div class="tabela-rolagem"><table><thead><tr><th>Ativa</th><th>E-mail</th><th>Quando</th><th>Assunto</th><th>30 dias</th><th></th></tr></thead>
+      <tbody>${d.automacoes.map((a) => `<tr><td><input type="checkbox" data-ativo="${a.id}" ${a.ativo ? "checked" : ""} aria-label="Ativar ${esc(a.nome)}"></td>
+        <td><b>${esc(a.nome)}</b></td><td><small>${tempo(a.atraso_min)} ${esc(GATILHOS[a.gatilho] || a.gatilho)}${a.condicao ? `<br>${esc(CONDICOES[a.condicao] || a.condicao)}` : ""}</small></td>
+        <td><input value="${esc(a.assunto || "")}" data-assunto="${a.id}" aria-label="Assunto" style="min-width:260px"></td>
+        <td><small>${a.enviado || 0} enviado(s)${a.falhou ? ` · <span style="color:var(--carimbo)">${a.falhou} falha(s)</span>` : ""}</small></td>
+        <td class="acoes-celula"><button class="botao pequeno texto" data-teste="${a.id}">Enviar teste para mim</button></td></tr>`).join("")}</tbody></table></div></section>`;
+  $$("[data-ativo]", el).forEach((c) => c.onchange = async () => { await api("PATCH", `/api/admin/marketing/automacoes/${c.dataset.ativo}`, { ativo: c.checked }); toast(c.checked ? "Automação ativada." : "Automação pausada.", "ok"); });
+  $$("[data-assunto]", el).forEach((i) => i.onchange = async () => { await api("PATCH", `/api/admin/marketing/automacoes/${i.dataset.assunto}`, { assunto: i.value }); toast("Assunto salvo.", "ok"); });
+  $$("[data-teste]", el).forEach((b) => b.onclick = () => ocupado(b, "Enviando…", async () => {
+    try { const r = await api("POST", `/api/admin/marketing/automacoes/${b.dataset.teste}/teste`); toast(`Enviado para ${r.para}.`, "ok"); } catch (e) { avisarErro(e); }
+  }));
+  $("#rodar-auto", el).onclick = (ev) => ocupado(ev.target, "Rodando…", async () => { const r = await api("POST", "/api/admin/marketing/automacoes/rodar"); toast(`${r.enviados} e-mail(s) enviado(s).`, "ok"); mkAutomacoes(el); });
+}
+
+async function mkInvestimentos(el) {
+  const lista = await api("GET", "/api/admin/marketing/investimentos");
+  const mes = new Date().toISOString().slice(0, 7);
+  el.innerHTML = `<section class="bloco"><h2>Lançar investimento</h2><p class="fraco">Quanto foi gasto por canal no mês. É o que alimenta o CAC e o payback. Use o mesmo nome do <code>utm_source</code> (google, linkedin, meta).</p>
+    <form id="form-invest"><div class="linha-campos">
+      <div class="campo"><label for="iv-mes">Mês</label><input id="iv-mes" name="mes" type="month" value="${mes}" required></div>
+      <div class="campo"><label for="iv-canal">Canal</label><input id="iv-canal" name="canal" list="iv-canais" value="google" required><datalist id="iv-canais"><option value="google"><option value="linkedin"><option value="meta"><option value="parceiros"><option value="outros"></datalist></div>
+      <div class="campo"><label for="iv-camp">Campanha (opcional)</label><input id="iv-camp" name="campanha"></div>
+      <div class="campo"><label for="iv-valor">Valor (R$)</label><input id="iv-valor" name="valor" inputmode="decimal" required></div></div>
+      <button class="botao" type="submit">Lançar</button></form></section>
+    <section class="bloco tabela-rolagem">${lista.length ? `<table><thead><tr><th>Mês</th><th>Canal</th><th>Campanha</th><th>Valor</th><th></th></tr></thead>
+      <tbody>${lista.map((i) => `<tr><td>${esc(i.mes)}</td><td>${esc(i.canal)}</td><td>${esc(i.campanha || "—")}</td><td>${fmt.moeda(i.valor)}</td>
+        <td class="acoes-celula"><button class="botao pequeno texto" data-apagar="${i.id}">Excluir</button></td></tr>`).join("")}</tbody></table>` : vazio("Nenhum investimento lançado", "")}</section>`;
+  $("#form-invest", el).onsubmit = async (ev) => {
+    ev.preventDefault();
+    try { await api("POST", "/api/admin/marketing/investimentos", dadosForm(ev.target)); toast("Investimento lançado.", "ok"); mkInvestimentos(el); } catch (e) { avisarErro(e); }
+  };
+  $$("[data-apagar]", el).forEach((b) => b.onclick = async () => { if (await confirmar("Excluir este lançamento?", "Excluir")) { await api("DELETE", `/api/admin/marketing/investimentos/${b.dataset.apagar}`); mkInvestimentos(el); } });
 }

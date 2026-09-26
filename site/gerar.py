@@ -1,13 +1,15 @@
-"""Gera o site público do Kasiski (HTML estático com URLs limpas) dentro de frontend/.
+"""Gera o site público do Kasiski (kasiski.com.br) em publico/ — HTML estático com URLs limpas.
 
 Uso:  python site/gerar.py          (requer: pip install markdown)
-Saída: frontend/<pagina>/index.html, sitemap.xml, robots.txt, 404.html, _redirects.
-O app (SPA) continua em frontend/index.html com rotas #/..., sem conflito com as páginas públicas.
+Saída: publico/ (publique esta pasta no site do Netlify de kasiski.com.br).
+O aplicativo fica em frontend/ (publicado em app.kasiski.com.br). Arquivos compartilhados — js/config.js,
+js/rastreio.js, chat/ e assets/ — são copiados do frontend/ para o publico/ a cada geração.
 """
 import html
 import json
 import os
 import re
+import shutil
 from datetime import date
 
 import markdown
@@ -15,7 +17,9 @@ import markdown
 import conteudo as C
 
 RAIZ = os.path.dirname(os.path.abspath(__file__))
-SAIDA = os.path.join(os.path.dirname(RAIZ), "frontend")
+PROJETO = os.path.dirname(RAIZ)
+SAIDA = os.path.join(PROJETO, "publico")
+APP_DIR = os.path.join(PROJETO, "frontend")
 geradas = []  # (url, prioridade)
 
 esc = html.escape
@@ -92,6 +96,7 @@ def pagina(caminho, titulo, descricao, corpo, *, minimo=False, jsonld=None, prio
 <main id="conteudo">{corpo}</main>
 {rodape()}
 <script src="/site/site.js"></script>
+{'' if minimo else '<link rel="stylesheet" href="/chat/widget.css"><script src="/chat/widget.js"></script>'}
 </body></html>'''
     destino = os.path.join(SAIDA, caminho.strip("/"), "index.html") if caminho != "/404" else os.path.join(SAIDA, "404.html")
     os.makedirs(os.path.dirname(destino), exist_ok=True)
@@ -150,7 +155,7 @@ def form_consultorias():
   <label class="s-check"><input type="checkbox" name="consentimento" required> <span>Concordo com a <a href="/privacidade/">Política de Privacidade</a>.</span></label>
   <input class="s-hp" name="site" tabindex="-1" autocomplete="off" aria-hidden="true">
   <div class="s-acoes"><button class="s-botao s-botao-grande" type="submit" data-cta="consultorias_contato">Falar com um especialista</button>
-    <a class="s-botao s-botao-sec" href="/#/cadastro" data-cta="consultorias_teste">Testar para consultorias</a></div>
+    <a class="s-botao s-botao-sec" href="https://app.kasiski.com.br/#/cadastro" data-cta="consultorias_teste">Testar para consultorias</a></div>
   <p class="s-msg" role="status"></p></form>'''
 
 
@@ -204,7 +209,7 @@ def pg_consultorias():
     corpo = f'''<section class="s-heroi"><div class="s-heroi-texto"><p class="s-sobre">Para consultorias e escritórios</p>
   <h1>Gerencie todos os seus clientes de licitação em um único lugar</h1>
   <p class="s-lead">Cada cliente com radar, cofre, editais, prazos e contratos próprios — e relatórios com a marca do seu escritório.</p>
-  <div class="s-acoes"><a class="s-botao s-botao-grande" href="/#/cadastro" data-cta="consultorias_heroi">Testar Kasiski para consultorias</a></div></div>
+  <div class="s-acoes"><a class="s-botao s-botao-grande" href="https://app.kasiski.com.br/#/cadastro" data-cta="consultorias_heroi">Testar Kasiski para consultorias</a></div></div>
   <div class="s-painel-demo" aria-label="Exemplo do painel multiempresa">
     <div><b>CLIENTE A</b><span>Radar → 21 oportunidades</span></div><div><b>CLIENTE B</b><span>3 editais em análise</span></div>
     <div><b>CLIENTE C</b><span class="s-alerta">Proposta amanhã</span></div><div><b>CLIENTE D</b><span>Contrato vence em 92 dias</span></div></div></section>
@@ -241,7 +246,7 @@ def pg_lp(lp):
         acao = f'<div class="s-cartao">{form_consultorias()}</div>'
     else:
         acao = f'''<div class="s-cartao s-cartao-cta"><b>Teste grátis por 7 dias</b><p>Sem cartão. Cadastre a empresa pelo CNPJ e o Radar começa na hora.</p>
-          <a class="s-botao s-botao-grande" href="/#/cadastro" data-cta="lp_{lp["slug"]}">Criar minha conta grátis</a>
+          <a class="s-botao s-botao-grande" href="https://app.kasiski.com.br/#/cadastro" data-cta="lp_{lp["slug"]}">Criar minha conta grátis</a>
           <p class="s-nota">Já tem conta? <a href="{C.APP_ENTRAR}">Entrar</a></p></div>'''
     provas = "".join(f"<li>{esc(p)}</li>" for p in lp["provas"])
     corpo = f'''<section class="s-heroi s-heroi-ferramenta"><div class="s-heroi-texto"><h1>{esc(lp["titulo"])}</h1>
@@ -346,8 +351,18 @@ def pg_404():
       <a class="s-botao s-botao-sec" href="/inteligencia/">Inteligência</a></div></section>''', indexar=False)
 
 
+def copiar_compartilhados():
+    """O site usa os mesmos config.js, rastreio.js, chat e imagens do app (frontend/)."""
+    os.makedirs(os.path.join(SAIDA, "js"), exist_ok=True)
+    for nome in ("config.js", "rastreio.js"):
+        shutil.copy2(os.path.join(APP_DIR, "js", nome), os.path.join(SAIDA, "js", nome))
+    for pasta in ("chat", "assets"):
+        shutil.copytree(os.path.join(APP_DIR, pasta), os.path.join(SAIDA, pasta), dirs_exist_ok=True)
+    shutil.copytree(os.path.join(RAIZ, "estatico"), os.path.join(SAIDA, "site"), dirs_exist_ok=True)
+
+
 def extras():
-    urls = [("/", "1.0")] + geradas
+    urls = geradas
     hoje = date.today().isoformat()
     sm = "".join(f"<url><loc>{C.SITE_URL}{u}</loc><lastmod>{hoje}</lastmod><priority>{p}</priority></url>" for u, p in urls)
     open(os.path.join(SAIDA, "sitemap.xml"), "w", encoding="utf-8").write(
@@ -355,10 +370,12 @@ def extras():
     open(os.path.join(SAIDA, "robots.txt"), "w", encoding="utf-8").write(
         f"User-agent: *\nAllow: /\nDisallow: /lp/\n\nSitemap: {C.SITE_URL}/sitemap.xml\n")
     # Netlify: atalhos para o app e para âncoras; 301 de URLs antigas que surgirem vão aqui
-    open(os.path.join(SAIDA, "_redirects"), "w", encoding="utf-8").write("""# Gerado por site/gerar.py
-/entrar            /#/entrar          302
-/cadastro          /#/cadastro        302
-/app               /#/painel          302
+    a = C.APP_URL
+    open(os.path.join(SAIDA, "_redirects"), "w", encoding="utf-8").write(f"""# Gerado por site/gerar.py — kasiski.com.br (o aplicativo fica em {a})
+/entrar            {a}/#/entrar       302
+/cadastro          {a}/#/cadastro     302
+/app               {a}/#/painel       302
+/painel            {a}/#/painel       302
 /planos            /#planos           302
 /blog              /inteligencia/     301
 /blog/*            /inteligencia/:splat 301
@@ -371,6 +388,12 @@ def extras():
 
 
 if __name__ == "__main__":
+    if os.path.isdir(SAIDA):
+        shutil.rmtree(SAIDA)  # publico/ é 100% gerado: não edite arquivos lá dentro
+    os.makedirs(SAIDA)
+    copiar_compartilhados()
+    import home
+    home.pg_home(pagina, ORG, SOFT)
     pg_analisar()
     pg_concorrente()
     pg_newsletter()

@@ -142,6 +142,8 @@ function modalEmpresa(e) {
         const dados = dadosForm(ev.target);
         dados.segmentos = $$(".seg-empresa:checked", m).map((c) => c.value).join(",");
         await api(e ? "PATCH" : "POST", e ? `/api/empresas/${e.id}` : "/api/empresas", dados);
+        if (!e) marcar("company_created");
+        if ((dados.palavras_chave || "").trim() && !(e && (e.palavras_chave || "").trim())) marcar("radar_configured");
         await carregarConta(); m.fechar(); V.empresas($("#conteudo"));
       } catch (err) { $("#erro-empresa", m).innerHTML = erroTela(err); }
     });

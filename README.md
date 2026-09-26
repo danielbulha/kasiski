@@ -321,8 +321,8 @@ Nas análises de habilitação/proposta desse concorrente em um edital, a IA rec
 
 ## Máquina de aquisição (site público, CRM de leads, tracking e automações)
 
-### Site público com URLs limpas (`site/` → `frontend/`)
-- As páginas são HTML estático gerado por `python site/gerar.py` (requer `pip install markdown`). **Depois de editar textos, rode o gerador de novo e publique a pasta `frontend/`.**
+### Site público com URLs limpas (`site/` → `publico/`)
+- As páginas são HTML estático gerado por `python site/gerar.py` (requer `pip install markdown`). **Depois de editar textos, rode o gerador de novo e publique a pasta `publico/`.**
 - Páginas geradas:
   - ferramentas: `/analisar-edital/`, `/consultar-concorrente/`;
   - soluções: `/radar-licitacoes/`, `/go-no-go/`, `/concorrentes/`, `/habilitacao/`, `/precos/`, `/propostas/`, `/gestao-contratos/`;
@@ -333,7 +333,7 @@ Nas análises de habilitação/proposta desse concorrente em um edital, a IA rec
   - textos em `site/conteudo.py` (soluções, landing pages, glossário e **dados do controlador para a LGPD: preencha CNPJ e endereço**);
   - textos legais em `site/legal.py`;
   - artigos em `site/artigos/*.md`.
-- O app continua em `/#/...`. `/entrar` e `/cadastro` redirecionam para o app, e `#planos` abre a seção de planos.
+- O app fica em `app.kasiski.com.br` (veja a seção abaixo). `/entrar` e `/cadastro` do site redirecionam para o app.
 
 ### Rastreamento (`frontend/js/rastreio.js`, usado no site e no app)
 - `visitor_id` próprio, primeiro e último toque (UTMs, gclid, fbclid, li_fat_id, `?ref=` de parceiro, página de entrada, site de origem), guardados até a assinatura.
@@ -370,3 +370,28 @@ Nas análises de habilitação/proposta desse concorrente em um edital, a IA rec
 - **Leads:** lista com filtros, jornada completa e exportação .csv.
 - **Ferramentas grátis:** uso e custo de IA, conversão por isca e exportação da newsletter.
 - **Investimentos:** gasto por canal e mês, usado no CAC.
+
+
+## Dois domínios: kasiski.com.br (site) e app.kasiski.com.br (aplicativo)
+
+| Pasta | Domínio | O que é |
+|---|---|---|
+| `publico/` | kasiski.com.br | Site público gerado por `python site/gerar.py`: página inicial, ferramentas grátis, soluções, conteúdo, LGPD e chat. Indexado pelo Google. |
+| `frontend/` | app.kasiski.com.br | Aplicativo (login, painel e todas as telas). `robots.txt` e `noindex` o mantêm fora dos buscadores. |
+
+- **Nunca edite `publico/` à mão.** Ele é apagado e recriado a cada geração. Os arquivos compartilhados (`js/config.js`, `js/rastreio.js`, `chat/`, `assets/`) são copiados de `frontend/`, e o estilo e o script do site vêm de `site/estatico/`.
+- **Visitante, UTMs, consentimento e o pré-preenchimento do cadastro** ficam em cookies próprios no domínio `.kasiski.com.br`. Com isso, a atribuição (primeiro e último toque) passa do site para o app, e o banner de cookies aparece uma vez só. `kasiski.com.br`, `www` e `app` contam como o mesmo site, não como origem externa.
+- **Links antigos** (`kasiski.com.br/#/painel`, retornos de pagamento) são redirecionados para o app. No app, `/` abre o login ou o painel, e `#/inicio` leva ao site.
+- **Planos da página inicial:** os valores gerados vêm de `site/conteudo.py → PLANOS`, e a página confere preço e limites em `/api/planos` ao carregar.
+- **Desenvolvimento:** app em `http://localhost:8080` (pasta `frontend`) e site em `http://localhost:8081` (pasta `publico`). O `config.js` detecta localhost.
+
+### Migração (uma vez)
+
+1. **Netlify, site novo do app.** Crie um site com a pasta `frontend/` (arraste a pasta ou ligue ao GitHub com *Publish directory* = `frontend`). Em *Domain management*, adicione `app.kasiski.com.br`. Como o DNS de kasiski.com.br já está no Netlify, o registro e o HTTPS saem automaticamente.
+2. **Netlify, site atual (kasiski.com.br).** Troque o conteúdo publicado para a pasta `publico/` (arraste a pasta ou mude o *Publish directory* para `publico`).
+3. **Render**, no serviço web e no cron:
+   - `FRONTEND_URL=https://app.kasiski.com.br`;
+   - `SITE_URL=https://kasiski.com.br`;
+   - em `CORS_ORIGINS`, acrescente `https://app.kasiski.com.br`.
+4. **Mercado Pago, Resend e webhook:** nada muda. Os links de retorno saem do backend, pelo `FRONTEND_URL`.
+5. **Usuários:** entram de novo uma vez no app (a sessão fica guardada por domínio).

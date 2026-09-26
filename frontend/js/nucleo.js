@@ -229,32 +229,25 @@ new MutationObserver(() => requestAnimationFrame(marcarRolagem)).observe(documen
 // ---------------------------------------------------------------- funil: origem do visitante
 // Um id aleatório por navegador (sem dado pessoal) liga a visita ao cadastro. A origem vem do
 // utm_source/utm_campaign do link (ex.: ?utm_source=instagram) ou do site que trouxe o visitante.
-const FUNIL = (() => {
-  const ler = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
-  const gravar = (k, v) => { try { localStorage.setItem(k, v); } catch { /* navegação privada */ } };
-  let vid = ler("kasiski_visitante");
-  if (!vid) { vid = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2)).slice(0, 36); gravar("kasiski_visitante", vid); }
-  const q = new URLSearchParams(location.search);
-  let ref = "";
-  try { ref = document.referrer ? new URL(document.referrer).hostname : ""; } catch { /* ignora */ }
-  if (ref === location.hostname) ref = "";
-  // Primeiro toque vence: não sobrescreve a origem já registrada neste navegador
-  if (!ler("kasiski_origem") && (q.get("utm_source") || ref)) gravar("kasiski_origem", q.get("utm_source") || ref);
-  if (!ler("kasiski_campanha") && q.get("utm_campaign")) gravar("kasiski_campanha", q.get("utm_campaign"));
-  return { visitante: vid, origem: () => ler("kasiski_origem") || "", campanha: () => ler("kasiski_campanha") || "" };
-})();
+const FUNIL = {
+  visitante: (window.Kasiski && Kasiski.visitante) || "",
+  origem: () => (window.Kasiski ? Kasiski.ler("kasiski_origem") : null) || "",
+  campanha: () => (window.Kasiski ? Kasiski.ler("kasiski_campanha") : null) || "",
+};
 
 const _rastreados = new Set();
 function rastrear(tipo) {
   if (S.token || _rastreados.has(tipo)) return; // só visitantes; uma vez por carregamento
   _rastreados.add(tipo);
-  fetch(CERTAME.API_URL + "/api/eventos", {
+  if (window.Kasiski) Kasiski.evento(tipo === "visita" ? "page_view" : "cta_click", { pagina: location.hash || "#/" });
+  fetch(CERTAME.API_URL + "/api/public/eventos", {
     method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true,
-    body: JSON.stringify({ tipo, visitante: FUNIL.visitante, origem: FUNIL.origem(), campanha: FUNIL.campanha(),
-      pagina: location.hash || "#/", referencia: document.referrer || "" }),
+    body: JSON.stringify({ tipo, visitante: FUNIL.visitante, toque: window.Kasiski ? Kasiski.toque() : null, pagina: location.hash || "#/" }),
   }).catch(() => { /* funil é acessório */ });
 }
-document.addEventListener("click", (ev) => { if (ev.target.closest('a[href="#/cadastro"]')) rastrear("cta"); });
+// eventos do produto para o Data Layer (GTM/GA4): o servidor registra a mesma coisa no CRM
+function marcar(nome, params = {}) { try { window.Kasiski && Kasiski.evento(nome, params); } catch { /* acessório */ } }
+
 
 // ---------------------------------------------------------------- registro de erros (área Logs do admin)
 // Envia ao servidor erros de JavaScript e falhas de chamada que o usuário encontrou. Sem dados de formulário.

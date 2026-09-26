@@ -72,6 +72,7 @@ function modalNovoEdital() {
         if (modoUpload) { corpo = new FormData(form); if (!$("#arquivo", m).files.length) throw new Error_("Selecione o PDF do edital."); }
         else corpo = { numero_controle: $("#numero_controle", m).value.trim() };
         const ed = await api("POST", `/api/empresas/${S.empresaId}/editais`, corpo);
+        marcar("edital_added");
         m.fechar(); location.hash = `#/editais/${ed.id}`;
       } catch (e) { $("#erro-edital", m).innerHTML = erroTela(e); }
     });
@@ -352,6 +353,7 @@ function acompanharAnalise(el, ed, a) {
     try { x = await api("GET", `/api/editais/${ed.id}/analises/${a.id}`); } catch { setTimeout(passo, 8000); return; }
     if (x.status === "processando") { a.etapa = x.etapa; desenhar(x); setTimeout(passo, 4000); return; }
     if (x.status === "concluida") {
+      marcar("edital_analyzed", { decisao: x.resultado?.recomendacao?.decisao || "" });
       await atualizarConta();
       toast("Análise concluída.", "ok");
       // Reabre a tela inteira: a análise pode ter classificado tipo de objeto/segmento e gerado prazos.

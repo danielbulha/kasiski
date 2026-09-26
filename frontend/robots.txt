@@ -1,0 +1,3 @@
+# app.kasiski.com.br — área logada: fora dos buscadores (o site público é kasiski.com.br)
+User-agent: *
+Disallow: /

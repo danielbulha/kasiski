@@ -52,7 +52,8 @@ class Config:
     # ------------------------------------------------------------ cobrança (Mercado Pago)
     MP_ACCESS_TOKEN = os.getenv("MP_ACCESS_TOKEN", "")          # credencial de produção (APP_USR-...) ou de teste
     MP_WEBHOOK_SECRET = os.getenv("MP_WEBHOOK_SECRET", "")      # "assinatura secreta" do painel de webhooks
-    FRONTEND_URL = os.getenv("FRONTEND_URL", "https://kasiski.netlify.app").rstrip("/")
+    FRONTEND_URL = os.getenv("FRONTEND_URL", "https://app.kasiski.com.br").rstrip("/")   # aplicativo (login, painel...)
+    SITE_URL = os.getenv("SITE_URL", "https://kasiski.com.br").rstrip("/")               # site público (ferramentas, newsletter)
     BACKEND_URL = os.getenv("BACKEND_URL", "").rstrip("/")      # URL pública desta API (para o webhook)
     ANUAL_MESES_PAGOS = int(os.getenv("ANUAL_MESES_PAGOS", "10"))  # plano anual: paga 10, leva 12
     CARENCIA_DIAS = int(os.getenv("CARENCIA_DIAS", "3"))        # dias após o vencimento antes de suspender

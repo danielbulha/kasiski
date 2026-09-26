@@ -1,0 +1,11 @@
+# Gerado por site/gerar.py — kasiski.com.br (o aplicativo fica em https://app.kasiski.com.br)
+/entrar            https://app.kasiski.com.br/#/entrar       302
+/cadastro          https://app.kasiski.com.br/#/cadastro     302
+/app               https://app.kasiski.com.br/#/painel       302
+/painel            https://app.kasiski.com.br/#/painel       302
+/planos            /#planos           302
+/blog              /inteligencia/     301
+/blog/*            /inteligencia/:splat 301
+/guias             /inteligencia/     301
+/ferramentas/analisar-edital      /analisar-edital/        301
+/ferramentas/consultar-concorrente /consultar-concorrente/ 301

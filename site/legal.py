@@ -67,10 +67,11 @@ de login malsucedidas. Nenhum sistema é totalmente imune; se houver incidente r
 
 def cookies(E):
     linhas = [
-        ("Necessários", "certame_token", "Local", "Mantém você conectado à plataforma", "Até sair da conta"),
-        ("Necessários", "kasiski_consentimento", "Local", "Guarda suas escolhas de cookies", "12 meses"),
-        ("Medição própria", "kasiski_visitante", "Local", "Identificador aleatório do navegador para medir o uso do site e ligar a visita ao cadastro", "Até limpar o navegador"),
-        ("Medição própria", "kasiski_primeiro_toque / kasiski_ultimo_toque", "Local", "Origem da visita (UTM, site de origem, parceiro)", "Até limpar o navegador"),
+        ("Necessários", "certame_token", "Armazenamento local (app)", "Mantém você conectado à plataforma", "Até sair da conta"),
+        ("Necessários", "kasiski_consentimento", "Kasiski (.kasiski.com.br)", "Guarda suas escolhas de cookies no site e no app", "12 meses"),
+        ("Medição própria", "kasiski_visitante", "Kasiski (.kasiski.com.br)", "Identificador aleatório do navegador para medir o uso do site e ligar a visita ao cadastro", "13 meses"),
+        ("Medição própria", "kasiski_primeiro_toque / kasiski_ultimo_toque", "Kasiski (.kasiski.com.br)", "Origem da visita (UTM, site de origem, parceiro)", "13 meses"),
+        ("Necessários", "kasiski_cadastro", "Kasiski (.kasiski.com.br)", "Nome e e-mail digitados nas ferramentas grátis, para pré-preencher o cadastro no app", "2 dias"),
         ("Medição (terceiros)", "_ga, _ga_*", "Google Analytics", "Estatísticas de uso do site", "Até 2 anos"),
         ("Marketing", "_gcl_au, _gcl_*", "Google Ads", "Medir conversões de anúncios", "90 dias"),
         ("Marketing", "li_sugr, bcookie, lidc, UserMatchHistory", "LinkedIn", "Insight Tag: conversões e públicos", "Até 6 meses"),

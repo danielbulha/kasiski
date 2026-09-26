@@ -15,7 +15,9 @@ V.conta = async (el) => {
   try { cobrancas = await api("GET", "/api/billing/cobrancas"); } catch { /* tela segue sem histórico */ }
   const p = S.plano, a = p.assinatura || {};
   const ciclo = V.conta.ciclo || "mensal";
-  const msgRetorno = !retorno ? "" : ["approved", ""].includes(retorno.status) && ["profissional", "essencial", "consultor"].includes(p.codigo)
+  if (retorno && ["approved", ""].includes(retorno.status) && ["profissional", "essencial", "avancado", "consultor"].includes(p.codigo))
+    marcar("purchase", { currency: "BRL", value: p.preco, transaction_id: retorno.payment_id || retorno.collection_id || "", items: [{ item_id: p.codigo, item_name: p.nome }] });
+  const msgRetorno = !retorno ? "" : ["approved", ""].includes(retorno.status) && ["profissional", "essencial", "avancado", "consultor"].includes(p.codigo)
     ? `<div class="aviso ok">Pagamento confirmado. Seu plano ${esc(p.nome)} está ativo.</div>`
     : ["rejected", "null", "failure"].includes(retorno.status)
       ? `<div class="aviso erro">O pagamento não foi concluído. Você pode tentar de novo com outra forma de pagamento.</div>`
@@ -151,7 +153,11 @@ function modalCheckout(plano, ciclo) {
       <div id="erro-checkout"></div>`,
   });
   $$("[data-metodo]", m).forEach((b) => b.onclick = () => ocupado(b, "Abrindo o Mercado Pago…", async () => {
-    try { const d = await api("POST", "/api/billing/checkout", { plano, ciclo, metodo: b.dataset.metodo }); location.href = d.url; }
+    try {
+      const d = await api("POST", "/api/billing/checkout", { plano, ciclo, metodo: b.dataset.metodo });
+      marcar("begin_checkout", { currency: "BRL", value: d.valor, items: [{ item_id: plano, item_name: plano, item_variant: ciclo }] });
+      location.href = d.url;
+    }
     catch (e) { $("#erro-checkout", m).innerHTML = erroTela(e); }
   }));
 }

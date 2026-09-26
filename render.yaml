@@ -41,7 +41,9 @@ services:
       - key: MP_WEBHOOK_SECRET
         sync: false
       - key: FRONTEND_URL
-        value: https://kasiski.netlify.app
+        value: https://app.kasiski.com.br
+      - key: SITE_URL
+        value: https://kasiski.com.br
       - key: BACKEND_URL
         sync: false
       - key: ANUAL_MESES_PAGOS
@@ -96,6 +98,8 @@ services:
       - key: EMAIL_REMETENTE
         sync: false
       - key: FRONTEND_URL
+        value: https://app.kasiski.com.br
+      - key: SITE_URL
         value: https://kasiski.com.br
       - key: BACKEND_URL
         sync: false

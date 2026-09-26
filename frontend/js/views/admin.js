@@ -505,7 +505,7 @@ const STATUS_LEAD = { novo: ["Novo", "neutro"], engajado: ["Engajado", "neutro"]
   trial: ["Trial", "oficio"], ativado: ["Ativado", "oficio"], oportunidade: ["Oportunidade", "aviso"], assinante: ["Assinante", "ok"], perdido: ["Perdido", "neutro"] };
 const NOMES_CANAL_ADM = { busca_paga: "Busca paga (Google Ads)", social_pago: "Social pago", busca_organica: "Busca orgânica (SEO)", social: "Redes sociais",
   email: "E-mail / newsletter", parceiro: "Parceiros", indicacao: "Sites que indicaram", direto: "Direto / desconhecido" };
-const ISCAS = { analisar_edital: "Analisador de edital", consultar_concorrente: "Consulta de concorrente", newsletter: "Newsletter", consultorias: "Página de consultorias",
+const ISCAS = { analisar_edital: "Analisador de edital", consultar_concorrente: "Consulta de concorrente", newsletter: "Newsletter", diagnostico: "Diagnóstico B2G", consultorias: "Página de consultorias",
   contato: "Contato", checklist: "Checklist", "cadastro direto": "Cadastro direto" };
 const moedaOuTraco = (v) => (v === null || v === undefined ? "—" : fmt.moeda(v));
 const pctOuTraco = (v) => (v === null || v === undefined ? "—" : `${fmt.num(v, 1)}%`);
@@ -572,6 +572,11 @@ async function mkVisao(el, sub) {
     corpo = `<section class="bloco"><div class="grade grade-4 grade-kpi">
         ${indicador(f.analises_gratuitas, "análises gratuitas de edital")}${indicador("US$ " + fmt.num(f.custo_ia_analises_usd, 2), "custo de IA dessas análises")}
         ${indicador(f.consultas_concorrente, "consultas de concorrente")}${indicador(f.newsletter_ativos, "assinantes da newsletter (confirmados)")}</div></section>
+      <section class="bloco"><h2>Diagnóstico de maturidade B2G</h2><div class="grade grade-4 grade-kpi">
+        ${indicador(f.diagnosticos.total, "diagnósticos feitos")}${indicador(f.diagnosticos.com_email, "deixaram o e-mail")}
+        ${indicador(f.diagnosticos.media === null ? "—" : f.diagnosticos.media + "/100", "nota média")}
+        ${indicador(["inicial", "em_desenvolvimento", "estruturada", "avancada"].map((k) => f.diagnosticos.por_nivel[k] || 0).join(" · "), "inicial · em desenv. · estruturada · avançada")}</div>
+        <p class="fraco" style="margin-top:10px">Empresas com nota baixa em Documentação e Oportunidades são as que mais ganham com o Radar e o Cofre: bom público para abordagem.</p></section>
       <section class="bloco tabela-rolagem"><h2>Leads por isca</h2>${f.por_isca.length ? `<table><thead><tr><th>Isca</th><th>Leads</th><th>Viraram trial</th><th>Assinaram</th><th>Lead → trial</th></tr></thead>
         <tbody>${f.por_isca.map((x) => `<tr><td>${esc(ISCAS[x.isca] || x.isca)}</td><td>${x.leads}</td><td>${x.trials}</td><td>${x.assinantes}</td><td>${pct(x.trials, x.leads)}%</td></tr>`).join("")}</tbody></table>` : vazio("Sem leads no período", "")}</section>
       <section class="bloco"><h2>Newsletter</h2><p class="fraco">Exporte a lista de inscritos confirmados para enviar a edição da semana pela sua ferramenta de e-mail.</p>
@@ -620,7 +625,7 @@ async function mkLeads(el) {
 }
 
 const NOMES_EVENTO = { page_view: "Visitou o site", cta_click: "Clicou em um CTA", pricing_view: "Viu os planos", generate_lead: "Deixou o contato", tool_started: "Usou uma ferramenta grátis",
-  edital_free_analysis: "Análise gratuita de edital", competitor_search: "Consultou concorrente", sign_up: "Criou conta", trial_started: "Iniciou o teste", company_created: "Cadastrou a empresa",
+  edital_free_analysis: "Análise gratuita de edital", diagnostic_completed: "Fez o diagnóstico B2G", competitor_search: "Consultou concorrente", sign_up: "Criou conta", trial_started: "Iniciou o teste", company_created: "Cadastrou a empresa",
   radar_configured: "Configurou o radar", edital_added: "Adicionou edital", edital_analyzed: "Analisou edital (IA)", competitor_analyzed: "Analisou concorrente", document_uploaded: "Enviou documento ao cofre",
   proposal_generated: "Gerou proposta", legal_document_generated: "Gerou peça", begin_checkout: "Abriu o pagamento", purchase: "Pagou", subscription_cancelled: "Cancelou a assinatura", visita: "Visitou a página inicial", cta: "Clicou em testar grátis" };
 
@@ -634,6 +639,7 @@ async function modalLead(id, aoSalvar) {
       ${l.empresa ? ` · ${esc(l.empresa)}` : ""}${l.cargo ? ` · ${esc(l.cargo)}` : ""}</p>
     <p class="fraco">Primeiro toque: ${esc([l.utm_source, l.utm_medium, l.utm_campaign, l.utm_term].filter(Boolean).join(" / ") || l.origem || "direto")} · entrada: ${esc(l.landing_page || "—")}${l.ref_parceiro ? ` · parceiro <b>${esc(l.ref_parceiro)}</b>` : ""}</p>
     ${l.conta ? `<div class="aviso info">Conta <b>${esc(l.conta.nome)}</b> · plano ${esc(l.conta.plano)}${l.conta.trial_fim ? ` · teste até ${fmt.data(l.conta.trial_fim)}` : ""} <button class="botao pequeno texto" data-abrir-conta="${l.conta.id}">Abrir no CRM</button></div>` : ""}
+    ${(l.diagnosticos || []).length ? `<p><b>Diagnóstico B2G:</b> ${l.diagnosticos.map((x) => `${x.nota}/100 (${esc(x.nivel)}) — ${Object.entries(x.eixos || {}).map(([k, v]) => `${esc(k)} ${v === null ? "n/a" : v}`).join(", ")} · ${fmt.data(x.criado_em)}`).join("; ")}</p>` : ""}
     ${l.analises_gratuitas.length ? `<p><b>Análises gratuitas:</b> ${l.analises_gratuitas.map((a) => `${esc(a.nome_arquivo || "edital")} (nota ${a.nota ?? "—"}, ${fmt.data(a.criado_em)})`).join("; ")}</p>` : ""}
     <h3>Jornada</h3><ol class="op-linha-tempo mk-jornada">${l.eventos.map((e) => `<li><small>${fmt.dataHora(e.criado_em + "Z")}${e.canal ? " · " + esc(NOMES_CANAL_ADM[e.canal] || e.canal) : ""}</small>
       <div>${esc(NOMES_EVENTO[e.tipo] || e.tipo)} ${l.pontos_por_evento[e.tipo] ? `<small class="fraco">+${l.pontos_por_evento[e.tipo]}</small>` : ""}${e.dados?.pagina ? ` <small class="fraco">${esc(e.dados.pagina)}</small>` : ""}</div></li>`).join("") || "<li>Sem eventos.</li>"}</ol>

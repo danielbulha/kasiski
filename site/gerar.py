@@ -47,7 +47,7 @@ def cabecalho(minimo=False):
   <nav id="s-nav" class="s-nav">
     <div class="s-drop"><button type="button" aria-haspopup="true">Soluções</button><div class="s-drop-menu">{menu_sol}</div></div>
     <div class="s-drop"><button type="button" aria-haspopup="true">Ferramentas grátis</button><div class="s-drop-menu">
-      <a href="/analisar-edital/">Analisar edital</a><a href="/consultar-concorrente/">Consultar concorrente</a><a href="/newsletter/">Kasiski Intelligence (newsletter)</a></div></div>
+      <a href="/analisar-edital/">Analisar edital</a><a href="/consultar-concorrente/">Consultar concorrente</a><a href="/diagnostico/">Diagnóstico de maturidade B2G</a><a href="/newsletter/">Kasiski Intelligence (newsletter)</a></div></div>
     <a href="/inteligencia/">Inteligência</a><a href="/consultorias/">Consultorias</a><a href="/#planos" data-cta="menu_planos">Planos</a>
     <a class="s-entrar" href="{C.APP_ENTRAR}">Entrar</a><a class="s-botao" href="{C.APP_CADASTRO}" data-cta="menu_testar">Testar grátis</a>
   </nav></header>'''
@@ -63,7 +63,7 @@ def rodape():
       <label class="s-check"><input type="checkbox" name="consentimento" required> <span>Concordo com a <a href="/privacidade/">Política de Privacidade</a></span></label>
       <input class="s-hp" name="site" tabindex="-1" autocomplete="off" aria-hidden="true"><p class="s-msg" role="status"></p></form></div>
   <div><h3>Soluções</h3>{"".join(f'<a href="/{s["slug"]}/">{esc(s["nome"])}</a>' for s in C.SOLUCOES)}</div>
-  <div><h3>Grátis</h3><a href="/analisar-edital/">Analisar edital</a><a href="/consultar-concorrente/">Consultar concorrente</a><a href="/newsletter/">Newsletter</a>
+  <div><h3>Grátis</h3><a href="/analisar-edital/">Analisar edital</a><a href="/consultar-concorrente/">Consultar concorrente</a><a href="/diagnostico/">Diagnóstico B2G</a><a href="/newsletter/">Newsletter</a>
     <h3>Conteúdo</h3><a href="/inteligencia/">Inteligência</a><a href="/glossario/">Glossário</a></div>
   <div><h3>Kasiski</h3><a href="/consultorias/">Para consultorias</a><a href="/#planos">Planos</a><a href="{C.APP_ENTRAR}">Entrar</a>
     <h3>Legal</h3><a href="/privacidade/">Privacidade</a><a href="/cookies/">Cookies</a><a href="/termos/">Termos de uso</a><a href="/termos-ia/">Termos de IA</a>
@@ -394,6 +394,8 @@ if __name__ == "__main__":
     copiar_compartilhados()
     import home
     home.pg_home(pagina, ORG, SOFT)
+    import diagnostico
+    diagnostico.pg_diagnostico(pagina, SOFT)
     pg_analisar()
     pg_concorrente()
     pg_newsletter()

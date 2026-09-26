@@ -228,6 +228,101 @@
     } catch (e) { msg(f, e.message); ocupar(f, false); }
   });
 
+  // ------------------------------------------------------------ diagnóstico de maturidade B2G
+  const caixaDiag = $("[data-diag]");
+  if (caixaDiag) {
+    const D = JSON.parse($("#diag-def").textContent);
+    const passos = [{ titulo: "Sobre a sua empresa", perguntas: D.perfil.map((q) => ({ ...q, perfil: true, opcoes: q.opcoes.map((t) => ({ t })) })) },
+      ...D.eixos.map((e) => ({ titulo: e.nome, perguntas: D.perguntas.filter((q) => q.eixo === e.id) }))];
+    const resp = {}, perfil = {};
+    let passo = -1;
+    const corpo = $("[data-diag-corpo]", caixaDiag), rot = $("[data-diag-passo]", caixaDiag);
+    const btnA = $("[data-diag-avancar]", caixaDiag), btnV = $("[data-diag-voltar]", caixaDiag), barra = $(".s-diag-progresso i", caixaDiag);
+    corpo.innerHTML = `<p>São ${D.perguntas.length + D.perfil.length} perguntas rápidas, de múltipla escolha. Não pedimos seus dados para ver o resultado.</p>`;
+    const desenhar = () => {
+      const p = passos[passo];
+      rot.textContent = `Etapa ${passo + 1} de ${passos.length} · ${p.titulo}`;
+      barra.style.width = `${Math.round((100 * passo) / passos.length)}%`;
+      corpo.innerHTML = p.perguntas.map((q) => `<fieldset class="s-diag-q"><legend>${esc(q.texto)}</legend>${q.opcoes.map((o, i) => {
+        const marcado = q.perfil ? perfil[q.id] === o.t : resp[q.id] === i;
+        return `<label class="s-diag-op"><input type="radio" name="${q.id}" value="${i}" ${marcado ? "checked" : ""}><span>${esc(o.t)}</span></label>`;
+      }).join("")}</fieldset>`).join("");
+      $$("input[type=radio]", corpo).forEach((r) => r.onchange = () => {
+        const q = p.perguntas.find((x) => x.id === r.name);
+        if (q.perfil) perfil[q.id] = q.opcoes[Number(r.value)].t; else resp[q.id] = Number(r.value);
+        msg(caixaDiag, "", "");
+      });
+      btnV.hidden = passo === 0;
+      btnA.textContent = passo === passos.length - 1 ? "Ver meu diagnóstico" : "Avançar";
+      const legenda = $("legend", corpo); if (legenda) legenda.setAttribute("tabindex", "-1");
+    };
+    btnV.onclick = () => { if (passo > 0) { passo--; desenhar(); } };
+    btnA.onclick = async () => {
+      if (passo === -1) { K.evento("tool_started", { ferramenta: "diagnostico" }); passo = 0; desenhar(); return; }
+      const p = passos[passo];
+      const faltam = p.perguntas.filter((q) => (q.perfil ? !perfil[q.id] : resp[q.id] === undefined));
+      if (faltam.length) { msg(caixaDiag, "Responda todas as perguntas desta etapa."); return; }
+      if (passo < passos.length - 1) { passo++; desenhar(); caixaDiag.scrollIntoView({ block: "nearest" }); return; }
+      btnA.disabled = true; btnA.textContent = "Calculando…";
+      try {
+        const r = await enviar("/api/public/diagnostico", comum({ respostas: resp, perfil, site: $("[name=site]", caixaDiag).value }));
+        K.evento("diagnostic_completed", { nota: r.nota, nivel: r.nivel });
+        K.evento("tool_completed", { ferramenta: "diagnostico", nota: r.nota });
+        resultadoDiag(r, D);
+      } catch (e) { msg(caixaDiag, e.message); btnA.disabled = false; btnA.textContent = "Ver meu diagnóstico"; }
+    };
+  }
+
+  function resultadoDiag(r, D) {
+    const alvo = $("[data-diag-resultado]"), intro = $("[data-diag-intro]");
+    const mercado = r.mercado;
+    const barras = r.eixos.map((e) => {
+      const m = mercado && mercado.eixos && mercado.eixos[e.id];
+      return `<div class="s-barra-linha"><span class="s-barra-nome">${esc(e.nome)}</span>
+        <span class="s-barra-trilho" title="${e.nota === null ? "Não se aplica" : `${esc(e.nome)}: ${e.nota}/100${m ? ` · média do mercado ${m}` : ""}`}">
+          ${e.nota === null ? "" : `<i style="width:${Math.max(2, e.nota)}%"></i>`}${m ? `<b class="s-barra-media" style="left:${m}%" aria-hidden="true"></b>` : ""}</span>
+        <span class="s-barra-valor">${e.nota === null ? "<small>não se aplica</small>" : e.nota}</span></div>`;
+    }).join("");
+    const recs = r.recomendacoes.map((x, i) => `<div class="s-rec"><span>${i + 1}</span><div><b>${esc(x.nome)} — ${x.nota}/100</b><p>${esc(x.texto)}</p>
+      <a href="${esc(x.recurso.url)}">${esc(x.recurso.nome)} →</a></div></div>`).join("");
+    const url = encodeURIComponent((window.CERTAME?.SITE_URL || location.origin) + "/diagnostico/");
+    alvo.innerHTML = `<div class="s-diag-res">
+      <div class="s-diag-topo"><div class="s-diag-nota"><small>Maturidade B2G</small><b>${r.nota}<span>/100</span></b><em>${esc(r.nivel_nome)}</em></div>
+        <div><h2>${esc(r.nivel_nome)}: ${r.nota < 40 ? "hora de estruturar a base" : r.nota < 60 ? "a rotina existe, falta processo" : r.nota < 80 ? "processo pronto, falta inteligência" : "pronto para ganhar escala"}</h2>
+          <p>${esc(r.nivel_texto)}</p>${mercado ? `<p class="s-nota">Média de ${mercado.amostra} empresas que fizeram o diagnóstico: <b>${mercado.nota}/100</b>.</p>` : ""}</div></div>
+      <div class="s-barras" role="list" aria-label="Nota por eixo">${barras}</div>
+      ${mercado ? `<p class="s-nota s-barras-legenda"><b class="s-barra-media s-barra-media-leg" aria-hidden="true"></b> média do mercado em cada eixo</p>` : ""}
+      ${recs ? `<h3>Plano de ação: por onde começar</h3><div class="s-recs">${recs}</div>` : `<p>Sua empresa está bem estruturada em todos os eixos.</p>`}
+      <div class="s-diag-cta"><div><b>Coloque o plano em prática com o Kasiski</b><p>Radar diário no PNCP, análise de edital com IA, cofre de documentos, concorrentes e contratos. Teste grátis por 7 dias, sem cartão.</p></div>
+        <a class="s-botao s-botao-grande" href="${APP}/#/cadastro" data-cta="diagnostico_comecar">Começar gratuitamente no Kasiski</a></div>
+      <div class="s-cartao s-diag-email"><b>Receba o relatório completo por e-mail</b><p class="s-nota">Com a nota de cada eixo e o plano de ação para guardar ou encaminhar ao time.</p>
+        <form class="s-ferramenta" data-form="diag-email" novalidate><div class="s-linha">
+          <div class="s-campo"><label for="dg-nome">Nome</label><input id="dg-nome" name="nome" required autocomplete="name"></div>
+          <div class="s-campo"><label for="dg-email">E-mail</label><input id="dg-email" name="email" type="email" required autocomplete="email"></div></div>
+          <div class="s-campo"><label for="dg-emp">Empresa <small>(opcional)</small></label><input id="dg-emp" name="empresa" autocomplete="organization"></div>
+          <label class="s-check"><input type="checkbox" name="consentimento" required> <span>Concordo com a <a href="/privacidade/">Política de Privacidade</a>.</span></label>
+          <label class="s-check"><input type="checkbox" name="newsletter"> <span>Quero receber a newsletter Kasiski Intelligence.</span></label>
+          <input class="s-hp" name="site" tabindex="-1" autocomplete="off" aria-hidden="true">
+          <button class="s-botao" type="submit">Enviar relatório</button><p class="s-msg" role="status"></p></form></div>
+      <p class="s-diag-rodape"><a href="https://www.linkedin.com/sharing/share-offsite/?url=${url}" target="_blank" rel="noopener">Compartilhar o diagnóstico no LinkedIn</a> · <a href="/diagnostico/">Refazer</a></p>
+    </div>`;
+    intro.hidden = true; alvo.hidden = false; window.scrollTo({ top: 0 });
+    const f = $("form[data-form=diag-email]", alvo);
+    f.onsubmit = async (ev) => {
+      ev.preventDefault();
+      if (!f.nome.value.trim() || !/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(f.email.value.trim())) return msg(f, "Informe seu nome e um e-mail válido.");
+      if (!f.consentimento.checked) return msg(f, "Aceite a Política de Privacidade para receber o relatório.");
+      ocupar(f, true, "Enviando…");
+      try {
+        await enviar(`/api/public/diagnostico/${encodeURIComponent(r.id)}/email`, comum({ nome: f.nome.value.trim(), email: f.email.value.trim(), empresa: f.empresa.value,
+          consentimento: true, newsletter: f.newsletter.checked, site: f.site.value }));
+        K.evento("generate_lead", { lead_magnet: "diagnostico" });
+        gravar("kasiski_cadastro", JSON.stringify({ nome: f.nome.value.trim(), email: f.email.value.trim() }));
+        f.innerHTML = `<div class="s-aviso ok"><b>Relatório enviado.</b> Confira sua caixa de entrada (e o spam).</div>`;
+      } catch (e) { msg(f, e.message); ocupar(f, false); }
+    };
+  }
+
   // ------------------------------------------------------------ filtro de categorias (Inteligência)
   $$(".s-cats button").forEach((b) => b.onclick = () => {
     $$(".s-cats button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));

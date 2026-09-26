@@ -154,7 +154,7 @@
 
   // ------------------------------------------------------------ eventos
   const PRIMEIRA_PARTE = new Set(["page_view", "cta_click", "pricing_view", "lead_form_start", "tool_started", "tool_completed",
-    "checklist_download", "diagnostic_completed", "radar_result_viewed"]);
+    "checklist_download", "radar_result_viewed"]);  // diagnostic_completed é gravado pelo servidor
   const enviados = new Set();
   function evento(nome, params = {}) {
     dataLayer.push({ event: nome, ...params, kasiski_visitor_id: vid });

@@ -175,7 +175,7 @@ def confirmar_newsletter():
     if lead:
         lead.newsletter, lead.newsletter_confirmada, lead.marketing_optout = True, True, False
         db.session.commit()
-    return redirect(f"{current_app.config['FRONTEND_URL']}/newsletter/?{'confirmado=1' if lead else 'erro=1'}")
+    return redirect(f"{current_app.config['SITE_URL']}/newsletter/?{'confirmado=1' if lead else 'erro=1'}")
 
 
 @bp.get("/sair")
@@ -190,7 +190,7 @@ def descadastrar():
             if c:
                 c.marketing_optout = True
         db.session.commit()
-    return redirect(f"{current_app.config['FRONTEND_URL']}/newsletter/?{'saiu=1' if lead else 'erro=1'}")
+    return redirect(f"{current_app.config['SITE_URL']}/newsletter/?{'saiu=1' if lead else 'erro=1'}")
 
 
 # ---------------------------------------------------------------- leads e eventos

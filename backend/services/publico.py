@@ -159,7 +159,7 @@ def enviar_resultado_por_email(ap):
     if not ap.email or not em.configurado():
         return
     v = visao_publica(ap)
-    link = f"{current_app.config['FRONTEND_URL']}/analisar-edital/?r={ap.id}"
+    link = f"{current_app.config['SITE_URL']}/analisar-edital/?r={ap.id}"
     cad = f"{current_app.config['FRONTEND_URL']}/#/cadastro?utm_source=kasiski&utm_medium=email&utm_campaign=analise_gratuita"
     corpo = em.layout_marketing(
         f"Sua análise gratuita está pronta: nota {v.get('nota')}/100",

@@ -323,9 +323,114 @@
     };
   }
 
+  // ------------------------------------------------------------ checklist de habilitação
+  const ck = $("[data-checklist]");
+  if (ck) {
+    const DEF = JSON.parse($("#ck-def").textContent).itens;
+    const CH = "kasiski_checklist";
+    let estado = {};
+    try { estado = JSON.parse(sessionStorage.getItem(CH) || "{}"); } catch { /* ok */ }
+    estado.itens = estado.itens || {};
+    const salvar = () => { try { sessionStorage.setItem(CH, JSON.stringify(estado)); } catch { /* ok */ } };
+    const visiveis = () => $$(".s-ck-item", ck).filter((li) => !li.hidden);
+    const atualizar = () => {
+      $$(".s-ck-item", ck).forEach((li) => {
+        const segs = (li.dataset.segmentos || "").split(" ").filter(Boolean);
+        li.hidden = segs.length > 0 && !segs.includes(estado.segmento);
+        li.classList.toggle("ok", !!estado.itens[li.dataset.item]?.tem);
+      });
+      $$(".s-ck-grupo", ck).forEach((g) => {
+        const lis = $$(".s-ck-item", g).filter((li) => !li.hidden);
+        g.hidden = !lis.length;
+        const ok = lis.filter((li) => estado.itens[li.dataset.item]?.tem).length;
+        $(`[data-cont="${g.dataset.grupo}"]`, g).textContent = `${ok} de ${lis.length}`;
+      });
+      const v = visiveis(), ok = v.filter((li) => estado.itens[li.dataset.item]?.tem).length;
+      $("[data-total]", ck).textContent = v.length; $("[data-total-ok]", ck).textContent = ok;
+      $("[data-barra]", ck).style.width = `${v.length ? Math.round((100 * ok) / v.length) : 0}%`;
+      $$("[data-seg]", ck).forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.seg === estado.segmento)));
+    };
+    $$("[data-tem]", ck).forEach((c) => {
+      const it = estado.itens[c.dataset.tem]; if (it?.tem) c.checked = true;
+      c.onchange = () => { (estado.itens[c.dataset.tem] ||= {}).tem = c.checked; salvar(); atualizar(); if (!iniciou) { iniciou = true; K.evento("tool_started", { ferramenta: "checklist" }); } };
+    });
+    $$("[data-validade]", ck).forEach((i) => {
+      const it = estado.itens[i.dataset.validade]; if (it?.validade) i.value = it.validade;
+      i.onchange = () => { const x = (estado.itens[i.dataset.validade] ||= {}); x.validade = i.value; if (i.value) { x.tem = true; $(`[data-tem="${i.dataset.validade}"]`, ck).checked = true; } salvar(); atualizar(); };
+    });
+    let iniciou = false;
+    $$("[data-seg]", ck).forEach((b) => b.onclick = () => { estado.segmento = estado.segmento === b.dataset.seg ? "" : b.dataset.seg; salvar(); atualizar(); });
+    atualizar();
+
+    const fundo = $("[data-ck-modal]"), form = $("form[data-form=checklist]"), feito = $("[data-ck-feito]");
+    let acao = "baixar";
+    const abrir = (a) => {
+      acao = a;
+      $("[data-ck-titulo]").textContent = a === "importar" ? "Importar para o Cofre Kasiski" : "Baixar checklist";
+      $("[data-ck-sub]").textContent = a === "importar" ? "Crie sua conta grátis com este e-mail: ao cadastrar a empresa, o checklist entra no Cofre, com o que falta marcado como pendente." : "Enviamos a versão para impressão ou PDF, com o que você já marcou.";
+      $("[data-ck-enviar]").textContent = a === "importar" ? "Continuar para criar a conta" : "Baixar checklist";
+      form.hidden = false; feito.hidden = true; fundo.hidden = false; setTimeout(() => form.nome.focus(), 50);
+    };
+    const fechar = () => { fundo.hidden = true; };
+    $$("[data-ck-acao]").forEach((b) => b.onclick = () => abrir(b.dataset.ckAcao));
+    $("[data-ck-fechar]").onclick = fechar;
+    fundo.addEventListener("click", (ev) => { if (ev.target === fundo) fechar(); });
+    document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && !fundo.hidden) fechar(); });
+    form.onsubmit = async (ev) => {
+      ev.preventDefault();
+      if (!form.nome.value.trim() || !/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(form.email.value.trim())) return msg(form, "Informe seu nome e um e-mail válido.");
+      if (!form.consentimento.checked) return msg(form, "Aceite a Política de Privacidade para continuar.");
+      const itens = visiveis().map((li) => ({ id: li.dataset.item, tem: !!estado.itens[li.dataset.item]?.tem, validade: estado.itens[li.dataset.item]?.validade || null }));
+      ocupar(form, true, "Enviando…");
+      try {
+        await enviar("/api/public/checklist", comum({ acao, itens, segmento: estado.segmento || "", nome: form.nome.value.trim(), email: form.email.value.trim(),
+          empresa: form.empresa.value, consentimento: true, newsletter: form.newsletter.checked, site: form.site.value }));
+        K.evento("generate_lead", { lead_magnet: "checklist" });
+        K.evento(acao === "importar" ? "checklist_import" : "checklist_download", { itens: itens.length });
+        gravar("kasiski_cadastro", JSON.stringify({ nome: form.nome.value.trim(), email: form.email.value.trim() }));
+        form.hidden = true; feito.hidden = false;
+        if (acao === "importar") {
+          feito.innerHTML = `<div class="s-aviso ok"><b>Checklist guardado.</b> Agora crie a conta com <b>${esc(form.email.value.trim())}</b> e cadastre a empresa: os ${itens.length} itens entram no Cofre.</div>
+            <a class="s-botao s-botao-grande" style="margin-top:14px;width:100%" href="${APP}/#/cadastro" data-cta="checklist_criar_conta">Criar conta grátis</a>
+            <p class="s-nota" style="margin-top:10px">Já tem conta? <a href="${APP}/#/cofre">Entre e use “Montar pelo checklist” no Cofre</a>.</p>`;
+        } else {
+          feito.innerHTML = `<div class="s-aviso ok"><b>Pronto!</b> Na janela de impressão, escolha “Salvar como PDF”.</div>
+            <button type="button" class="s-botao" style="margin-top:14px" data-ck-imprimir>Abrir de novo</button>`;
+          $("[data-ck-imprimir]", feito).onclick = () => { fechar(); window.print(); };
+          setTimeout(() => { fechar(); window.print(); }, 300);
+        }
+      } catch (e) { msg(form, e.message); }
+      ocupar(form, false);
+    };
+  }
+
   // ------------------------------------------------------------ filtro de categorias (Inteligência)
-  $$(".s-cats button").forEach((b) => b.onclick = () => {
-    $$(".s-cats button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  $$(".s-cats button[data-cat]").forEach((b) => b.onclick = () => {
+    $$(".s-cats button[data-cat]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
     $$(".s-card-artigo").forEach((c) => { c.hidden = !!b.dataset.cat && c.dataset.categoria !== b.dataset.cat; });
   });
+
+  // ------------------------------------------------------------ arquivo da newsletter (/newsletter/ e /newsletter/arquivo/)
+  const nlLista = $("[data-nl-lista]");
+  if (nlLista) {
+    const n = Number(new URLSearchParams(location.search).get("n") || 0);
+    const curta = (v) => { v = Number(v || 0); for (const [l, s] of [[1e9, "bi"], [1e6, "mi"]]) if (v >= l) return `R$ ${(v / l).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} ${s}`; return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }); };
+    const dt = (iso) => new Date(iso + "T12:00").toLocaleDateString("pt-BR");
+    const edicao = $("[data-nl-edicao]");
+    if (n && edicao) {
+      fetch(`${API}/api/public/newsletter/edicoes/${n}`).then((r) => (r.ok ? r.json() : Promise.reject())).then((e) => {
+        $("[data-nl-arquivo]").hidden = true; $("[data-nl-cabeca]").hidden = true; edicao.hidden = false;
+        document.title = `#${e.numero} ${e.titulo} | Kasiski Intelligence`;
+        $("[data-nl-html]", edicao).innerHTML = e.html;
+      }).catch(() => { nlLista.innerHTML = '<p class="s-fraco">Edição não encontrada.</p>'; });
+    }
+    fetch(`${API}/api/public/newsletter/edicoes`).then((r) => r.json()).then((lista) => {
+      const curto = !!$("[data-nl-ultimas]");
+      const itens = curto ? lista.slice(0, 3) : lista;
+      if (curto && itens.length) $("[data-nl-ultimas]").hidden = false;
+      if (!itens.length) { nlLista.innerHTML = '<p class="s-fraco">A primeira edição sai em breve. Inscreva-se para receber.</p>'; return; }
+      nlLista.innerHTML = itens.map((e) => `<a class="s-nl-item" href="/newsletter/arquivo/?n=${e.numero}"><small>#${e.numero} · semana de ${dt(e.semana_inicio)} a ${dt(e.semana_fim)}</small>
+        <b>${String(e.titulo || "").replace(/[<>&]/g, "")}</b>${e.metricas && e.metricas.valor_competitivas ? `<span>${(e.metricas.competitivas || 0).toLocaleString("pt-BR")} licitações · ${e.metricas.estimado ? "≈ " : ""}${curta(e.metricas.valor_competitivas)}</span>` : ""}</a>`).join("");
+    }).catch(() => { nlLista.innerHTML = ""; });
+  }
 })();

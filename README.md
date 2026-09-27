@@ -406,3 +406,21 @@ Nas análises de habilitação/proposta desse concorrente em um edital, a IA rec
 - **Relatório por e-mail:** transforma o visitante em lead (isca `diagnostico`) e envia o relatório.
 - Evento `diagnostic_completed` (+8 pontos no score do lead). No Admin → Marketing → Ferramentas grátis: total, quantos deixaram e-mail, nota média e distribuição por nível. O diagnóstico também aparece no detalhe do lead.
 - As perguntas, os pesos e os textos ficam em `backend/data/diagnostico.json`, usado pelo backend (cálculo) e pelo gerador do site (página). Depois de editar, rode `python site/gerar.py` e publique o `publico/` e o backend.
+
+## Checklist de habilitação (`kasiski.com.br/checklist-habilitacao/`) e Cofre
+
+- Catálogo em `backend/data/checklist_habilitacao.json`: 34 itens (jurídica, fiscal/trabalhista, econômico-financeira, técnica, declarações, setoriais) com base na Lei 14.133/2021, onde emitir, validade típica e segmentos (obras, serviços contínuos, fornecimento, saúde, alimentação, transporte, TI).
+- **Página pública:** filtro por segmento, "já tenho" + data de validade, progresso, **Baixar** (lead → impressão/PDF) ou **Importar para o Cofre** (lead → cadastro). A seleção fica guardada (`checklist_publico`) e é importada automaticamente quando a primeira empresa da conta é criada com o mesmo e-mail.
+- **No app:** Cofre → "Montar pelo checklist" (`POST /api/empresas/<id>/documentos/checklist`). Itens já existentes são ignorados. Documentos sem arquivo e sem validade ficam com status **Pendente**, que some ao anexar arquivo ou informar validade.
+- Eventos `checklist_download` e `checklist_import` (+10 no score do lead). Após editar o JSON, rode `python site/gerar.py` e publique o `publico/` e o backend.
+
+## Newsletter Kasiski Intelligence (edições semanais)
+
+- **Rascunho automático:** toda segunda-feira (a partir das 9h UTC = 6h de Brasília) o agendador do servidor e o job diário coletam no PNCP as contratações publicadas na semana anterior e criam a edição em rascunho. Os admins (`ADMIN_EMAILS`) recebem um e-mail avisando.
+  - Contagens por modalidade são exatas (`totalRegistros`). O valor soma as licitações com disputa (pregões e concorrências) lidas; se o limite de páginas cortar a leitura, o valor é projetado e aparece com "≈".
+  - Setores classificados por palavras-chave do objeto; top 5 UFs; oportunidades = maiores valores com proposta aberta por mais 2 dias, 1 por órgão (15 candidatas).
+- **Admin → Marketing → Newsletter:** indicadores (inscritos, abertura e clique médios), lista de edições, editor com prévia ao vivo, sugestão de abertura pela IA, escolha das 5 oportunidades, radar regulatório (até 10 itens), teste para o próprio e-mail, envio imediato ou agendado, e depois do envio: abertura, clique, descadastros, links mais clicados e reenvio de falhas.
+- **Envio:** só para leads com inscrição confirmada e sem descadastro; 1 e-mail por inscrito por edição (tabela `newsletter_envio` com restrição única), em lotes de 100 pelo Resend (se um lote for recusado, tenta um a um), retomável se o processo cair. Cabeçalhos `List-Unsubscribe` e one-click (Gmail/Yahoo).
+- **Rastreio:** pixel `/api/public/n/<token>/a.gif`, clique `/api/public/n/<token>/l/<n>` (só links da própria edição, sem redirecionamento aberto), eventos `newsletter_open` (+1) e `newsletter_click` (+4) no score do lead. Links para o site/app levam UTMs `utm_source=newsletter&utm_medium=email&utm_campaign=kasiski-intelligence-<n>`.
+- **Arquivo público:** `kasiski.com.br/newsletter/arquivo/` lista as edições enviadas e mostra cada uma em `?n=<número>` (é o link "Ver no navegador"). A página `/newsletter/` mostra as 3 últimas.
+- Variáveis opcionais: `NEWSLETTER_RASCUNHO_AUTO` (sim), `NEWSLETTER_MAX_PAGINAS` (60 páginas de 50 por modalidade), `NEWSLETTER_VALOR_MAX` (ignora valores acima de R$ 20 bi, erro de digitação no PNCP), `NEWSLETTER_LOTE` (100), `NEWSLETTER_PAUSA_S` (0,6), `NEWSLETTER_RODAPE`.

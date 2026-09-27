@@ -513,12 +513,13 @@ const pctOuTraco = (v) => (v === null || v === undefined ? "—" : `${fmt.num(v,
 async function abaMarketing(el) {
   const sub = V.admin.mk || "visao";
   el.innerHTML = `<div class="chips mk-abas" role="tablist" aria-label="Marketing">${[["visao", "Visão geral"], ["canais", "Canais e campanhas"], ["leads", "Leads"],
-    ["ferramentas", "Ferramentas grátis"], ["automacoes", "Automações de e-mail"], ["investimentos", "Investimentos"]]
+    ["ferramentas", "Ferramentas grátis"], ["newsletter", "Newsletter"], ["automacoes", "Automações de e-mail"], ["investimentos", "Investimentos"]]
     .map(([k, t]) => `<button data-mk="${k}" aria-pressed="${sub === k}">${t}</button>`).join("")}</div><div id="mk-corpo"><p class="carregando">Carregando…</p></div>`;
   $$("[data-mk]", el).forEach((b) => b.onclick = () => { V.admin.mk = b.dataset.mk; abaMarketing(el); });
   const c = $("#mk-corpo", el);
   try {
     if (sub === "leads") await mkLeads(c);
+    else if (sub === "newsletter") await (V.admin.nlEdicao ? mkNewsletterEditor(c, V.admin.nlEdicao) : mkNewsletter(c));
     else if (sub === "automacoes") await mkAutomacoes(c);
     else if (sub === "investimentos") await mkInvestimentos(c);
     else await mkVisao(c, sub);
@@ -625,7 +626,7 @@ async function mkLeads(el) {
 }
 
 const NOMES_EVENTO = { page_view: "Visitou o site", cta_click: "Clicou em um CTA", pricing_view: "Viu os planos", generate_lead: "Deixou o contato", tool_started: "Usou uma ferramenta grátis",
-  edital_free_analysis: "Análise gratuita de edital", diagnostic_completed: "Fez o diagnóstico B2G", competitor_search: "Consultou concorrente", sign_up: "Criou conta", trial_started: "Iniciou o teste", company_created: "Cadastrou a empresa",
+  edital_free_analysis: "Análise gratuita de edital", diagnostic_completed: "Fez o diagnóstico B2G", checklist_import: "Montou o checklist para importar", checklist_download: "Baixou o checklist", competitor_search: "Consultou concorrente", sign_up: "Criou conta", trial_started: "Iniciou o teste", company_created: "Cadastrou a empresa",
   radar_configured: "Configurou o radar", edital_added: "Adicionou edital", edital_analyzed: "Analisou edital (IA)", competitor_analyzed: "Analisou concorrente", document_uploaded: "Enviou documento ao cofre",
   proposal_generated: "Gerou proposta", legal_document_generated: "Gerou peça", begin_checkout: "Abriu o pagamento", purchase: "Pagou", subscription_cancelled: "Cancelou a assinatura", visita: "Visitou a página inicial", cta: "Clicou em testar grátis" };
 
@@ -695,4 +696,192 @@ async function mkInvestimentos(el) {
     try { await api("POST", "/api/admin/marketing/investimentos", dadosForm(ev.target)); toast("Investimento lançado.", "ok"); mkInvestimentos(el); } catch (e) { avisarErro(e); }
   };
   $$("[data-apagar]", el).forEach((b) => b.onclick = async () => { if (await confirmar("Excluir este lançamento?", "Excluir")) { await api("DELETE", `/api/admin/marketing/investimentos/${b.dataset.apagar}`); mkInvestimentos(el); } });
+}
+
+
+// ---------------------------------------------------------------- Newsletter Kasiski Intelligence
+const STATUS_NL = { rascunho: ["Rascunho", "neutro"], agendada: ["Agendada", "aviso"], enviando: ["Enviando", "oficio"], enviada: ["Enviada", "ok"] };
+const nlMoeda = (v) => {
+  v = Number(v || 0);
+  for (const [lim, suf] of [[1e9, "bi"], [1e6, "mi"], [1e3, "mil"]]) if (v >= lim) return `R$ ${fmt.num(v / lim, v / lim < 100 ? 1 : 0)} ${suf}`;
+  return fmt.moeda(v);
+};
+const semanaTxt = (e) => `${fmt.data(e.semana_inicio).slice(0, 5)} a ${fmt.data(e.semana_fim)}`;
+
+async function mkNewsletter(el) {
+  const d = await api("GET", "/api/admin/marketing/newsletter");
+  const linhas = d.edicoes.map((e) => {
+    const s = e.stats;
+    return `<tr><td><b>#${e.numero}</b></td><td>${semanaTxt(e)}</td><td>${esc(e.assunto || e.titulo || "—")}</td>
+      <td>${carimboStatus(STATUS_NL, e.status)}${e.coletando ? ' <small class="fraco">coletando dados…</small>' : ""}${e.status === "agendada" && e.agendada_para ? `<br><small class="fraco">${fmt.dataHora(e.agendada_para)}</small>` : ""}</td>
+      <td>${s ? fmt.num(s.enviados, 0) : "—"}</td><td>${s ? pctOuTraco(s.taxa_abertura) : "—"}</td><td>${s ? pctOuTraco(s.taxa_clique) : "—"}</td><td>${s ? fmt.num(s.descadastros, 0) : "—"}</td>
+      <td class="acoes-celula"><button class="botao pequeno secundario" data-nl="${e.id}">${e.status === "rascunho" || e.status === "agendada" ? "Editar" : "Ver"}</button></td></tr>`;
+  }).join("");
+  el.innerHTML = `${d.email_configurado ? "" : `<div class="aviso">O envio de e-mail não está configurado (RESEND_API_KEY). Você pode montar as edições; o envio fica liberado quando a chave for preenchida no Render.</div>`}
+    <section class="bloco"><div class="grade grade-4 grade-kpi">
+      ${indicador(fmt.num(d.inscritos, 0), "Inscritos ativos (confirmados)")}${indicador(fmt.num(d.novos_30d, 0), "Novos inscritos em 30 dias")}
+      ${indicador(pctOuTraco(d.abertura_media), "Abertura média (últimas 8)")}${indicador(pctOuTraco(d.clique_medio), "Clique médio (últimas 8)")}</div>
+      ${d.aguardando_confirmacao ? `<p class="fraco" style="margin-top:10px">${d.aguardando_confirmacao} pessoa(s) se inscreveram e ainda não confirmaram o e-mail; elas só recebem depois de confirmar.</p>` : ""}</section>
+    <section class="bloco"><div class="bloco-titulo"><h2>Edições</h2>
+      <div class="acoes"><button class="botao pequeno secundario" id="nl-csv">Exportar inscritos (CSV)</button>
+      <button class="botao pequeno" id="nl-nova">${d.semana_sugerida_existe ? "Nova edição de outra semana" : `Gerar edição da semana de ${fmt.data(d.semana_sugerida).slice(0, 5)}`}</button></div></div>
+      <p class="fraco">Toda segunda-feira, às 6h, o Kasiski coleta no PNCP os dados da semana anterior e deixa um rascunho pronto (você recebe um e-mail). Revise as oportunidades, escreva o radar regulatório e envie ou agende.</p>
+      <div class="tabela-rolagem">${linhas ? `<table><thead><tr><th>Nº</th><th>Semana</th><th>Assunto</th><th>Status</th><th>Enviados</th><th>Abertura</th><th>Clique</th><th>Saíram</th><th></th></tr></thead><tbody>${linhas}</tbody></table>`
+        : vazio("Nenhuma edição ainda", "Gere a primeira edição com os dados da semana passada.")}</div></section>`;
+  $$("[data-nl]", el).forEach((b) => b.onclick = () => { V.admin.nlEdicao = Number(b.dataset.nl); mkNewsletterEditor(el, V.admin.nlEdicao); });
+  $("#nl-csv", el).onclick = (ev) => ocupado(ev.target, "Exportando…", () => baixar("/api/admin/marketing/leads.csv?newsletter=1", "kasiski-newsletter.csv"));
+  $("#nl-nova", el).onclick = async (ev) => {
+    let semana = null;
+    if (d.semana_sugerida_existe) {
+      const m = modal({ titulo: "Nova edição", corpo: `<form id="nl-sem"><div class="campo"><label for="nl-data">Qualquer dia da semana desejada</label><input id="nl-data" name="semana" type="date" required></div></form>`,
+        acoes: `<button class="botao secundario" data-fechar>Cancelar</button><button class="botao" form="nl-sem" type="submit">Gerar</button>` });
+      semana = await new Promise((ok) => { $("#nl-sem", m).onsubmit = (e2) => { e2.preventDefault(); const v = $("#nl-data", m).value; m.fechar(); ok(v); }; });
+      if (!semana) return;
+    }
+    await ocupado(ev.target, "Gerando…", async () => {
+      try { const e = await api("POST", "/api/admin/marketing/newsletter", semana ? { semana } : {}); V.admin.nlEdicao = e.id; toast("Rascunho criado. Coletando os dados do PNCP…", "ok"); mkNewsletterEditor(el, e.id); }
+      catch (e) { avisarErro(e); }
+    });
+  };
+}
+
+async function mkNewsletterEditor(el, id) {
+  clearTimeout(V.admin.nlTimer);
+  let ed;
+  try { ed = await api("GET", `/api/admin/marketing/newsletter/${id}`); } catch (e) { V.admin.nlEdicao = null; return mkNewsletter(el); }
+  const voltar = `<button class="botao pequeno texto" id="nl-voltar">← Todas as edições</button>`;
+  const editavel = ["rascunho", "agendada"].includes(ed.status);
+  const m = (ed.dados || {}).metricas || {};
+  const ocultas = new Set(ed.ocultas || []);
+  const ops = (ed.dados || {}).oportunidades || [];
+  const cab = `<div class="bloco-titulo"><div>${voltar}<h2 style="margin-top:6px">Kasiski Intelligence #${ed.numero} <small class="fraco">semana de ${semanaTxt(ed)}</small></h2></div><div>${carimboStatus(STATUS_NL, ed.status)}</div></div>`;
+
+  if (ed.coletando) {
+    el.innerHTML = `<section class="bloco">${cab}<p class="carregando">Coletando as contratações da semana no PNCP. Isso leva de 1 a 5 minutos; esta tela atualiza sozinha.</p></section>`;
+    $("#nl-voltar", el).onclick = () => { V.admin.nlEdicao = null; clearTimeout(V.admin.nlTimer); mkNewsletter(el); };
+    V.admin.nlTimer = setTimeout(() => { if (el.isConnected && V.admin.nlEdicao === id) mkNewsletterEditor(el, id); }, 5000);
+    return;
+  }
+
+  if (!editavel) {
+    const s = ed.stats || {};
+    el.innerHTML = `<section class="bloco">${cab}
+      <div class="grade grade-4 grade-kpi">${indicador(fmt.num(s.enviados, 0), `Enviados${s.falhas ? ` · ${s.falhas} falha(s)` : ""}`)}${indicador(pctOuTraco(s.taxa_abertura), `Abertura (${fmt.num(s.abertos, 0)} pessoas)`)}
+        ${indicador(pctOuTraco(s.taxa_clique), `Clique (${fmt.num(s.clicaram, 0)} pessoas)`)}${indicador(fmt.num(s.descadastros, 0), "Descadastros")}</div>
+      <p class="fraco" style="margin-top:10px">${ed.status === "enviando" ? "Envio em andamento. " : `Enviada em ${fmt.dataHora(ed.enviada_em)}. `}Assunto: <b>${esc(ed.assunto)}</b>. A abertura é aproximada: alguns programas de e-mail bloqueiam imagens e outros abrem automaticamente.</p>
+      ${s.falhas && ed.status === "enviada" ? `<button class="botao pequeno secundario" id="nl-refalhas">Reenviar para as ${s.falhas} falha(s)</button>` : ""}</section>
+      ${(s.links || []).length ? `<section class="bloco tabela-rolagem"><h2>Links mais clicados</h2><table><thead><tr><th>Link</th><th>Pessoas</th></tr></thead>
+        <tbody>${s.links.map((l) => `<tr><td><small>${esc(l.url.replace(/[?&]utm_[^&]+/g, "").slice(0, 110))}</small></td><td>${l.pessoas}</td></tr>`).join("")}</tbody></table></section>` : ""}
+      <section class="bloco"><h2>Como ficou</h2><iframe class="nl-previa" id="nl-previa" title="Prévia da edição"></iframe></section>`;
+    $("#nl-voltar", el).onclick = () => { V.admin.nlEdicao = null; mkNewsletter(el); };
+    const rf = $("#nl-refalhas", el);
+    if (rf) rf.onclick = () => ocupado(rf, "Reenviando…", async () => { try { await api("POST", `/api/admin/marketing/newsletter/${id}/reenviar-falhas`); toast("Reenvio iniciado.", "ok"); setTimeout(() => mkNewsletterEditor(el, id), 2500); } catch (e) { avisarErro(e); } });
+    const p = await api("GET", `/api/admin/marketing/newsletter/${id}/previa`);
+    $("#nl-previa", el).srcdoc = p.html;
+    if (ed.status === "enviando") V.admin.nlTimer = setTimeout(() => { if (el.isConnected && V.admin.nlEdicao === id) mkNewsletterEditor(el, id); }, 5000);
+    return;
+  }
+
+  const radar = (ed.radar && ed.radar.length ? ed.radar : [{}]);
+  const linhaRadar = (r, k) => `<div class="nl-radar" data-radar="${k}">
+      <div class="linha-campos"><div class="campo"><label>Título</label><input name="titulo" value="${esc(r.titulo || "")}" placeholder="Ex.: TCU fixa entendimento sobre exigência de atestado"></div>
+      <div class="campo" style="max-width:180px"><label>Fonte</label><input name="fonte" value="${esc(r.fonte || "")}" placeholder="TCU, DOU, SEGES…"></div></div>
+      <div class="campo"><label>Resumo (o que muda para quem vende ao governo)</label><textarea name="resumo" rows="2">${esc(r.resumo || "")}</textarea></div>
+      <div class="linha-campos"><div class="campo"><label>Link (opcional)</label><input name="link" type="url" value="${esc(r.link || "")}" placeholder="https://"></div>
+      <div class="campo" style="flex:0 0 auto;align-self:end"><button type="button" class="botao pequeno texto" data-tirar-radar="${k}">Remover</button></div></div></div>`;
+  const erroColeta = (ed.dados || {}).erro_coleta || ((ed.dados || {}).falhas || []).length;
+  el.innerHTML = `<section class="bloco">${cab}
+      ${erroColeta ? `<div class="aviso">A coleta no PNCP ${ (ed.dados || {}).erro_coleta ? "falhou" : `não leu: ${esc((ed.dados.falhas || []).join(", "))}`}. Tente "Atualizar dados do PNCP" de novo em alguns minutos.</div>` : ""}
+      <p class="fraco">${m.publicadas ? `${fmt.num(m.publicadas, 0)} contratações publicadas · ${fmt.num(m.competitivas, 0)} com disputa · ${m.estimado ? "≈ " : ""}${nlMoeda(m.valor_competitivas)} em valor estimado${m.estimado ? ` (projeção a partir de ${fmt.num(m.amostra, 0)} licitações lidas)` : ""} · dados de ${fmt.dataHora(ed.coletado_em)}` : "Sem dados do PNCP ainda."}
+      <button class="botao pequeno texto" id="nl-atualizar">Atualizar dados do PNCP</button></p>
+      ${ed.status === "agendada" ? `<div class="aviso">Envio agendado para ${fmt.dataHora(ed.agendada_para)} para ${fmt.num(ed.inscritos, 0)} inscrito(s). <button class="botao pequeno texto" id="nl-cancelar">Cancelar agendamento</button></div>` : ""}</section>
+    <div class="nl-editor">
+      <form id="nl-form" class="bloco">
+        <div class="campo"><label for="nl-assunto">Assunto do e-mail</label><input id="nl-assunto" name="assunto" maxlength="200" value="${esc(ed.assunto || "")}"><small class="fraco" data-conta-assunto></small></div>
+        <div class="campo"><label for="nl-pre">Pré-cabeçalho (texto que aparece ao lado do assunto)</label><input id="nl-pre" name="pre_cabecalho" maxlength="200" value="${esc(ed.pre_cabecalho || "")}"></div>
+        <div class="campo"><label for="nl-titulo">Título da edição</label><input id="nl-titulo" name="titulo" maxlength="200" value="${esc(ed.titulo || "")}"></div>
+        <div class="campo"><div class="bloco-titulo" style="margin:0"><label for="nl-abertura">Abertura</label><button type="button" class="botao pequeno texto" id="nl-ia">Sugerir com IA</button></div>
+          <textarea id="nl-abertura" name="abertura" rows="6">${esc(ed.abertura || "")}</textarea><small class="fraco">Parágrafos separados por uma linha em branco.</small></div>
+        <h3>As 5 maiores oportunidades</h3>
+        <p class="fraco">Entram as 5 primeiras marcadas. Desmarque as que não fizerem sentido (valor com erro, objeto genérico) e a próxima da lista sobe.</p>
+        <div class="nl-ops">${ops.length ? ops.map((o, k) => `<label class="nl-op"><input type="checkbox" data-op="${esc(o.numero_controle)}" ${ocultas.has(o.numero_controle) ? "" : "checked"}>
+          <span><b>${fmt.moeda(o.valor)}</b> · <small>${esc(o.setor)} · ${esc(o.uf || "")} · até ${fmt.data((o.data_encerramento || "").slice(0, 10))}</small><br>${esc((o.objeto || "").slice(0, 160))}<br><small class="fraco">${esc(o.orgao)}</small>
+          ${o.link ? ` <a href="${esc(o.link)}" target="_blank" rel="noopener">PNCP</a>` : ""}</span></label>`).join("") : '<p class="fraco">Nenhuma oportunidade aberta encontrada nos dados.</p>'}</div>
+        <h3>Radar regulatório</h3>
+        <p class="fraco">Até 10 itens: mudanças na Lei 14.133, decretos, instruções normativas, jurisprudência do TCU. Itens sem título não entram no e-mail.</p>
+        <div id="nl-radar">${radar.map(linhaRadar).join("")}</div>
+        <button type="button" class="botao pequeno secundario" id="nl-mais-radar">Adicionar item</button>
+        <div class="acoes nl-acoes"><button class="botao secundario" type="submit">Salvar</button><button class="botao secundario" type="button" id="nl-teste">Enviar teste para mim</button>
+          <button class="botao secundario" type="button" id="nl-agendar">Agendar</button><button class="botao" type="button" id="nl-enviar">Enviar para ${fmt.num(ed.inscritos, 0)} inscrito(s)</button>
+          <button class="botao texto" type="button" id="nl-excluir"${ed.status === "rascunho" ? "" : " hidden"}>Excluir rascunho</button></div>
+      </form>
+      <section class="bloco nl-lado"><div class="bloco-titulo"><h2>Prévia</h2><small class="fraco" id="nl-salvo"></small></div><iframe class="nl-previa" id="nl-previa" title="Prévia do e-mail"></iframe></section>
+    </div>`;
+
+  const form = $("#nl-form", el);
+  const coletar = () => ({
+    assunto: form.assunto.value, pre_cabecalho: form.pre_cabecalho.value, titulo: form.titulo.value, abertura: form.abertura.value,
+    ocultas: $$("[data-op]", form).filter((c) => !c.checked).map((c) => c.dataset.op),
+    radar: $$("[data-radar]", form).map((r) => ({ titulo: $("[name=titulo]", r).value, fonte: $("[name=fonte]", r).value, resumo: $("[name=resumo]", r).value, link: $("[name=link]", r).value })),
+  });
+  const previa = async () => { const p = await api("GET", `/api/admin/marketing/newsletter/${id}/previa`); const f = $("#nl-previa", el); if (f) f.srcdoc = p.html; };
+  const salvar = async (silencioso) => {
+    await api("PATCH", `/api/admin/marketing/newsletter/${id}`, coletar());
+    const s = $("#nl-salvo", el); if (s) s.textContent = `Salvo às ${new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+    if (!silencioso) toast("Edição salva.", "ok");
+    await previa();
+  };
+  const contaAssunto = () => { const n = form.assunto.value.length; $("[data-conta-assunto]", form).textContent = `${n} caracteres${n > 70 ? " · assuntos até ~70 caracteres aparecem inteiros no celular" : ""}`; };
+  form.assunto.oninput = contaAssunto; contaAssunto();
+  let t = null;
+  form.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => salvar(true).catch(() => {}), 1200); });
+  form.addEventListener("change", (ev) => { if (ev.target.matches("[data-op]")) salvar(true).catch(avisarErro); });
+  form.onsubmit = async (ev) => { ev.preventDefault(); try { await salvar(false); } catch (e) { avisarErro(e); } };
+  const religarRadar = () => $$("[data-tirar-radar]", form).forEach((b) => b.onclick = () => { b.closest("[data-radar]").remove(); salvar(true).catch(avisarErro); });
+  religarRadar();
+  $("#nl-mais-radar", el).onclick = () => {
+    const box = $("#nl-radar", el);
+    if (box.children.length >= 10) return toast("Até 10 itens no radar.", "aviso");
+    box.insertAdjacentHTML("beforeend", linhaRadar({}, Date.now())); religarRadar(); $("[data-radar]:last-child [name=titulo]", box).focus();
+  };
+  $("#nl-voltar", el).onclick = async () => { clearTimeout(t); try { await salvar(true); } catch { /* segue */ } V.admin.nlEdicao = null; mkNewsletter(el); };
+  $("#nl-atualizar", el).onclick = async (ev) => {
+    if (!(await confirmar("Coletar de novo os dados desta semana no PNCP? Os números e a lista de oportunidades serão atualizados; seus textos e o radar ficam como estão.", "Atualizar"))) return;
+    try { await salvar(true); await api("POST", `/api/admin/marketing/newsletter/${id}/atualizar`); mkNewsletterEditor(el, id); } catch (e) { avisarErro(e); }
+  };
+  $("#nl-ia", el).onclick = (ev) => ocupado(ev.target, "Escrevendo…", async () => {
+    try {
+      const r = await api("POST", `/api/admin/marketing/newsletter/${id}/sugerir`);
+      if (form.abertura.value.trim() && !(await confirmar("Substituir a abertura atual pela sugestão da IA? Revise os números antes de enviar.", "Substituir"))) return;
+      form.abertura.value = r.abertura; if (r.assunto) form.assunto.value = r.assunto; contaAssunto(); await salvar(true); toast("Sugestão aplicada. Revise antes de enviar.", "ok");
+    } catch (e) { avisarErro(e); }
+  });
+  $("#nl-teste", el).onclick = (ev) => ocupado(ev.target, "Enviando…", async () => {
+    try { await salvar(true); const r = await api("POST", `/api/admin/marketing/newsletter/${id}/teste`); toast(`Teste enviado para ${r.para}.`, "ok"); } catch (e) { avisarErro(e); }
+  });
+  $("#nl-enviar", el).onclick = async (ev) => {
+    try { await salvar(true); } catch (e) { return avisarErro(e); }
+    if (!(await confirmar(`Enviar a edição #${ed.numero} agora para ${ed.inscritos} inscrito(s)? Depois de enviada, ela não pode ser alterada.`, "Enviar agora"))) return;
+    try { await api("POST", `/api/admin/marketing/newsletter/${id}/enviar`); toast("Envio iniciado.", "ok"); setTimeout(() => mkNewsletterEditor(el, id), 1500); } catch (e) { avisarErro(e); }
+  };
+  $("#nl-agendar", el).onclick = async () => {
+    try { await salvar(true); } catch (e) { return avisarErro(e); }
+    const amanha = new Date(Date.now() + 86400000); amanha.setHours(8, 0, 0, 0);
+    const local = new Date(amanha.getTime() - amanha.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const mm = modal({ titulo: "Agendar envio", corpo: `<form id="nl-ag"><div class="campo"><label for="nl-quando">Data e hora (horário do seu computador)</label><input id="nl-quando" type="datetime-local" value="${local}" required></div>
+      <p class="fraco">Terças e quartas entre 7h e 9h costumam ter as melhores taxas de abertura em B2B.</p></form>`,
+      acoes: `<button class="botao secundario" data-fechar>Cancelar</button><button class="botao" form="nl-ag" type="submit">Agendar</button>` });
+    $("#nl-ag", mm).onsubmit = async (e2) => {
+      e2.preventDefault();
+      const quando = new Date($("#nl-quando", mm).value);
+      try { await api("POST", `/api/admin/marketing/newsletter/${id}/enviar`, { quando: quando.toISOString() }); mm.fechar(); toast("Envio agendado.", "ok"); mkNewsletterEditor(el, id); } catch (e) { avisarErro(e); }
+    };
+  };
+  const canc = $("#nl-cancelar", el);
+  if (canc) canc.onclick = async () => { try { await api("POST", `/api/admin/marketing/newsletter/${id}/cancelar`); toast("Agendamento cancelado.", "ok"); mkNewsletterEditor(el, id); } catch (e) { avisarErro(e); } };
+  $("#nl-excluir", el).onclick = async () => {
+    if (!(await confirmar("Excluir este rascunho?", "Excluir"))) return;
+    try { await api("DELETE", `/api/admin/marketing/newsletter/${id}`); V.admin.nlEdicao = null; mkNewsletter(el); } catch (e) { avisarErro(e); }
+  };
+  await previa();
 }

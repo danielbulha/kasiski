@@ -47,7 +47,7 @@ def cabecalho(minimo=False):
   <nav id="s-nav" class="s-nav">
     <div class="s-drop"><button type="button" aria-haspopup="true">Soluções</button><div class="s-drop-menu">{menu_sol}</div></div>
     <div class="s-drop"><button type="button" aria-haspopup="true">Ferramentas grátis</button><div class="s-drop-menu">
-      <a href="/analisar-edital/">Analisar edital</a><a href="/consultar-concorrente/">Consultar concorrente</a><a href="/diagnostico/">Diagnóstico de maturidade B2G</a><a href="/newsletter/">Kasiski Intelligence (newsletter)</a></div></div>
+      <a href="/analisar-edital/">Analisar edital</a><a href="/consultar-concorrente/">Consultar concorrente</a><a href="/diagnostico/">Diagnóstico de maturidade B2G</a><a href="/checklist-habilitacao/">Checklist de habilitação</a><a href="/newsletter/">Kasiski Intelligence (newsletter)</a></div></div>
     <a href="/inteligencia/">Inteligência</a><a href="/consultorias/">Consultorias</a><a href="/#planos" data-cta="menu_planos">Planos</a>
     <a class="s-entrar" href="{C.APP_ENTRAR}">Entrar</a><a class="s-botao" href="{C.APP_CADASTRO}" data-cta="menu_testar">Testar grátis</a>
   </nav></header>'''
@@ -63,7 +63,7 @@ def rodape():
       <label class="s-check"><input type="checkbox" name="consentimento" required> <span>Concordo com a <a href="/privacidade/">Política de Privacidade</a></span></label>
       <input class="s-hp" name="site" tabindex="-1" autocomplete="off" aria-hidden="true"><p class="s-msg" role="status"></p></form></div>
   <div><h3>Soluções</h3>{"".join(f'<a href="/{s["slug"]}/">{esc(s["nome"])}</a>' for s in C.SOLUCOES)}</div>
-  <div><h3>Grátis</h3><a href="/analisar-edital/">Analisar edital</a><a href="/consultar-concorrente/">Consultar concorrente</a><a href="/diagnostico/">Diagnóstico B2G</a><a href="/newsletter/">Newsletter</a>
+  <div><h3>Grátis</h3><a href="/analisar-edital/">Analisar edital</a><a href="/consultar-concorrente/">Consultar concorrente</a><a href="/diagnostico/">Diagnóstico B2G</a><a href="/checklist-habilitacao/">Checklist de habilitação</a><a href="/newsletter/">Newsletter</a>
     <h3>Conteúdo</h3><a href="/inteligencia/">Inteligência</a><a href="/glossario/">Glossário</a></div>
   <div><h3>Kasiski</h3><a href="/consultorias/">Para consultorias</a><a href="/#planos">Planos</a><a href="{C.APP_ENTRAR}">Entrar</a>
     <h3>Legal</h3><a href="/privacidade/">Privacidade</a><a href="/cookies/">Cookies</a><a href="/termos/">Termos de uso</a><a href="/termos-ia/">Termos de IA</a>
@@ -200,9 +200,23 @@ def pg_newsletter():
   <section class="s-secao"><div class="s-grade3">
     <div class="s-item"><b>Dado da semana</b><p>Volume de editais e valor em oportunidades publicadas no PNCP.</p></div>
     <div class="s-item"><b>5 maiores oportunidades</b><p>As licitações de maior valor abertas na semana, por setor.</p></div>
-    <div class="s-item"><b>Radar regulatório</b><p>Mudanças na Lei 14.133, decretos, instruções normativas e jurisprudência do TCU.</p></div></div></section>'''
+    <div class="s-item"><b>Radar regulatório</b><p>Mudanças na Lei 14.133, decretos, instruções normativas e jurisprudência do TCU.</p></div></div></section>
+  <section class="s-secao" data-nl-ultimas hidden><h2>Últimas edições</h2><div class="s-nl-lista" data-nl-lista></div>
+    <p><a href="/newsletter/arquivo/">Ver todas as edições</a></p></section>'''
     pagina("/newsletter/", "Kasiski Intelligence — newsletter do mercado público", "Newsletter semanal com dados do mercado público brasileiro, maiores oportunidades e radar regulatório das licitações.",
            corpo, prioridade="0.7")
+
+
+def pg_newsletter_arquivo():
+    corpo = '''<section class="s-heroi s-heroi-centro" data-nl-cabeca><p class="s-sobre">Kasiski Intelligence</p><h1>Edições anteriores</h1>
+  <p class="s-lead">O mercado público brasileiro semana a semana: volume de licitações, setores em alta, as maiores oportunidades e o radar regulatório.</p>
+  <p><a class="s-botao" href="/newsletter/">Receber toda semana</a></p></section>
+  <section class="s-secao" data-nl-arquivo><div class="s-nl-lista" data-nl-lista><p class="s-fraco">Carregando…</p></div></section>
+  <section class="s-secao s-nl-edicao" data-nl-edicao hidden><p><a href="/newsletter/arquivo/">← Todas as edições</a></p><div data-nl-html></div>
+    <div class="s-cta-final"><h2>Receba a próxima edição</h2><p>Toda semana no seu e-mail. Grátis, com descadastro em um clique.</p><a class="s-botao" href="/newsletter/">Quero receber</a></div></section>'''
+    pagina("/newsletter/arquivo/", "Edições da Kasiski Intelligence — newsletter do mercado público",
+           "Arquivo da newsletter semanal Kasiski Intelligence: dados do PNCP, maiores oportunidades e radar regulatório das licitações.",
+           corpo, prioridade="0.5")
 
 
 def pg_consultorias():
@@ -396,9 +410,12 @@ if __name__ == "__main__":
     home.pg_home(pagina, ORG, SOFT)
     import diagnostico
     diagnostico.pg_diagnostico(pagina, SOFT)
+    import checklist
+    checklist.pg_checklist(pagina, migalhas)
     pg_analisar()
     pg_concorrente()
     pg_newsletter()
+    pg_newsletter_arquivo()
     pg_consultorias()
     for s in C.SOLUCOES:
         pg_solucao(s)

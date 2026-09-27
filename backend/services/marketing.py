@@ -18,10 +18,10 @@ log = logging.getLogger(__name__)
 # pontos por comportamento (cada tipo conta uma vez por lead)
 PONTOS = {
     "newsletter": 2, "generate_lead": 3, "pricing_view": 5, "checklist_download": 5, "tool_started": 2,
-    "competitor_search": 10, "diagnostic_completed": 8, "edital_free_analysis": 15,
+    "competitor_search": 10, "diagnostic_completed": 8, "edital_free_analysis": 15, "checklist_import": 10,
     "sign_up": 20, "company_created": 20, "radar_configured": 15, "edital_analyzed": 25,
     "competitor_analyzed": 10, "proposal_generated": 10, "legal_document_generated": 10,
-    "begin_checkout": 30, "purchase": 40,
+    "begin_checkout": 30, "purchase": 40, "newsletter_open": 1, "newsletter_click": 4,
 }
 LIMIAR_ENGAJADO, LIMIAR_MQL, LIMIAR_SQL = 10, 50, 80
 ORDEM_STATUS = ["novo", "engajado", "mql", "sql", "trial", "ativado", "oportunidade", "assinante"]

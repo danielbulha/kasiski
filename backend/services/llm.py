@@ -67,7 +67,7 @@ def _modelo(provedor):
 
 
 def _anthropic(modelo, sistema, usuario, max_tokens, json_saida):
-    r = requests.post("https://api.anthropic.com/v1/messages", timeout=300, headers={
+    r = requests.post("https://api.anthropic.com/v1/messages", timeout=600, headers={
         "x-api-key": _cfg("ANTHROPIC_API_KEY"), "anthropic-version": "2023-06-01",
         "content-type": "application/json"},
         json={"model": modelo, "max_tokens": max_tokens, "system": sistema,
@@ -76,7 +76,7 @@ def _anthropic(modelo, sistema, usuario, max_tokens, json_saida):
     d = r.json()
     texto = "".join(b.get("text", "") for b in d.get("content", []) if b.get("type") == "text")
     u = d.get("usage", {})
-    return texto, u.get("input_tokens", 0), u.get("output_tokens", 0)
+    return texto, u.get("input_tokens", 0), u.get("output_tokens", 0), d.get("stop_reason") == "max_tokens"
 
 
 def _openai(modelo, sistema, usuario, max_tokens, json_saida):
@@ -84,12 +84,14 @@ def _openai(modelo, sistema, usuario, max_tokens, json_saida):
              "messages": [{"role": "system", "content": sistema}, {"role": "user", "content": usuario}]}
     if json_saida:
         corpo["response_format"] = {"type": "json_object"}
-    r = requests.post("https://api.openai.com/v1/chat/completions", timeout=300,
+    r = requests.post("https://api.openai.com/v1/chat/completions", timeout=600,
                       headers={"Authorization": f"Bearer {_cfg('OPENAI_API_KEY')}"}, json=corpo)
     r.raise_for_status()
     d = r.json()
     u = d.get("usage", {})
-    return d["choices"][0]["message"]["content"] or "", u.get("prompt_tokens", 0), u.get("completion_tokens", 0)
+    ch = d["choices"][0]
+    return (ch["message"]["content"] or "", u.get("prompt_tokens", 0), u.get("completion_tokens", 0),
+            ch.get("finish_reason") == "length")
 
 
 def _gemini(modelo, sistema, usuario, max_tokens, json_saida):
@@ -97,17 +99,20 @@ def _gemini(modelo, sistema, usuario, max_tokens, json_saida):
     if json_saida:
         conf["responseMimeType"] = "application/json"
     r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent",
-                      params={"key": _cfg("GEMINI_API_KEY")}, timeout=300,
+                      params={"key": _cfg("GEMINI_API_KEY")}, timeout=600,
                       json={"systemInstruction": {"parts": [{"text": sistema}]},
                             "contents": [{"role": "user", "parts": [{"text": usuario}]}],
                             "generationConfig": conf})
     r.raise_for_status()
     d = r.json()
-    partes = d.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+    cand = (d.get("candidates") or [{}])[0]
+    partes = cand.get("content", {}).get("parts", [])
     u = d.get("usageMetadata", {})
-    return ("".join(p.get("text", "") for p in partes), u.get("promptTokenCount", 0),
-            u.get("candidatesTokenCount", 0))
+    return ("".join(p.get("text", "") for p in partes if not p.get("thought")), u.get("promptTokenCount", 0),
+            u.get("candidatesTokenCount", 0), cand.get("finishReason") == "MAX_TOKENS")
 
+
+TETO_SAIDA = 32000  # limite de tokens de saída na nova tentativa (cabe em todos os modelos da rota)
 
 _CHAMADAS = {"claude": _anthropic, "claude_barato": _anthropic, "openai": _openai, "gemini": _gemini}
 
@@ -127,7 +132,30 @@ def chamar(tarefa, sistema, usuario, max_tokens=4000, json_saida=True, demo=None
             continue
         modelo = _modelo(prov)
         try:
-            texto, tin, tout = _CHAMADAS[prov](modelo, sistema, usuario, max_tokens, json_saida)
+            texto, tin, tout, truncada = _CHAMADAS[prov](modelo, sistema, usuario, max_tokens, json_saida)
+            if json_saida:
+                try:
+                    dados = extrair_json(texto)
+                except ValueError:
+                    # JSON inválido: quase sempre resposta cortada pelo limite de tokens. Uma nova tentativa no mesmo
+                    # modelo, com mais espaço (se cortou) e pedido de concisão; se ainda falhar, tenta salvar o que veio.
+                    log.warning("JSON inválido de %s (%s), cortada=%s, %d tokens de saída; tentando de novo",
+                                prov, modelo, truncada, tout)
+                    mt = min(max_tokens * 2, TETO_SAIDA) if truncada else max_tokens
+                    aviso = ("\n\nATENÇÃO: a resposta anterior não era um JSON válido" +
+                             (" porque ficou longa demais e foi cortada. Seja mais conciso: no máximo 12 itens por lista "
+                              "e textos de até 3 frases." if truncada else ".") +
+                             " Devolva o objeto JSON completo, fechando todas as chaves e colchetes.")
+                    texto2, tin2, tout2, truncada2 = _CHAMADAS[prov](modelo, sistema + aviso, usuario, mt, json_saida)
+                    tin, tout = tin + tin2, tout + tout2
+                    try:
+                        dados = extrair_json(texto2)
+                    except ValueError:
+                        dados = reparar_json(texto2) or reparar_json(texto)
+                        if dados is None:
+                            raise ValueError(f"JSON inválido duas vezes (cortada={truncada2}, {tout2} tokens)")
+                        log.warning("JSON de %s recuperado parcialmente (resposta cortada)", prov)
+                texto = json.dumps(dados, ensure_ascii=False)
             pin, pout = PRECOS[prov]
             return RespostaIA(texto, prov, modelo, tin, tout, round(tin / 1e6 * pin + tout / 1e6 * pout, 5))
         except Exception as e:  # tenta o próximo fornecedor da rota
@@ -152,3 +180,43 @@ def extrair_json(texto):
     if ini < 0 or fim <= ini:
         raise ValueError("A IA não devolveu JSON válido.")
     return json.loads(t[ini:fim + 1])
+
+
+def reparar_json(texto):
+    """Tenta salvar um JSON cortado no meio: volta até o último valor completo e fecha chaves/colchetes abertos.
+    Devolve o objeto (dict/list) ou None."""
+    t = re.sub(r"```(?:json)?", "", texto or "").strip()
+    ini = min([i for i in (t.find("{"), t.find("[")) if i >= 0], default=-1)
+    if ini < 0:
+        return None
+    t = t[ini:]
+    pilha, cortes, na_string, escape = [], [], False, False
+    for i, ch in enumerate(t):
+        if na_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                na_string = False
+            continue
+        if ch == '"':
+            na_string = True
+        elif ch in "{[":
+            pilha.append("}" if ch == "{" else "]")
+        elif ch in "}]":
+            if pilha:
+                pilha.pop()
+            cortes.append((i + 1, tuple(pilha)))
+            if not pilha:
+                break
+        elif ch == ",":
+            cortes.append((i, tuple(pilha)))
+    for pos, abertos in reversed(cortes[-400:]):
+        candidato = re.sub(r",\s*$", "", t[:pos].rstrip()) + "".join(reversed(abertos))
+        candidato = re.sub(r",\s*([}\]])", r"\1", candidato)
+        try:
+            return json.loads(candidato)
+        except json.JSONDecodeError:
+            continue
+    return None

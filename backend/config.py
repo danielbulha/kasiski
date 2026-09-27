@@ -76,4 +76,11 @@ class Config:
     TURNSTILE_SECRET = os.getenv("TURNSTILE_SECRET", "")                      # Cloudflare Turnstile (opcional)
     # ------------------------------------------------------------ automações de e-mail (onboarding/trial)
     AUTOMACOES_ATIVAS = os.getenv("AUTOMACOES_ATIVAS", "sim").lower() in ("sim", "1", "true")
-    AUTOMACOES_INTERVALO_S = int(os.getenv("AUTOMACOES_INTERVALO_S", "600"))                # câmbio para converter o custo de IA em R$
+    AUTOMACOES_INTERVALO_S = int(os.getenv("AUTOMACOES_INTERVALO_S", "600"))
+    # newsletter Kasiski Intelligence
+    NEWSLETTER_RASCUNHO_AUTO = os.getenv("NEWSLETTER_RASCUNHO_AUTO", "sim").lower() in ("sim", "1", "true")  # rascunho toda segunda
+    NEWSLETTER_MAX_PAGINAS = int(os.getenv("NEWSLETTER_MAX_PAGINAS", "60"))    # páginas de 50 por modalidade lidas no PNCP
+    NEWSLETTER_VALOR_MAX = float(os.getenv("NEWSLETTER_VALOR_MAX", "20000000000"))  # ignora valores acima (erro de digitação)
+    NEWSLETTER_LOTE = int(os.getenv("NEWSLETTER_LOTE", "100"))
+    NEWSLETTER_PAUSA_S = float(os.getenv("NEWSLETTER_PAUSA_S", "0.6"))
+    NEWSLETTER_RODAPE = os.getenv("NEWSLETTER_RODAPE", "Kasiski · D.B.C. Consultoria e Serviços Ltda. · Juquitiba/SP")                # câmbio para converter o custo de IA em R$

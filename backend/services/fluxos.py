@@ -110,7 +110,7 @@ def analisar_edital(edital, empresa, analise=None):
                          f"{_TERMOS_CONTRATACAO_DIRETA if eh_contratacao_direta(extracao.get('modalidade')) else ''}",
                          k=6)
     s, u, demo = prompts.analise_edital(texto, extracao, _empresa_dict(empresa), cofre, contexto)
-    r_an = llm.chamar("analise", s, u, max_tokens=8000, demo=demo)
+    r_an = llm.chamar("analise", s, u, max_tokens=12000, demo=demo)
     resultado = llm.extrair_json(r_an.texto)
 
     # 3) Verificação cruzada das cláusulas restritivas e riscos

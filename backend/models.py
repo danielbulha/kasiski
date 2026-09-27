@@ -119,9 +119,13 @@ class Documento(db.Model):
     validade = db.Column(db.Date)
     arquivo = db.Column(db.String(300))
     nome_arquivo = db.Column(db.String(250))
+    pendente = db.Column(db.Boolean, default=False)   # item do checklist que a empresa ainda não providenciou
+    checklist_id = db.Column(db.String(40))           # item do catálogo (data/checklist_habilitacao.json)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     def situacao(self, referencia=None):
+        if self.pendente and not self.arquivo and not self.validade:
+            return "pendente"
         if not self.validade:
             return "sem_validade"
         ref = referencia or date.today()
@@ -134,7 +138,21 @@ class Documento(db.Model):
     def to_dict(self):
         return {"id": self.id, "empresa_id": self.empresa_id, "categoria": self.categoria, "tipo": self.tipo,
                 "descricao": self.descricao, "validade": _iso(self.validade), "situacao": self.situacao(),
-                "nome_arquivo": self.nome_arquivo, "tem_arquivo": bool(self.arquivo), "criado_em": _iso(self.criado_em)}
+                "nome_arquivo": self.nome_arquivo, "tem_arquivo": bool(self.arquivo), "criado_em": _iso(self.criado_em),
+                "pendente": bool(self.pendente), "checklist_id": self.checklist_id}
+
+
+class ChecklistPublico(db.Model):
+    """Checklist de habilitação montado no site (/checklist-habilitacao/) — importado para o Cofre no cadastro."""
+    id = db.Column(db.String(40), primary_key=True)
+    lead_id = db.Column(db.Integer, index=True)
+    email = db.Column(db.String(200), index=True)
+    segmento = db.Column(db.String(40))
+    itens = db.Column(db.JSON)                 # [{id, tem, validade}]
+    acao = db.Column(db.String(20))            # baixar, importar
+    conta_id = db.Column(db.Integer)
+    importado_em = db.Column(db.DateTime)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow, index=True)
 
 
 class RadarItem(db.Model):
@@ -797,3 +815,49 @@ class ChatMensagem(db.Model):
 
     def to_dict(self):
         return {"id": self.id, "papel": self.papel, "texto": self.texto, "criado_em": _iso(self.criado_em)}
+
+
+class EdicaoNewsletter(db.Model):
+    """Edição semanal da newsletter Kasiski Intelligence (dados do PNCP + radar regulatório escrito pelo admin)."""
+    __tablename__ = "newsletter_edicao"
+    id = db.Column(db.Integer, primary_key=True)
+    numero = db.Column(db.Integer, unique=True, nullable=False)
+    semana_inicio = db.Column(db.Date, unique=True, nullable=False)
+    semana_fim = db.Column(db.Date, nullable=False)
+    titulo = db.Column(db.String(200))
+    assunto = db.Column(db.String(200))
+    pre_cabecalho = db.Column(db.String(200))
+    abertura = db.Column(db.Text)
+    dados = db.Column(db.JSON)            # métricas, modalidades, UFs, setores, oportunidades, amostra
+    radar = db.Column(db.JSON)            # [{titulo, resumo, link, fonte}]
+    ocultas = db.Column(db.JSON)          # números de controle das oportunidades removidas pelo admin
+    links = db.Column(db.JSON)            # URLs rastreadas do e-mail (índice usado no redirecionamento)
+    status = db.Column(db.String(20), default="rascunho", index=True)  # rascunho, agendada, enviando, enviada
+    agendada_para = db.Column(db.DateTime)
+    processando_em = db.Column(db.DateTime)   # batimento do envio (retoma se o processo cair)
+    enviada_em = db.Column(db.DateTime)
+    destinatarios = db.Column(db.Integer, default=0)
+    enviados = db.Column(db.Integer, default=0)
+    falhas = db.Column(db.Integer, default=0)
+    coletado_em = db.Column(db.DateTime)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    atualizado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class NewsletterEnvio(db.Model):
+    """Um e-mail de uma edição para um inscrito (idempotente) + abertura, clique e descadastro."""
+    __tablename__ = "newsletter_envio"
+    id = db.Column(db.Integer, primary_key=True)
+    edicao_id = db.Column(db.Integer, db.ForeignKey("newsletter_edicao.id"), nullable=False, index=True)
+    lead_id = db.Column(db.Integer, nullable=False, index=True)
+    email = db.Column(db.String(200))
+    token = db.Column(db.String(40), unique=True, nullable=False)
+    status = db.Column(db.String(20), default="pendente")  # pendente, enviado, falhou
+    erro = db.Column(db.Text)
+    enviado_em = db.Column(db.DateTime)
+    aberto_em = db.Column(db.DateTime)
+    aberturas = db.Column(db.Integer, default=0)
+    clicado_em = db.Column(db.DateTime)
+    cliques = db.Column(db.JSON)          # {índice do link: quantidade}
+    descadastrou_em = db.Column(db.DateTime)
+    __table_args__ = (db.UniqueConstraint("edicao_id", "lead_id"),)

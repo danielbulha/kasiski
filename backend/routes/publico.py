@@ -178,9 +178,10 @@ def confirmar_newsletter():
     return redirect(f"{current_app.config['SITE_URL']}/newsletter/?{'confirmado=1' if lead else 'erro=1'}")
 
 
-@bp.get("/sair")
+@bp.route("/sair", methods=["GET", "POST"])
 def descadastrar():
-    """Descadastro com um clique (link de todos os e-mails de marketing e automação)."""
+    """Descadastro com um clique (link de todos os e-mails de marketing e automação; POST = List-Unsubscribe-Post)."""
+    from services import newsletter
     t = (request.args.get("t") or "")[:40]
     lead = Lead.query.filter_by(token=t).first() if t else None
     if lead:
@@ -189,8 +190,59 @@ def descadastrar():
             c = Conta.query.get(lead.conta_id)
             if c:
                 c.marketing_optout = True
+        newsletter.registrar_descadastro(request.args.get("e"))
         db.session.commit()
+    if request.method == "POST":
+        return ("", 204)
     return redirect(f"{current_app.config['SITE_URL']}/newsletter/?{'saiu=1' if lead else 'erro=1'}")
+
+
+# ---------------------------------------------------------------- newsletter: rastreio e arquivo público
+_GIF = (b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04\x01\x00\x00\x00\x00,"
+        b"\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;")
+
+
+@bp.get("/n/<token>/a.gif")
+def newsletter_abertura(token):
+    from services import newsletter
+    try:
+        newsletter.registrar_abertura(token)
+    except Exception:
+        db.session.rollback()
+    return current_app.response_class(_GIF, mimetype="image/gif", headers={"Cache-Control": "no-store, max-age=0"})
+
+
+@bp.get("/n/<token>/l/<int:indice>")
+def newsletter_clique(token, indice):
+    from services import newsletter
+    try:
+        url = newsletter.registrar_clique(token, indice)
+    except Exception:
+        db.session.rollback()
+        url = None
+    return redirect(url or f"{current_app.config['SITE_URL']}/newsletter/", code=302)
+
+
+@bp.get("/newsletter/edicoes")
+def newsletter_edicoes():
+    from models import EdicaoNewsletter
+    from services import newsletter
+    eds = EdicaoNewsletter.query.filter_by(status="enviada").order_by(EdicaoNewsletter.numero.desc()).limit(52).all()
+    return jsonify([{"numero": e.numero, "titulo": e.titulo, "assunto": e.assunto, "semana_inicio": e.semana_inicio.isoformat(),
+                     "semana_fim": e.semana_fim.isoformat(), "enviada_em": newsletter._iso(e.enviada_em),
+                     "metricas": (e.dados or {}).get("metricas")} for e in eds])
+
+
+@bp.get("/newsletter/edicoes/<int:numero>")
+def newsletter_edicao(numero):
+    from models import EdicaoNewsletter
+    from services import newsletter
+    e = EdicaoNewsletter.query.filter_by(numero=numero, status="enviada").first()
+    if not e:
+        raise ErroAPI("Edição não encontrada.", 404)
+    corpo, _ = newsletter.montar_html(e, web=True)
+    return jsonify({"numero": e.numero, "titulo": e.titulo, "assunto": e.assunto, "semana_inicio": e.semana_inicio.isoformat(),
+                    "semana_fim": e.semana_fim.isoformat(), "html": corpo})
 
 
 # ---------------------------------------------------------------- leads e eventos
@@ -318,3 +370,39 @@ def _enviar_relatorio(diag, lead, r):
         em.enviar(lead.email, f"Seu diagnóstico de maturidade B2G: {r['nota']}/100", f"Nota {r['nota']}/100 — {r['nivel_nome']}", corpo)
     except Exception:
         current_app.logger.warning("Falha ao enviar relatório do diagnóstico %s", diag.id)
+
+
+# ---------------------------------------------------------------- checklist de habilitação
+@bp.post("/checklist")
+def checklist_publico():
+    """{acao: baixar|importar, segmento, itens: [{id, tem, validade}], nome, email, empresa, consentimento}.
+    Gera o lead; 'importar' fica guardado e entra no Cofre quando a pessoa cadastra a empresa com o mesmo e-mail."""
+    from models import ChecklistPublico
+    from services import checklist
+    d = request.get_json(silent=True) or {}
+    publico.exigir_humano(d)
+    _consentimento(d)
+    email = _email(d)
+    if not (d.get("nome") or "").strip():
+        raise ErroAPI("Informe seu nome.")
+    publico.limitar("lead", publico.ip_hash(), por_ip=20)
+    validos = {i["id"] for i in checklist.definicao()["itens"]}
+    itens = [{"id": str(x.get("id")), "tem": bool(x.get("tem")), "validade": str(x.get("validade") or "")[:10] or None}
+             for x in (d.get("itens") or []) if isinstance(x, dict) and str(x.get("id")) in validos][:80]
+    acao = "importar" if d.get("acao") == "importar" else "baixar"
+    seg = re.sub(r"[^a-z_]", "", str(d.get("segmento") or ""))[:40] or None
+    lead = _lead({**d, "segmento": seg}, "checklist", email)
+    c = ChecklistPublico(id=publico.novo_token(), lead_id=lead.id, email=email, segmento=seg, itens=itens, acao=acao)
+    db.session.add(c)
+    marketing.registrar("generate_lead", lead=lead, dados={"lead_magnet": "checklist"})
+    marketing.registrar("checklist_import" if acao == "importar" else "checklist_download", lead=lead,
+                        dados={"itens": len(itens), "tem": sum(1 for x in itens if x["tem"]), "segmento": seg or ""})
+    marketing.recalcular(lead)
+    db.session.commit()
+    return jsonify({"ok": True, "id": c.id, "acao": acao})
+
+
+@bp.get("/checklist/modelo")
+def checklist_modelo():
+    from services import checklist
+    return jsonify(checklist.definicao())

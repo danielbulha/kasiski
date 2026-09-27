@@ -67,3 +67,13 @@ if __name__ == "__main__":
         except Exception as e:
             db.session.rollback()
             log.warning("Rotinas de marketing falharam: %s", e)
+    # Newsletter Kasiski Intelligence: rascunho de segunda-feira e edições agendadas (reforço do agendador do servidor)
+    with app.app_context():
+        from services import newsletter
+        try:
+            feito = newsletter.ciclo()
+            if feito:
+                log.info("Newsletter: %s", ", ".join(feito))
+        except Exception as e:
+            db.session.rollback()
+            log.warning("Newsletter falhou: %s", e)

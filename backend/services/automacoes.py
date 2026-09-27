@@ -240,6 +240,14 @@ def iniciar_agendador(app):
                         log.info("Automações: %d e-mail(s) enviado(s)", len(n))
                 except Exception:
                     log.exception("Falha no ciclo de automações")
+                try:
+                    from services import newsletter
+                    feito = newsletter.ciclo()
+                    if feito:
+                        log.info("Newsletter: %s", ", ".join(feito))
+                except Exception:
+                    db.session.rollback()
+                    log.exception("Falha no ciclo da newsletter")
                 finally:
                     db.session.remove()
             time.sleep(max(60, app.config.get("AUTOMACOES_INTERVALO_S", 600)))

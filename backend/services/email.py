@@ -35,7 +35,7 @@ def configurado():
     return bool(current_app.config["RESEND_API_KEY"])
 
 
-def enviar(para, assunto, texto, html_corpo):
+def enviar(para, assunto, texto, html_corpo, cabecalhos=None):
     if not configurado():
         current_app.logger.warning("E-mail não enviado (RESEND_API_KEY vazia) para %s: %s", para, assunto)
         return False
@@ -43,7 +43,7 @@ def enviar(para, assunto, texto, html_corpo):
         r = requests.post("https://api.resend.com/emails", timeout=20, headers={
             "Authorization": f"Bearer {current_app.config['RESEND_API_KEY']}", "Content-Type": "application/json"},
             json={"from": remetente(), "to": [para], "subject": assunto,
-                  "text": texto, "html": html_corpo})
+                  "text": texto, "html": html_corpo, **({"headers": cabecalhos} if cabecalhos else {})})
     except requests.RequestException as ex:
         current_app.logger.exception("Resend indisponível")
         e = ErroAPI("Não conseguimos enviar o e-mail agora. Tente de novo em instantes.", 502, "email_falhou")
@@ -55,6 +55,31 @@ def enviar(para, assunto, texto, html_corpo):
         e.detalhe = f"Resend respondeu {r.status_code}: {r.text[:500]}"
         raise e
     return True
+
+
+def enviar_lote(mensagens):
+    """Envia até 100 e-mails numa chamada (https://resend.com/docs/api-reference/emails/send-batch-emails).
+    mensagens = [{para, assunto, texto, html, cabecalhos}]. Devolve a lista de ids (mesma ordem). Levanta ErroAPI se falhar."""
+    if not configurado():
+        raise ErroAPI("Configure o RESEND_API_KEY para enviar e-mails.", 400, "email_nao_configurado")
+    corpo = [{"from": remetente(), "to": [m["para"]], "subject": m["assunto"], "text": m.get("texto") or "",
+              "html": m["html"], **({"headers": m["cabecalhos"]} if m.get("cabecalhos") else {})} for m in mensagens[:100]]
+    try:
+        r = requests.post("https://api.resend.com/emails/batch", timeout=60, json=corpo, headers={
+            "Authorization": f"Bearer {current_app.config['RESEND_API_KEY']}", "Content-Type": "application/json"})
+    except requests.RequestException as ex:
+        e = ErroAPI("Resend indisponível.", 502, "email_falhou")
+        e.detalhe = str(ex)
+        raise e
+    if r.status_code >= 400:
+        current_app.logger.error("Resend recusou o lote (%s): %s", r.status_code, r.text[:500])
+        e = ErroAPI(f"O Resend recusou o envio ({r.status_code}).", 502, "email_falhou")
+        e.detalhe = r.text[:500]
+        raise e
+    try:
+        return [x.get("id") for x in (r.json().get("data") or [])]
+    except ValueError:
+        return []
 
 
 def diagnostico(para):

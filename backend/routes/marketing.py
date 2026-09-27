@@ -10,7 +10,7 @@ from flask import Blueprint, Response, g, jsonify, request
 import planos
 from auth import admin_requerido
 from extensions import ErroAPI, db
-from models import (AnalisePublica, Automacao, AutomacaoEnvio, Conta, Empresa, Evento, InvestimentoCanal, Lead, UsoIA,
+from models import (AnalisePublica, Automacao, AutomacaoEnvio, Conta, EdicaoNewsletter, Empresa, Evento, InvestimentoCanal, Lead, UsoIA,
                     Usuario)
 from routes import dados, para_float
 from services import automacoes, marketing
@@ -345,3 +345,217 @@ def testar_automacao(aid):
 @admin_requerido
 def rodar_agora():
     return jsonify({"enviados": len(automacoes.rodar())})
+
+
+# ---------------------------------------------------------------- newsletter Kasiski Intelligence
+def _coletar_em_segundo_plano(ed_id):
+    import threading
+    from flask import current_app
+    from services import newsletter
+    app = current_app._get_current_object()
+
+    def rodar():
+        with app.app_context():
+            ed = EdicaoNewsletter.query.get(ed_id)
+            try:
+                newsletter.atualizar_dados(ed)
+            except Exception as e:
+                db.session.rollback()
+                ed = EdicaoNewsletter.query.get(ed_id)
+                ed.dados = {**{k: v for k, v in (ed.dados or {}).items() if k != "coletando"}, "erro_coleta": str(e)[:300]}
+                db.session.commit()
+            finally:
+                db.session.remove()
+    threading.Thread(target=rodar, daemon=True, name=f"newsletter-coleta-{ed_id}").start()
+
+
+def _edicao(eid):
+    return EdicaoNewsletter.query.get_or_404(eid)
+
+
+@bp.get("/newsletter")
+@admin_requerido
+def listar_newsletter():
+    from services import email as em
+    from services import newsletter
+    eds = EdicaoNewsletter.query.order_by(EdicaoNewsletter.semana_inicio.desc()).limit(60).all()
+    lista = []
+    for ed in eds:
+        d = newsletter.to_dict(ed)
+        d["coletando"] = bool((ed.dados or {}).get("coletando"))
+        if ed.status in ("enviada", "enviando"):
+            d["stats"] = newsletter.estatisticas(ed)
+        lista.append(d)
+    enviadas = [x["stats"] for x in lista if x.get("stats") and x["stats"]["enviados"]]
+    ini, fim = newsletter.semana_anterior()
+    return jsonify({
+        "inscritos": newsletter.destinatarios_q().count(),
+        "aguardando_confirmacao": Lead.query.filter(Lead.newsletter.is_(True), Lead.newsletter_confirmada.isnot(True),
+                                                    Lead.marketing_optout.isnot(True)).count(),
+        "novos_30d": newsletter.destinatarios_q().filter(Lead.criado_em >= datetime.utcnow() - timedelta(days=30)).count(),
+        "abertura_media": round(sum(s["taxa_abertura"] for s in enviadas[:8]) / len(enviadas[:8]), 1) if enviadas else None,
+        "clique_medio": round(sum(s["taxa_clique"] for s in enviadas[:8]) / len(enviadas[:8]), 1) if enviadas else None,
+        "email_configurado": em.configurado(), "semana_sugerida": ini.isoformat(),
+        "semana_sugerida_existe": EdicaoNewsletter.query.filter_by(semana_inicio=ini).first() is not None,
+        "edicoes": lista})
+
+
+@bp.post("/newsletter")
+@admin_requerido
+def criar_newsletter():
+    from services import newsletter
+    d = dados()
+    ini = None
+    if d.get("semana"):
+        try:
+            ini = datetime.strptime(str(d["semana"])[:10], "%Y-%m-%d").date()
+        except ValueError:
+            raise ErroAPI("Semana inválida.")
+    ed, criou = newsletter.gerar_rascunho(ini, coletar_dados=False)
+    if not criou:
+        raise ErroAPI(f"Já existe a edição #{ed.numero} para essa semana.", 409)
+    ed.dados = {"coletando": True}
+    db.session.commit()
+    _coletar_em_segundo_plano(ed.id)
+    return jsonify(newsletter.to_dict(ed, completo=True)), 201
+
+
+@bp.get("/newsletter/<int:eid>")
+@admin_requerido
+def ver_newsletter(eid):
+    from services import newsletter
+    ed = _edicao(eid)
+    d = newsletter.to_dict(ed, completo=True)
+    d["coletando"] = bool((ed.dados or {}).get("coletando"))
+    d["inscritos"] = newsletter.destinatarios_q().count()
+    if ed.status in ("enviada", "enviando"):
+        d["stats"] = newsletter.estatisticas(ed)
+    return jsonify(d)
+
+
+@bp.patch("/newsletter/<int:eid>")
+@admin_requerido
+def editar_newsletter(eid):
+    from services import newsletter
+    ed = _edicao(eid)
+    if ed.status not in ("rascunho", "agendada"):
+        raise ErroAPI("Uma edição enviada não pode ser alterada.")
+    d = dados()
+    for k, lim in (("titulo", 200), ("assunto", 200), ("pre_cabecalho", 200)):
+        if k in d:
+            setattr(ed, k, (d.get(k) or "").strip()[:lim])
+    if "abertura" in d:
+        ed.abertura = (d.get("abertura") or "").strip()[:4000]
+    if "radar" in d:
+        itens = []
+        for r in (d.get("radar") or [])[:10]:
+            link = (r.get("link") or "").strip()[:500]
+            if link and not link.startswith(("http://", "https://")):
+                raise ErroAPI("Os links do radar precisam começar com http:// ou https://.")
+            itens.append({"titulo": (r.get("titulo") or "").strip()[:200], "resumo": (r.get("resumo") or "").strip()[:800],
+                          "link": link, "fonte": (r.get("fonte") or "").strip()[:80]})
+        ed.radar = itens
+    if "ocultas" in d:
+        ed.ocultas = [str(x)[:60] for x in (d.get("ocultas") or [])][:100]
+    ed.atualizado_em = datetime.utcnow()
+    db.session.commit()
+    return jsonify(newsletter.to_dict(ed, completo=True))
+
+
+@bp.delete("/newsletter/<int:eid>")
+@admin_requerido
+def apagar_newsletter(eid):
+    ed = _edicao(eid)
+    if ed.status != "rascunho":
+        raise ErroAPI("Só rascunhos podem ser excluídos.")
+    db.session.delete(ed)
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@bp.get("/newsletter/<int:eid>/previa")
+@admin_requerido
+def previa_newsletter(eid):
+    from services import newsletter
+    ed = _edicao(eid)
+    corpo, _ = newsletter.montar_html(ed, lead=Lead.query.filter_by(email=g.usuario.email).first())
+    return jsonify({"html": corpo, "assunto": ed.assunto, "pre_cabecalho": ed.pre_cabecalho})
+
+
+@bp.post("/newsletter/<int:eid>/atualizar")
+@admin_requerido
+def atualizar_newsletter(eid):
+    ed = _edicao(eid)
+    if ed.status not in ("rascunho", "agendada"):
+        raise ErroAPI("Esta edição já foi enviada.")
+    ed.dados = {**(ed.dados or {}), "coletando": True}
+    ed.dados.pop("erro_coleta", None)
+    db.session.commit()
+    _coletar_em_segundo_plano(ed.id)
+    return jsonify({"ok": True})
+
+
+@bp.post("/newsletter/<int:eid>/sugerir")
+@admin_requerido
+def sugerir_newsletter(eid):
+    from services import newsletter
+    return jsonify(newsletter.sugerir_abertura(_edicao(eid)))
+
+
+@bp.post("/newsletter/<int:eid>/teste")
+@admin_requerido
+def testar_newsletter(eid):
+    from services import email as em
+    from services import newsletter
+    if not em.configurado():
+        raise ErroAPI("Configure o RESEND_API_KEY para enviar e-mails.")
+    newsletter.enviar_teste(_edicao(eid), g.usuario.email)
+    return jsonify({"ok": True, "para": g.usuario.email})
+
+
+@bp.post("/newsletter/<int:eid>/enviar")
+@admin_requerido
+def enviar_newsletter(eid):
+    from services import email as em
+    from services import newsletter
+    ed = _edicao(eid)
+    d = dados()
+    if d.get("quando"):
+        if not em.configurado():
+            raise ErroAPI("Configure o RESEND_API_KEY no Render para enviar a newsletter.")
+        if ed.status not in ("rascunho", "agendada"):
+            raise ErroAPI("Esta edição já foi enviada.")
+        try:
+            quando = datetime.fromisoformat(str(d["quando"]).replace("Z", "")[:19])
+        except ValueError:
+            raise ErroAPI("Data de agendamento inválida.")
+        if quando < datetime.utcnow() - timedelta(minutes=1):
+            raise ErroAPI("Escolha um horário no futuro.")
+        ed.status, ed.agendada_para = "agendada", quando
+        db.session.commit()
+    else:
+        newsletter.disparar(ed)
+    return jsonify(newsletter.to_dict(ed))
+
+
+@bp.post("/newsletter/<int:eid>/cancelar")
+@admin_requerido
+def cancelar_newsletter(eid):
+    from services import newsletter
+    ed = _edicao(eid)
+    if ed.status != "agendada":
+        raise ErroAPI("Só um envio agendado pode ser cancelado.")
+    ed.status, ed.agendada_para = "rascunho", None
+    db.session.commit()
+    return jsonify(newsletter.to_dict(ed))
+
+
+@bp.post("/newsletter/<int:eid>/reenviar-falhas")
+@admin_requerido
+def reenviar_falhas_newsletter(eid):
+    from services import newsletter
+    ed = _edicao(eid)
+    if ed.status != "enviada" or not ed.falhas:
+        raise ErroAPI("Não há falhas para reenviar.")
+    newsletter.reenviar_falhas(ed)
+    return jsonify({"ok": True})

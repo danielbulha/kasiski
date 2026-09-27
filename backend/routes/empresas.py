@@ -1,7 +1,7 @@
 """Empresas (multi-CNPJ) e cofre de documentos de habilitação."""
 import os
 
-from flask import Blueprint, g, jsonify, request, send_file
+from flask import Blueprint, g, jsonify, request, send_file, current_app
 
 import planos
 from auth import login_requerido
@@ -13,7 +13,7 @@ from services.dados_publicos import cnpj_valido, limpar_cnpj, receita
 
 bp = Blueprint("empresas", __name__, url_prefix="/api")
 
-CATEGORIAS = {"juridica", "fiscal", "trabalhista", "economica", "tecnica", "declaracao", "outro"}
+CATEGORIAS = {"juridica", "fiscal", "trabalhista", "economica", "tecnica", "declaracao", "setorial", "outro"}
 
 
 @bp.get("/cnpj/<cnpj>")
@@ -78,6 +78,11 @@ def criar():
     if (e.palavras_chave or "").strip():
         marketing.evento_conta(g.conta, "radar_configured", {"empresa_id": e.id})
     publico.importar_analises(g.conta, g.usuario, e)
+    try:
+        from services import checklist
+        checklist.importar_publicos(g.conta, g.usuario, e)
+    except Exception:
+        current_app.logger.exception("Falha ao importar o checklist do site")
     db.session.commit()
     return jsonify(e.to_dict()), 201
 
@@ -162,8 +167,26 @@ def editar_documento(did):
         doc.validade = para_data(d["validade"])
     if "arquivo" in request.files and request.files["arquivo"].filename:
         doc.arquivo, doc.nome_arquivo = arquivos.salvar(request.files["arquivo"], f"cofre/{doc.empresa_id}")
+    if doc.arquivo or doc.validade or str(d.get("pendente")).lower() in ("0", "false"):
+        doc.pendente = False  # providenciado
     db.session.commit()
     return jsonify(doc.to_dict())
+
+
+@bp.post("/empresas/<int:eid>/documentos/checklist")
+@login_requerido
+def importar_checklist(eid):
+    """Monta o cofre a partir do checklist: {itens: [{id, tem, validade}]} (itens já existentes são ignorados)."""
+    from services import checklist
+    emp = empresa_da_conta(eid)
+    d = dados()
+    itens = d.get("itens") if isinstance(d.get("itens"), list) else []
+    criados = checklist.importar(emp, itens)
+    from services import marketing
+    if criados:
+        marketing.evento_conta(g.conta, "document_uploaded", {"origem": "checklist", "itens": len(criados)})
+    db.session.commit()
+    return jsonify({"criados": len(criados), "documentos": [x.to_dict() for x in criados]}), 201
 
 
 @bp.delete("/documentos/<int:did>")

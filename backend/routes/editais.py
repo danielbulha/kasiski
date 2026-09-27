@@ -281,7 +281,10 @@ def _rodar_analise(app, analise_id, edital_id, empresa_id, conta_id, cortesia=Fa
             analise = Analise.query.get(analise_id)
             analise.status, analise.etapa = "erro", None
             msg = e.mensagem if isinstance(e, ErroAPI) else "Não foi possível concluir a análise agora. Tente novamente em instantes."
-            if not isinstance(e, ErroAPI) and "Nenhuma IA respondeu" in str(e):
+            if not isinstance(e, ErroAPI) and "JSON inválido" in str(e):
+                msg = ("A IA não conseguiu concluir a análise deste edital (resposta incompleta). Tente de novo; "
+                       "se repetir, envie só o edital, sem os anexos, ou fale com o suporte.")
+            elif not isinstance(e, ErroAPI) and "Nenhuma IA respondeu" in str(e):
                 msg = "Os serviços de IA não responderam. Tente novamente em alguns minutos."
             analise.erro = msg
             db.session.commit()

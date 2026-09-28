@@ -9,7 +9,7 @@ V.contratos = async (el) => {
     el.innerHTML = `<div class="cabecalho"><div><h1>Gestão de contratos</h1></div></div>
       <section class="bloco destaque-plano"><h2>Gestão de contratos com IA</h2>
         <p>Envie o PDF do contrato e o Kasiski preenche vigência, garantia, reajuste, medição e faturamento, monta a agenda de gestão e avisa
-        por e-mail antes de cada prazo. Disponível a partir do plano <b>Profissional</b> (10 contratos), <b>Avançado</b> (30) e <b>Consultor</b> (50).</p>
+        por e-mail antes de cada prazo. Disponível a partir do plano <b>Profissional</b> (10 contratos), <b>Business</b> (30) e <b>Consultor</b> (50).</p>
         <a class="botao" href="#/conta">Ver planos</a></section>`;
     return;
   }
@@ -17,7 +17,7 @@ V.contratos = async (el) => {
   const cheio = g.uso >= g.limite;
   el.innerHTML = `
     <div class="cabecalho"><div><h1>Gestão de contratos</h1><p>Contratos de ${esc(empresaAtual().razao_social)} · ${g.uso} de ${g.limite} contrato(s) do plano
-      ${cheio && S.plano?.codigo !== "trial" ? ` · <a href="#/conta">contratar +10 por ${fmt.moeda(g.pacote.preco)}/mês</a>` : ""}</p></div>
+      ${cheio && S.plano?.codigo !== "free" ? ` · <a href="#/conta">contratar +10 por ${fmt.moeda(g.pacote.preco)}/mês</a>` : ""}</p></div>
       <button class="botao" id="novo-contrato" ${cheio ? "disabled title=\"Limite do plano atingido\"" : ""}>${icone("adicionar")} Novo contrato</button></div>
     ${guia(`<p>Envie o PDF do contrato: a IA lê vigência, garantia, reajuste, medição, faturamento e as obrigações periódicas da contratada,
       e o Kasiski monta a agenda de gestão com avisos antecipados (prorrogação 120 e 60 dias antes, garantia 30 dias antes, reajuste no aniversário).

@@ -20,16 +20,16 @@
   // planos: confere preços e limites na API (fonte oficial: backend/planos.py)
   if (document.querySelector("[data-plano]")) fetch(API + "/api/planos").then((r) => r.json()).then((d) => {
     const qtd = (n, s1, p) => `${n} ${n === 1 ? s1 : p}`;
-    const txt = { empresas: (v) => qtd(v.empresas, "empresa (CNPJ)", "empresas (CNPJs)"), analises: (v) => `${qtd(v.analises, "análise", "análises")} de edital por mês`,
+    const txt = { empresas: (v) => `${qtd(v.empresas, "empresa", "empresas")} · ${qtd(v.usuarios || 1, "usuário", "usuários")}`, analises: (v) => `${qtd(v.analises, "análise", "análises")} de edital com IA por mês`,
       concorrentes: (v) => (v.concorrentes ? `${qtd(v.concorrentes, "análise", "análises")} de concorrente por mês` : "Análise de concorrentes"),
       possiveis: (v) => `${qtd(v.possiveis || 0, "avaliação", "avaliações")} de possíveis concorrentes por mês`,
       contratos: (v) => (v.contratos ? `Gestão de contratos com IA (até ${v.contratos})` : "Gestão de contratos") };
     $$("[data-plano]").forEach((c) => {
       const v = d.planos && d.planos[c.dataset.plano]; if (!v) return;
-      const pr = $("[data-preco]", c); if (pr) pr.textContent = "R$ " + Number(v.preco).toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+      const pr = $("[data-preco]", c); if (pr && v.preco !== null) pr.textContent = "R$ " + Number(v.preco).toLocaleString("pt-BR", { maximumFractionDigits: 0 });
       $$("[data-campo]", c).forEach((li) => { const f = txt[li.dataset.campo]; if (f) li.lastElementChild.textContent = f(v); });
     });
-    if (d.planos && d.planos.trial) $$("[data-trial-analises]").forEach((x) => { x.textContent = d.planos.trial.analises; });
+    if (d.planos && d.planos.free) $$("[data-free-analises]").forEach((x) => { x.textContent = d.planos.free.analises; });
   }).catch(() => { /* fica com os valores gerados */ });
 
   // ------------------------------------------------------------ navegação
@@ -293,7 +293,7 @@
       <div class="s-barras" role="list" aria-label="Nota por eixo">${barras}</div>
       ${mercado ? `<p class="s-nota s-barras-legenda"><b class="s-barra-media s-barra-media-leg" aria-hidden="true"></b> média do mercado em cada eixo</p>` : ""}
       ${recs ? `<h3>Plano de ação: por onde começar</h3><div class="s-recs">${recs}</div>` : `<p>Sua empresa está bem estruturada em todos os eixos.</p>`}
-      <div class="s-diag-cta"><div><b>Coloque o plano em prática com o Kasiski</b><p>Radar diário no PNCP, análise de edital com IA, cofre de documentos, concorrentes e contratos. Teste grátis por 7 dias, sem cartão.</p></div>
+      <div class="s-diag-cta"><div><b>Coloque o plano em prática com o Kasiski</b><p>Radar diário no PNCP, análise de edital com IA, cofre de documentos, concorrentes e contratos. Crie sua conta Free: o resultado do diagnóstico fica salvo e você ganha 1 análise de edital por mês, sem cartão.</p></div>
         <a class="s-botao s-botao-grande" href="${APP}/#/cadastro" data-cta="diagnostico_comecar">Começar gratuitamente no Kasiski</a></div>
       <div class="s-cartao s-diag-email"><b>Receba o relatório completo por e-mail</b><p class="s-nota">Com a nota de cada eixo e o plano de ação para guardar ou encaminhar ao time.</p>
         <form class="s-ferramenta" data-form="diag-email" novalidate><div class="s-linha">
@@ -432,5 +432,42 @@
       nlLista.innerHTML = itens.map((e) => `<a class="s-nl-item" href="/newsletter/arquivo/?n=${e.numero}"><small>#${e.numero} · semana de ${dt(e.semana_inicio)} a ${dt(e.semana_fim)}</small>
         <b>${String(e.titulo || "").replace(/[<>&]/g, "")}</b>${e.metricas && e.metricas.valor_competitivas ? `<span>${(e.metricas.competitivas || 0).toLocaleString("pt-BR")} licitações · ${e.metricas.estimado ? "≈ " : ""}${curta(e.metricas.valor_competitivas)}</span>` : ""}</a>`).join("");
     }).catch(() => { nlLista.innerHTML = ""; });
+  }
+
+  // ------------------------------------------------------------ relatório gratuito da prospecção (/relatorio/?t=)
+  const rel = $("[data-relatorio]");
+  if (rel) {
+    const q = new URLSearchParams(location.search);
+    const t = q.get("t");
+    const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const moeda = (v) => (v ? Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }) : "—");
+    const data = (v) => (v ? new Date(String(v).slice(0, 10) + "T12:00").toLocaleDateString("pt-BR") : "—");
+    const curtaRel = (v) => { v = Number(v || 0); for (const [l, u] of [[1e9, "bi"], [1e6, "mi"], [1e3, "mil"]]) if (v >= l) return `R$ ${(v / l).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} ${u}`; return moeda(v); };
+    if (!t) rel.innerHTML = '<p class="s-fraco">Link incompleto. Confira o endereço recebido.</p>';
+    else fetch(`${API}/api/public/relatorio/${encodeURIComponent(t)}${q.get("previa") ? "" : "?visita=1"}`).then((r) => (r.ok ? r.json() : Promise.reject(r.status))).then((d) => {
+      const cta = $("#rel-cta").innerHTML;
+      rel.innerHTML = `<p class="s-sobre">Relatório gratuito de licitações</p><h1>${esc(d.empresa)}</h1>
+        <p class="s-lead">${esc(d.razao_social || "")}${d.municipio ? ` · ${esc(d.municipio)}/${esc(d.uf)}` : ""} · segmento: ${esc((d.segmentos || []).join(", "))}</p>
+        <div class="s-rel-kpis"><div><b>${d.vitorias}</b><span>contratações vencidas no período analisado</span></div>
+          <div><b>${d.n_orgaos}</b><span>órgãos públicos atendidos</span></div>
+          <div><b>${curtaRel(d.valor_total)}</b><span>em valor contratado</span></div>
+          <div><b>${data(d.ultima_vitoria)}</b><span>última vitória registrada</span></div></div>
+        ${(d.editais_abertos || []).length ? `<h2>Editais abertos agora que combinam com a ${esc(d.empresa)}</h2>
+          <div class="s-rel-lista">${d.editais_abertos.map((e) => `<a class="s-nl-item" href="${esc(e.link)}" target="_blank" rel="noopener"><small>${esc(e.orgao || "")}${e.uf ? " · " + esc(e.municipio || "") + "/" + esc(e.uf) : ""}${e.data_encerramento ? " · propostas até " + data(e.data_encerramento) : ""}</small>
+            <b>${esc(String(e.objeto || "").slice(0, 200))}</b>${e.valor_estimado ? `<span>${moeda(e.valor_estimado)} estimados</span>` : ""}</a>`).join("")}</div>` : ""}
+        ${cta}
+        <h2>Onde a ${esc(d.empresa)} já vende</h2>
+        <div class="s-rel-lista">${(d.orgaos || []).map((o) => `<div class="s-rel-linha"><span>${esc(o.nome)}</span><b>${o.vitorias} vitória(s)</b></div>`).join("")}</div>
+        ${(d.exemplos || []).length ? `<h2>Contratações recentes</h2><div class="s-rel-lista">${d.exemplos.map((x) => `<a class="s-nl-item" href="${esc(x.link || "#")}" target="_blank" rel="noopener"><small>${x.tipo === "ata" ? "Ata de registro de preços" : "Contrato"} · ${esc(x.orgao || "")}${x.uf ? "/" + esc(x.uf) : ""} · ${data(x.data)}</small><b>${esc(x.objeto || "")}</b>${x.valor ? `<span>${moeda(x.valor)}</span>` : ""}</a>`).join("")}</div>` : ""}
+        ${(d.concorrentes || []).length ? `<h2>Quem mais vence neste segmento</h2><div class="s-rel-lista">${d.concorrentes.map((c) => `<div class="s-rel-linha"><span>${esc(c.nome || "")}${c.uf ? " · " + esc(c.uf) : ""}</span><b>${c.vitorias} vitória(s) · ${c.orgaos} órgão(s)</b></div>`).join("")}</div>` : ""}
+        <p class="s-fraco s-rel-fonte">Fonte: dados públicos do Portal Nacional de Contratações Públicas (PNCP) e do cadastro de CNPJ da Receita Federal. O Kasiski usa apenas dados de empresas, publicados por lei.
+          <button type="button" class="s-link-botao" data-nao-contatar>Não quero receber contatos do Kasiski</button></p>`;
+      const nc = $("[data-nao-contatar]", rel);
+      nc.onclick = async () => {
+        if (!confirm("Confirmar? A sua empresa sai das listas de contato do Kasiski.")) return;
+        await fetch(`${API}/api/public/relatorio/${encodeURIComponent(t)}/nao-contatar`, { method: "POST" });
+        rel.innerHTML = '<h1>Pronto</h1><p class="s-lead">A sua empresa não receberá mais contatos do Kasiski.</p>';
+      };
+    }).catch(() => { rel.innerHTML = '<h1>Relatório indisponível</h1><p class="s-lead">Este link expirou ou não existe.</p>'; });
   }
 })();

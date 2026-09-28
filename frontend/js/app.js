@@ -21,12 +21,12 @@ function layout() {
     <span class="rotulo">${ic ? icone(ic, 17) : ""}${esc(t)}</span>${badge ? `<span class="contador">${badge}</span>` : ""}</a>`;
   const aviso = [];
   if (S.demo) aviso.push(`<div class="faixa-aviso"><span><b>Modo demonstração.</b> As respostas de IA são exemplos. Configure as chaves de IA no servidor para análises reais.</span></div>`);
-  if (S.plano?.teste_expirado) aviso.push(`<div class="faixa-aviso"><span>Seu teste grátis terminou. Seus dados continuam salvos.</span><a href="#/conta">Escolher um plano</a></div>`);
-  else if (S.plano?.codigo === "suspenso") aviso.push(`<div class="faixa-aviso"><span>Seu acesso está suspenso por falta de pagamento. Seus dados continuam salvos.</span><a href="#/conta">Regularizar</a></div>`);
+  if (S.plano?.codigo === "suspenso") aviso.push(`<div class="faixa-aviso"><span>Seu acesso está suspenso por falta de pagamento. Seus dados continuam salvos.</span><a href="#/conta">Regularizar</a></div>`);
   else if (S.plano?.assinatura?.status === "inadimplente") aviso.push(`<div class="faixa-aviso"><span>Não conseguimos cobrar seu cartão. Atualize o pagamento para não perder o acesso.</span><a href="#/conta">Resolver</a></div>`);
   else if (S.plano?.assinatura?.pago_ate && !S.plano.assinatura.recorrente && fmt.dias(S.plano.assinatura.pago_ate) <= 5)
     aviso.push(`<div class="faixa-aviso"><span>Seu plano vence ${fmt.prazo(S.plano.assinatura.pago_ate)} (${fmt.data(S.plano.assinatura.pago_ate)}).</span><a href="#/conta">Renovar</a></div>`);
-  else if (S.plano?.codigo === "trial") aviso.push(`<div class="faixa-aviso"><span>Teste grátis até ${fmt.data(S.plano.trial_fim)}: ${S.plano.uso.analises} de ${S.plano.analises} análises usadas.</span><a href="#/conta">Ver planos</a></div>`);
+  else if (S.plano?.em_teste) aviso.push(`<div class="faixa-aviso"><span>Você está experimentando o <b>Profissional</b> até ${fmt.data(S.plano.trial_fim)} (${S.plano.uso.analises} de ${S.plano.analises} análises usadas). Depois, a conta volta ao Free sem perder nada.</span><a href="#/conta">Assinar o Profissional</a></div>`);
+  else if (S.plano?.codigo === "free" && S.plano?.teste_disponivel) aviso.push(`<div class="faixa-aviso"><span>Você está no <b>Free</b>: ${S.plano.uso.analises} de ${S.plano.analises} análise de edital neste mês.</span><button class="botao pequeno" data-iniciar-teste>Experimentar o Profissional por ${S.plano.teste_dias} dias</button></div>`);
   return `
   <div class="topo-movel"><a class="marca" href="#/painel">${simboloMarca(28)}<strong>${esc(CERTAME.NOME)}</strong></a>
     <button id="abrir-menu" aria-label="Abrir menu">${icone("menu", 16)} Menu</button></div>
@@ -56,6 +56,7 @@ async function navegar() {
   if (hash === "#planos" || hash === "#/inicio") { location.replace(CERTAME.SITE_URL + "/" + (hash === "#planos" ? "#planos" : "")); return; }
   if (hash === "#/") { location.hash = S.token ? "#/painel" : "#/entrar"; return; }
   document.body.classList.remove("publico");
+  if (hash.startsWith("#/convite")) { telaConvite(raiz, new URLSearchParams(location.hash.split("?")[1] || "").get("t")); return; }
   if (hash === "#/verificar") {
     if (S.token) { location.hash = "#/painel"; return; }
     telaVerificacao(raiz);
@@ -124,8 +125,8 @@ function telaEntrada(cadastro) {
     </section>
     <section class="entrada-form">
       <form id="form-entrada" novalidate>
-        <h2>${cadastro ? "Comece seu teste de 7 dias" : "Entrar"}</h2>
-        <p class="fraco">${cadastro ? "Duas análises de edital incluídas, sem cartão." : "Use o e-mail e a senha da sua conta."}</p>
+        <h2>${cadastro ? "Crie sua conta grátis" : "Entrar"}</h2>
+        <p class="fraco">${cadastro ? "Free para sempre, sem cartão. Quando quiser, experimente o Profissional por 7 dias." : "Use o e-mail e a senha da sua conta."}</p>
         <div id="erro-entrada"></div>
         ${cadastro ? `<div class="campo"><label for="nome">Seu nome</label><input id="nome" name="nome" required autocomplete="name"></div>
           <div class="campo"><label for="nome_conta">Empresa ou escritório</label><input id="nome_conta" name="nome_conta" autocomplete="organization"></div>` : ""}
@@ -252,3 +253,37 @@ function telaVerificacao(raiz) {
 
 window.addEventListener("hashchange", navegar);
 navegar();
+
+
+// ---------------------------------------------------------------- convite para a equipe (#/convite?t=...)
+async function telaConvite(raiz, token) {
+  document.body.classList.add("publico");
+  raiz.innerHTML = `<div class="entrada"><section class="entrada-lado"><div class="entrada-topo"><a class="marca-completa" href="#/entrar">${simboloMarca(40)}<span class="texto"><strong>${esc(CERTAME.NOME)}</strong><span>public market intelligence</span></span></a></div>
+    <div><h1>Você foi convidado para uma equipe no Kasiski.</h1><p>Crie sua senha para entrar na conta da empresa e trabalhar nos mesmos editais, documentos e prazos.</p></div><small></small></section>
+    <section class="entrada-form"><div id="convite-corpo"><p class="carregando">Conferindo o convite…</p></div></section></div>`;
+  const corpo = $("#convite-corpo");
+  let c;
+  try { c = await api("GET", `/api/auth/convite/${encodeURIComponent(token || "")}`); }
+  catch (e) { corpo.innerHTML = `${erroTela(e)}<p><a href="#/entrar">Ir para o login</a></p>`; return; }
+  corpo.innerHTML = `<form id="form-convite" novalidate><h2>Entrar na equipe ${esc(c.conta)}</h2><p class="fraco">Convite para ${esc(c.email)}.</p><div id="erro-convite"></div>
+    <div class="campo"><label for="cv-nome">Seu nome</label><input id="cv-nome" name="nome" required autocomplete="name"></div>
+    <div class="campo"><label for="cv-senha">Crie uma senha</label><input id="cv-senha" name="senha" type="password" minlength="8" required autocomplete="new-password"><small>Mínimo de 8 caracteres.</small></div>
+    <button class="botao" style="width:100%" type="submit">Entrar na equipe</button></form>`;
+  $("#form-convite").onsubmit = async (ev) => {
+    ev.preventDefault();
+    await ocupado(ev.target.querySelector("button"), "Entrando…", async () => {
+      try { const d = await api("POST", `/api/auth/convite/${encodeURIComponent(token)}`, dadosForm(ev.target)); document.body.classList.remove("publico"); entrarComToken(d.token, false); }
+      catch (e) { $("#erro-convite").innerHTML = erroTela(e); }
+    });
+  };
+}
+
+// botão "Experimentar o Profissional" (faixa do topo, modal de limite e tela do plano)
+async function iniciarTesteProfissional(botao) {
+  const fazer = async () => {
+    try { await api("POST", "/api/conta/teste"); await carregarConta(); toast("Profissional liberado por 7 dias. Aproveite: sua conta volta ao Free no fim, sem perder nada.", "ok"); marcar("trial_start", { plano: "profissional" }); navegar(); }
+    catch (e) { avisarErro(e); }
+  };
+  return botao ? ocupado(botao, "Liberando…", fazer) : fazer();
+}
+document.addEventListener("click", (ev) => { const b = ev.target.closest("[data-iniciar-teste]"); if (b) { ev.preventDefault(); const m = b.closest(".fundo-modal"); if (m) m.remove(); iniciarTesteProfissional(b); } });

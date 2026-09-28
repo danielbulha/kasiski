@@ -49,7 +49,7 @@ def cabecalho(minimo=False):
     <div class="s-drop"><button type="button" aria-haspopup="true">Ferramentas grátis</button><div class="s-drop-menu">
       <a href="/analisar-edital/">Analisar edital</a><a href="/consultar-concorrente/">Consultar concorrente</a><a href="/diagnostico/">Diagnóstico de maturidade B2G</a><a href="/checklist-habilitacao/">Checklist de habilitação</a><a href="/newsletter/">Kasiski Intelligence (newsletter)</a></div></div>
     <a href="/inteligencia/">Inteligência</a><a href="/consultorias/">Consultorias</a><a href="/#planos" data-cta="menu_planos">Planos</a>
-    <a class="s-entrar" href="{C.APP_ENTRAR}">Entrar</a><a class="s-botao" href="{C.APP_CADASTRO}" data-cta="menu_testar">Testar grátis</a>
+    <a class="s-entrar" href="{C.APP_ENTRAR}">Entrar</a><a class="s-botao" href="{C.APP_CADASTRO}" data-cta="menu_testar">Criar conta grátis</a>
   </nav></header>'''
 
 
@@ -117,7 +117,7 @@ def migalhas(itens):
 ORG = {"@context": "https://schema.org", "@type": "Organization", "name": "Kasiski Public Market Intelligence", "url": C.SITE_URL,
        "logo": C.SITE_URL + "/assets/kasiski-logo.svg", "email": C.EMPRESA["email_contato"]}
 SOFT = {"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Kasiski", "applicationCategory": "BusinessApplication",
-        "operatingSystem": "Web", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "BRL", "description": "Teste grátis de 7 dias"}}
+        "operatingSystem": "Web", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "BRL", "description": "Plano Free para sempre; Profissional a partir de R$ 247/mês"}}
 
 
 # ---------------------------------------------------------------- blocos das ferramentas
@@ -207,6 +207,16 @@ def pg_newsletter():
            corpo, prioridade="0.7")
 
 
+def pg_relatorio():
+    """Relatório gratuito da prospecção (um link por empresa; montado no navegador a partir da API)."""
+    corpo = f'''<section class="s-secao s-rel" data-relatorio><p class="s-fraco">Carregando o relatório…</p></section>
+  <template id="rel-cta"><div class="s-cta-final"><h2>Receba esses editais todo dia</h2>
+    <p>O Kasiski procura no PNCP os editais do seu segmento e a IA analisa cada um em minutos: requisitos, riscos, documentos e preço de referência.</p>
+    <a class="s-botao s-botao-grande" data-cta="relatorio" href="{C.APP_CADASTRO}">Criar conta grátis</a></div></template>'''
+    pagina("/relatorio/", "Relatório gratuito de licitações | Kasiski", "Histórico público de contratos, concorrentes e editais abertos para a sua empresa.",
+           corpo, indexar=False)
+
+
 def pg_newsletter_arquivo():
     corpo = '''<section class="s-heroi s-heroi-centro" data-nl-cabeca><p class="s-sobre">Kasiski Intelligence</p><h1>Edições anteriores</h1>
   <p class="s-lead">O mercado público brasileiro semana a semana: volume de licitações, setores em alta, as maiores oportunidades e o radar regulatório.</p>
@@ -243,10 +253,10 @@ def pg_solucao(s):
     pontos = "".join(f'<div class="s-item"><b>{esc(t)}</b><p>{esc(d)}</p></div>' for t, d in s["pontos"])
     corpo = f'''{cab}<section class="s-heroi"><div class="s-heroi-texto"><p class="s-sobre">{esc(s["nome"])}</p><h1>{esc(s["titulo"])}</h1>
   <p class="s-lead">{esc(s["descricao"])}</p>
-  <div class="s-acoes"><a class="s-botao s-botao-grande" href="{C.APP_CADASTRO}" data-cta="solucao_{s["slug"]}">{esc(s["cta"]) if s["cta"] == "Testar grátis" else "Testar grátis por 7 dias"}</a>
-  <a class="s-botao s-botao-sec" href="{s["lp"]}">{esc(s["cta"]) if s["cta"] != "Testar grátis" else "Ver na prática"}</a></div></div></section>
+  <div class="s-acoes"><a class="s-botao s-botao-grande" href="{C.APP_CADASTRO}" data-cta="solucao_{s["slug"]}">{esc(s["cta"]) if s["cta"] == "Criar conta grátis" else "Criar conta grátis"}</a>
+  <a class="s-botao s-botao-sec" href="{s["lp"]}">{esc(s["cta"]) if s["cta"] != "Criar conta grátis" else "Ver na prática"}</a></div></div></section>
   <section class="s-secao"><div class="s-grade3">{pontos}</div></section>
-  <section class="s-secao s-faixa"><h2>Teste grátis por 7 dias</h2><p>Sem cartão de crédito. Seus dados continuam salvos ao fim do teste.</p>
+  <section class="s-secao s-faixa"><h2>Comece grátis. Evolua quando fizer sentido.</h2><p>Conta Free para sempre, sem cartão. Quando quiser, experimente o Profissional por 7 dias.</p>
     <a class="s-botao s-botao-grande" href="{C.APP_CADASTRO}" data-cta="solucao_rodape_{s["slug"]}">Começar agora</a></section>'''
     pagina(f"/{s['slug']}/", f"{s['nome']} | Kasiski", s["descricao"], corpo, prioridade="0.8", jsonld=[ld, SOFT])
 
@@ -259,7 +269,7 @@ def pg_lp(lp):
     elif lp["ferramenta"] == "consultorias":
         acao = f'<div class="s-cartao">{form_consultorias()}</div>'
     else:
-        acao = f'''<div class="s-cartao s-cartao-cta"><b>Teste grátis por 7 dias</b><p>Sem cartão. Cadastre a empresa pelo CNPJ e o Radar começa na hora.</p>
+        acao = f'''<div class="s-cartao s-cartao-cta"><b>Crie sua conta grátis</b><p>Free para sempre, sem cartão. Cadastre a empresa pelo CNPJ e o Radar começa na hora.</p>
           <a class="s-botao s-botao-grande" href="https://app.kasiski.com.br/#/cadastro" data-cta="lp_{lp["slug"]}">Criar minha conta grátis</a>
           <p class="s-nota">Já tem conta? <a href="{C.APP_ENTRAR}">Entrar</a></p></div>'''
     provas = "".join(f"<li>{esc(p)}</li>" for p in lp["provas"])
@@ -284,7 +294,7 @@ def pg_glossario():
   <h2>Definição</h2><p>{esc(g["definicao"])}</p><h2>Exemplo</h2><p>{esc(g["exemplo"])}</p>
   <h2>Legislação</h2><p>{esc(g["legislacao"])}</p><h2>Aplicação na prática</h2><p>{esc(g["aplicacao"])}</p>
   <aside class="s-caixa-ferramenta"><b>No Kasiski</b><p>Veja como isso funciona na prática em <a href="{url_f}">{esc(nome_f)}</a>.</p>
-    <a class="s-botao" href="{C.APP_CADASTRO}" data-cta="glossario_{g["slug"]}">Testar grátis</a></aside>
+    <a class="s-botao" href="{C.APP_CADASTRO}" data-cta="glossario_{g["slug"]}">Criar conta grátis</a></aside>
   <p class="s-nota">Conteúdo informativo, não substitui a análise jurídica do caso concreto.</p></article>'''
         pagina(f"/glossario/{g['slug']}/", f"{g['termo']}: o que é | Glossário Kasiski", g["definicao"][:155], corpo, prioridade="0.6", jsonld=[ld, termo_ld])
 
@@ -335,8 +345,8 @@ def pg_inteligencia():
                   "mainEntityOfPage": C.SITE_URL + f"/inteligencia/{a['slug']}/"}
         corpo = f'''{cab}<article class="s-artigo"><p class="s-sobre">{esc(a.get("categoria", ""))} · {esc(_data_br(a.get("data")))}</p>
   <h1>{esc(a.get("titulo", ""))}</h1><p class="s-lead">{esc(a.get("descricao", ""))}</p>{a["html"]}
-  <aside class="s-caixa-ferramenta"><b>Faça isso no Kasiski</b><p>{esc(a.get("cta_texto", "Teste grátis por 7 dias, sem cartão."))}</p>
-    <a class="s-botao" href="{esc(a.get("cta_link", C.APP_CADASTRO))}" data-cta="artigo_{a["slug"]}">{esc(a.get("cta", "Testar grátis"))}</a></aside>
+  <aside class="s-caixa-ferramenta"><b>Faça isso no Kasiski</b><p>{esc(a.get("cta_texto", "Conta Free para sempre, sem cartão."))}</p>
+    <a class="s-botao" href="{esc(a.get("cta_link", C.APP_CADASTRO))}" data-cta="artigo_{a["slug"]}">{esc(a.get("cta", "Criar conta grátis"))}</a></aside>
   <p class="s-nota">Conteúdo informativo, não substitui a análise jurídica do caso concreto.</p></article>'''
         pagina(f"/inteligencia/{a['slug']}/", f"{a.get('titulo')} | Kasiski", a.get("descricao", ""), corpo, prioridade="0.7",
                og_tipo="article", jsonld=[ld, art_ld])
@@ -394,9 +404,13 @@ def extras():
 /blog              /inteligencia/     301
 /blog/*            /inteligencia/:splat 301
 /guias             /inteligencia/     301
+/r/:t              /relatorio/?t=:t&utm_source=prospeccao&utm_medium=outbound&utm_campaign=relatorio 302
 /ferramentas/analisar-edital      /analisar-edital/        301
 /ferramentas/consultar-concorrente /consultar-concorrente/ 301
 """)
+    import seguranca
+    for destino in (SAIDA, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend")):
+        open(os.path.join(destino, "_headers"), "w", encoding="utf-8").write(seguranca.headers())
     ico = simbolo(64).replace('class="s-simbolo" ', 'xmlns="http://www.w3.org/2000/svg" ').replace('fill="currentColor"', 'fill="#071D2D"')
     open(os.path.join(SAIDA, "favicon.svg"), "w", encoding="utf-8").write(ico)
 
@@ -416,6 +430,7 @@ if __name__ == "__main__":
     pg_concorrente()
     pg_newsletter()
     pg_newsletter_arquivo()
+    pg_relatorio()
     pg_consultorias()
     for s in C.SOLUCOES:
         pg_solucao(s)

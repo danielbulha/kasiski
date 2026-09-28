@@ -240,6 +240,20 @@ Menu **Preços e propostas** (grupo "Na disputa"), com três abas. A aba de prop
 
 **Administração → Tabelas de preços**: envie planilhas .xlsx/.csv (SINAPI, SICRO, CMED, SIGTAP, CCT, BPS ou outra). O sistema acha o cabeçalho e sugere as colunas de código, descrição, unidade e preço; você confirma, informa UF e data-base e importa. Desative a tabela antiga quando sair nova data-base.
 
+### Precificação pelo edital (sugestão pronta para aceitar)
+- **Importação completa das tabelas:** além de código/descrição/unidade/preço, todas as colunas são guardadas: as de preço (CMED: PF e PMVG em cada alíquota de ICMS, sem impostos e ALC) e as informativas (substância, laboratório, registro ANVISA, EAN, CAP, CONFAZ 87, tarja, restrição hospitalar; SINAPI: origem do preço etc.). O formato CMED é reconhecido sozinho (cabeçalho procurado até a linha 90; a apresentação entra na descrição). SINAPI/SICRO guardam se a tabela é desonerada ou não. **Tabelas importadas antes desta versão precisam ser reenviadas** para ganhar as colunas extras.
+- **O que o edital exige:** a leitura da proposta extrai as referências de preço (ex.: "PMVG da CMED", "SINAPI-SP 07/2026 não desonerado", "piso da CCT"), a UF do órgão, a alíquota de ICMS citada, o critério (preço ou maior desconto) e, por item, o código de referência (SINAPI/SICRO, GGREM, registro) e a marca exigida.
+- **Regras de preço (`services/tabelas.preco_aplicavel` e `services/precificacao.py`):**
+  - CMED: teto = PMVG quando o produto tem CAP ou o edital manda usar PMVG; senão PF. Coluna = alíquota de ICMS da UF do órgão (tabela `ICMS_UF`, editável na proposta), 0% se isento pelo CONFAZ 87. Preço por embalagem é convertido por unidade quando o edital compra por comprimido/frasco/ampola ("X 10" → ÷ 10).
+  - SINAPI/SICRO: custo da composição do código do edital (ou descrição parecida) na UF e no regime exigidos, data-base mais recente; preço = custo × (1 + BDI).
+  - CCT: piso salarial é verificação (alerta se o preço ficar abaixo), não custo do posto.
+  - Sem custo: sugestão = o menor entre o teto (estimado do edital ou tabela), a mediana praticada no Compras.gov.br (CATMAT/CATSER) e o preço médio dos possíveis concorrentes no item. Critério "maior desconto": sugere o desconto sobre a tabela.
+- **Tela da proposta:** bloco "Referências de preço do edital" (UF, ICMS, PMVG/PF, desonerado, preço ou desconto, usar mercado/concorrentes), colunas **Referência** e **Sugestão do Kasiski** com confiança, botão **Aceitar as N sugestões** (ou por item) e **Precificar pelo edital**. Aceitar preenche custo/preço e, para medicamentos, fabricante e registro ANVISA. Alertas novos: acima do teto CMED e abaixo do piso da CCT. O Word inclui as colunas de marca/fabricante, registro e desconto quando aplicáveis.
+
+### Preço médio dos possíveis concorrentes por item
+- Ao avaliar os possíveis concorrentes, o Kasiski lê o **resultado homologado por item** das atas e compras semelhantes (`pncp.resultados_da_compra`; nos contratos, a compra de origem) e compara com os itens do edital (da proposta ligada ao edital, dos itens do PNCP quando o edital veio do Radar, ou da análise).
+- Para cada item: média das médias por empresa, menor média, % do estimado e as empresas; para cada empresa: preço médio nos itens e % médio do estimado. Unidades diferentes são descartadas. Esses preços alimentam a sugestão da proposta.
+
 
 ## Elaboração com advogado (serviço pago)
 
@@ -424,3 +438,47 @@ Nas análises de habilitação/proposta desse concorrente em um edital, a IA rec
 - **Rastreio:** pixel `/api/public/n/<token>/a.gif`, clique `/api/public/n/<token>/l/<n>` (só links da própria edição, sem redirecionamento aberto), eventos `newsletter_open` (+1) e `newsletter_click` (+4) no score do lead. Links para o site/app levam UTMs `utm_source=newsletter&utm_medium=email&utm_campaign=kasiski-intelligence-<n>`.
 - **Arquivo público:** `kasiski.com.br/newsletter/arquivo/` lista as edições enviadas e mostra cada uma em `?n=<número>` (é o link "Ver no navegador"). A página `/newsletter/` mostra as 3 últimas.
 - Variáveis opcionais: `NEWSLETTER_RASCUNHO_AUTO` (sim), `NEWSLETTER_MAX_PAGINAS` (60 páginas de 50 por modalidade), `NEWSLETTER_VALOR_MAX` (ignora valores acima de R$ 20 bi, erro de digitação no PNCP), `NEWSLETTER_LOTE` (100), `NEWSLETTER_PAUSA_S` (0,6), `NEWSLETTER_RODAPE`.
+
+## Segurança (produção)
+- **Produção** = variável `RENDER=true` (o Render define sozinho) ou `PRODUCAO=sim`.
+- **SECRET_KEY:** em produção o servidor web não sobe se a chave faltar, for a padrão ou tiver menos de 32 caracteres (os jobs agendados só registram erro). No Render ela é gerada (`generateValue`); o cron job usa a mesma chave, copie o valor do serviço web.
+- **CORS:** `CORS_ORIGINS` vazio ou `*` em produção vira só `FRONTEND_URL`, `SITE_URL` e `www.` do site. Recomendado: `https://app.kasiski.com.br,https://kasiski.com.br,https://www.kasiski.com.br`.
+- **Webhook do Mercado Pago:** em produção, sem `MP_WEBHOOK_SECRET` os avisos são recusados (401) e o log avisa na subida. Avisos com carimbo de tempo de mais de 24h também são recusados (replay).
+- **Limites por IP** (contados no banco, valem para os 2 processos): 20 senhas erradas por IP a cada 15 min (`LOGIN_FALHAS_IP`), 5 cadastros por IP por hora (`CADASTROS_IP_HORA`), 15 pedidos de código por hora e 30 tentativas de código (`CODIGOS_IP_HORA`). Somam-se ao bloqueio por conta (5 senhas erradas → 15 min).
+- **Cabeçalhos:** a API envia `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, CSP `default-src 'none'` e HSTS. Os dois sites no Netlify recebem `_headers` gerado por `site/seguranca.py` (CSP liberando só GTM/GA4/Google Ads, LinkedIn, Meta, Turnstile, Google Fonts e a API). Serviço novo = incluir o domínio em `site/seguranca.py` e rodar `python site/gerar.py`.
+
+## Prospecção ativa (Admin → Marketing → Prospecção)
+Usa a própria inteligência do Kasiski para achar clientes: quem vence licitação é quem precisa do Kasiski.
+- **Busca por segmento** (termos + UFs + período): lê no PNCP contratos e atas recentes (`pncp.buscar_documentos`, até 150 por termo e tipo), identifica os vencedores (`fornecedor_do_contrato`, `resultados_da_compra`) e agrega por CNPJ: vitórias, valor, órgãos, UFs, meses ativos, primeira/última vitória. Roda em segundo plano (até ~15 min), uma busca por vez.
+- **Dados da Receita** (BrasilAPI, com pausa entre consultas): porte, CNAE, situação, capital, Simples, telefone e e-mail do cadastro (muitas vezes do contador) e QSA. Só os mais promissores (até 120 por busca), revalidados a cada 60 dias.
+- **Lead Score Kasiski (0–100, faixas A/B/C/D)** em `services/prospeccao.pontuar`: volume de vitórias (ponto ótimo 5–50/ano), órgãos distintos, recorrência, recência, porte (ME/EPP pontua mais), atuação em várias UFs e valor médio. Empresa inativa = 0. Sugere o plano (Consultor para CNAE de consultoria/apoio administrativo).
+- **Abordagem por LinkedIn e telefone**: cada empresa tem mensagens prontas com os números dela (pedido de conexão, mensagem e roteiro de ligação), situação (novo → contatado → respondeu → no CRM → cliente) e anotações. **Não há envio de e-mail em massa** (o Resend proíbe listas sem consentimento).
+- **Relatório gratuito** por empresa em `kasiski.com.br/r/<token>` (redireciona para `/relatorio/?t=` com UTMs `prospeccao/outbound`, página sem indexação): vitórias, órgãos, contratações recentes, quem mais vence no segmento e editais abertos agora (cache de 12h). A visita é registrada (a lista mostra "abriu o relatório") e o CTA leva ao teste grátis com atribuição ao canal "Prospecção ativa". Link "Não quero receber contatos" = oposição (LGPD art. 18, §2º): status `nao_contatar`, some do relatório e de todas as listas.
+- **CRM e fechamento do ciclo**: "Enviar ao CRM" cria o lead (origem `prospeccao_pncp`, canal `outbound`). Quando alguém cadastra uma empresa com o mesmo CNPJ, o prospect vira "cliente" e o evento `prospect_converted` entra no funil.
+- **LGPD**: base de legítimo interesse (art. 7º, IX, §§3º e 4º) para prospecção B2B com dados públicos de pessoa jurídica; a Política de Privacidade descreve o tratamento. Recomendado manter um registro do teste de balanceamento (LIA).
+
+## Armazenamento (Admin → Armazenamento)
+- **Painel:** uso do banco (total e as 15 maiores tabelas, com tamanho e linhas) e do disco de arquivos, com alerta a partir de 70% na tela e por e-mail aos administradores (no máximo a cada 3 dias, pelo job diário). Variáveis: `DB_LIMITE_GB` (espaço contratado do PostgreSQL, padrão 1) e, opcionalmente, `DISCO_LIMITE_GB` (vazio = lê o disco montado em `/var/data`).
+- **Índices** criados na subida (`services/armazenamento.criar_indices`): trigram (`pg_trgm`) em `item_referencia.termos` e `prospect.razao_social`, e índices em `item_referencia (tabela_id, codigo)` e `evento (criado_em)`.
+- **Limpeza diária:** itens de tabelas de preços desativadas há mais de 30 dias (a tabela fica no histórico com "Itens removidos"; para usar de novo, reimporte) e eventos com mais de 24 meses; `VACUUM` depois de limpezas grandes. Botão "Rodar limpeza agora" no painel.
+
+## Tabela de planos 2026 (Free → Essencial → Profissional → Business → Consultor → Enterprise)
+Fonte única: `backend/planos.py` (o site confere os valores em `/api/planos` ao carregar; `site/conteudo.py` é a cópia usada para gerar as páginas).
+
+| | Free | Essencial | Profissional | Business | Consultor |
+|---|---|---|---|---|---|
+| Preço/mês | R$ 0 | R$ 97 | R$ 247 | R$ 497 | R$ 797 |
+| Empresas · usuários | 1 · 1 | 1 · 1 | 1 · 3 | 3 · 7 | 10 · 10 |
+| Editais com IA/mês | 1 | 5 | 20 | 50 | 80 |
+| Concorrentes · possíveis/mês | 1 · 1 | 3 · 3 | 15 · 10 | 40 · 25 | 60 · 40 |
+| Peças com IA/mês | — | — | 20 | 50 | 80 |
+| Preços e propostas | — | — | ✓ | ✓ | ✓ |
+| Contratos | — | — | 10 | 30 | 50 |
+| Limites de volume | radar 10 melhores, cofre 15 arquivos, 5 oportunidades | — | — | — | — |
+
+- **Free para sempre.** Cadastro novo = Free. Botão "Experimentar o Profissional por 7 dias" (uma vez por conta): durante o teste a conta usa os limites do Profissional e, no fim, volta sozinha ao Free sem perder nada. Assinatura vencida além da carência também volta ao Free (antes ia para "suspenso").
+- **Enterprise** sob consulta (definido pelo admin, com `preco_contratado`). **Anual** = 10 mensalidades.
+- **Pacote de inteligência** (R$ 97, avulso): 125 créditos por 60 dias (+10 análises de edital e +5 de concorrentes); o uso acima do limite desconta créditos (`planos.CREDITOS`: edital 10, concorrente 5, possíveis 2, peça 3). **Empresa adicional** R$ 49/mês (Business e Consultor), recorrente ou avulsa.
+- **Equipe:** Plano e conta → Equipe: o responsável (papel `dono`) convida por e-mail (link vale 7 dias, `#/convite?t=`), respeitando o limite de usuários (convites pendentes contam). Membros veem as mesmas empresas e editais.
+- **Transição de quem já assinava:** na subida do servidor, cada conta antiga é migrada uma vez (`Conta.tabela_precos`): Essencial R$ 197 → Profissional, Profissional R$ 497 → Business, Avançado R$ 799 e Consultor R$ 1.290 → Consultor, mantendo o valor pago em `preco_contratado` (o cliente paga o menor entre esse valor e a tabela). Pagamentos e assinaturas criados na tabela antiga continuam reconhecidos pelo valor. Admin → Planos e margem mostra os assinantes da tabela antiga e reduz no Mercado Pago as assinaturas que pagam acima da tabela nova.
+- **Admin → Planos e margem:** custo de IA por uso (média real dos últimos 90 dias; estimativa enquanto houver menos de 5 usos), CMV e margem bruta de cada plano no uso máximo e o gasto real médio por conta.

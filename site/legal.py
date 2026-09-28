@@ -32,10 +32,11 @@ ferramentas gratuitas e na plataforma, conforme a Lei 13.709/2018 (Lei Geral de 
 <ul>
 <li><b>Prestar o serviço contratado</b> (conta, análises, radar, alertas, cobrança) — execução de contrato (art. 7º, V).</li>
 <li><b>Entregar o resultado das ferramentas gratuitas e responder contatos</b> — procedimentos preliminares a contrato, a pedido do titular (art. 7º, V).</li>
-<li><b>E-mails de orientação sobre o uso da plataforma e do teste grátis</b> — legítimo interesse (art. 7º, IX), com descadastro em um clique em todo e-mail.</li>
+<li><b>E-mails de orientação sobre o uso da plataforma e do teste do Profissional</b> — legítimo interesse (art. 7º, IX), com descadastro em um clique em todo e-mail.</li>
 <li><b>Newsletter Kasiski Intelligence</b> — consentimento (art. 7º, I), com confirmação por e-mail e descadastro a qualquer tempo.</li>
 <li><b>Medição própria de uso do site</b> (sem compartilhar com terceiros) — legítimo interesse (art. 7º, IX); você pode desativá-la em <a href="#" data-preferencias-cookies>Preferências de cookies</a>.</li>
 <li><b>Cookies de medição de terceiros e de marketing</b> (Google Analytics, Google Ads, LinkedIn, Meta) — consentimento (art. 7º, I), só depois da sua escolha no banner.</li>
+<li><b>Prospecção comercial B2B</b> — a partir de dados públicos de empresas que vendem à Administração (contratos e atas publicados no PNCP e cadastro de CNPJ da Receita Federal, inclusive o quadro de sócios), identificamos empresas que podem se beneficiar do Kasiski e fazemos contato comercial por telefone ou LinkedIn — legítimo interesse (art. 7º, IX, e §§ 3º e 4º), limitado a dados de pessoa jurídica e dados tornados públicos por lei. Você pode se opor a qualquer momento pelo link "Não quero receber contatos do Kasiski" no relatório enviado ou pelo e-mail do encarregado; a empresa sai de todas as listas.</li>
 <li><b>Segurança, prevenção a fraudes e abusos e cumprimento de obrigações legais</b> (inclusive guarda de registros de acesso por 6 meses, Lei 12.965/2014, art. 15) — obrigação legal (art. 7º, II) e legítimo interesse.</li>
 </ul>
 <h2>4. Com quem compartilhamos</h2>
@@ -50,6 +51,7 @@ como cláusulas contratuais e garantias de proteção oferecidas pelos prestador
 <ul>
 <li><b>Conta e conteúdo:</b> enquanto a conta estiver ativa; depois do encerramento, pelo prazo necessário a obrigações legais e ao exercício de direitos (em regra, até 5 anos).</li>
 <li><b>PDF enviado à análise gratuita:</b> apagado em 7 dias, salvo se você criar conta com o mesmo e-mail e o edital for importado para ela.</li>
+<li><b>Prospecção:</b> enquanto a empresa aparecer em contratações públicas recentes (até 24 meses sem atividade); pedidos de oposição ficam guardados para impedir novo contato.</li>
 <li><b>Registros de acesso:</b> 6 meses. <b>Dados de leads e newsletter:</b> até o descadastro ou 24 meses sem interação.</li>
 </ul>
 <h2>7. Seus direitos</h2>
@@ -104,8 +106,8 @@ analisar editais, organizar documentos, apoiar a formação de preços, gerar mi
 <h2>2. Conta</h2>
 <p>Você deve informar dados verdadeiros, manter a senha em sigilo e responder pelo uso da conta. O cadastro de empresas deve ser feito por quem
 tem poderes para representá-las ou autorização para tanto.</p>
-<h2>3. Teste grátis, planos e pagamento</h2>
-<p>O teste grátis dura 7 dias, com os limites informados na página de planos. Os planos pagos são mensais ou anuais, cobrados pelo Mercado Pago.
+<h2>3. Plano Free, teste do Profissional, planos e pagamento</h2>
+<p>O plano Free é gratuito e por prazo indeterminado, com os limites informados na página de planos. Cada conta pode experimentar o plano Profissional uma vez, por 7 dias, sem cobrança; ao fim, a conta volta ao Free. O Kasiski pode alterar os limites do Free mediante aviso prévio. Os planos pagos são mensais ou anuais, cobrados pelo Mercado Pago.
 Assinaturas com cartão renovam automaticamente até o cancelamento; pagamentos por Pix ou boleto valem pelo ciclo pago. O cancelamento pode ser
 feito a qualquer momento em “Plano e conta”, com acesso mantido até o fim do período pago. Quando a contratação for regida pelo Código de Defesa
 do Consumidor, fica assegurado o direito de arrependimento em 7 dias (art. 49 da Lei 8.078/1990).</p>

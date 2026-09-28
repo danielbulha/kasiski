@@ -11,17 +11,9 @@ APP_ENTRAR = APP_URL + "/#/entrar"
 
 # Planos exibidos na página inicial. A fonte oficial é backend/planos.py: a página confere os valores na API
 # (/api/planos) ao carregar, então mudanças de preço aparecem mesmo sem gerar o site de novo.
-TRIAL_DIAS = 7
-PLANOS = {
-    "trial": {"nome": "Teste grátis", "preco": 0, "empresas": 1, "analises": 2, "concorrentes": 1, "possiveis": 1, "pecas": True, "precos": True, "propostas": False, "contratos": 1, "marca": False},
-    "essencial": {"nome": "Essencial", "preco": 197, "empresas": 1, "analises": 5, "concorrentes": 0, "possiveis": 2, "pecas": False, "precos": False, "propostas": False, "contratos": 0, "marca": False},
-    "profissional": {"nome": "Profissional", "preco": 497, "empresas": 1, "analises": 20, "concorrentes": 5, "possiveis": 5, "pecas": True, "precos": True, "propostas": False, "contratos": 10, "marca": False},
-    "avancado": {"nome": "Avançado", "preco": 799, "empresas": 3, "analises": 40, "concorrentes": 15, "possiveis": 15, "pecas": True, "precos": True, "propostas": True, "contratos": 30, "marca": False},
-    "consultor": {"nome": "Consultor", "preco": 1290, "empresas": 10, "analises": 60, "concorrentes": 30, "possiveis": 25, "pecas": True, "precos": True, "propostas": True, "contratos": 50, "marca": True},
-}
-PUBLICO_PLANO = {"essencial": "Para quem está começando a licitar", "profissional": "Para empresas que disputam todo mês",
-                 "avancado": "Para quem quer a proposta pronta, com preço calculado", "consultor": "Para escritórios e consultorias de licitação"}
-SELO_PLANO = {"profissional": "Indicado para PMEs", "avancado": "Proposta comercial com IA"}
+TRIAL_DIAS = 7   # teste do Profissional dentro do Free
+ORDEM_PLANOS = ['free', 'essencial', 'profissional', 'business', 'consultor', 'enterprise']
+PLANOS = {'free': {'nome': 'Free', 'preco': 0, 'slogan': 'Conheça o seu mercado', 'publico': 'Para conhecer o Kasiski', 'empresas': 1, 'usuarios': 1, 'analises': 1, 'concorrentes': 1, 'possiveis': 1, 'pecas': 0, 'precos': False, 'propostas': False, 'contratos': 0, 'marca': False, 'prioridade': False, 'radar_max': 10, 'cofre_max': 15, 'oportunidades_max': 5, 'empresa_extra': None}, 'essencial': {'nome': 'Essencial', 'preco': 97, 'slogan': 'Comece sua operação B2G', 'publico': 'Para quem está começando a licitar', 'empresas': 1, 'usuarios': 1, 'analises': 5, 'concorrentes': 3, 'possiveis': 3, 'pecas': 0, 'precos': False, 'propostas': False, 'contratos': 0, 'marca': False, 'prioridade': False, 'radar_max': None, 'cofre_max': None, 'oportunidades_max': None, 'empresa_extra': None}, 'profissional': {'nome': 'Profissional', 'preco': 247, 'slogan': 'Transforme oportunidades em decisões', 'publico': 'Para empresas que disputam todo mês', 'destaque': True, 'empresas': 1, 'usuarios': 3, 'analises': 20, 'concorrentes': 15, 'possiveis': 10, 'pecas': 20, 'precos': True, 'propostas': True, 'contratos': 10, 'marca': False, 'prioridade': False, 'radar_max': None, 'cofre_max': None, 'oportunidades_max': None, 'empresa_extra': None}, 'business': {'nome': 'Business', 'preco': 497, 'slogan': 'Gerencie sua operação B2G', 'publico': 'Para operações B2G estruturadas', 'empresas': 3, 'usuarios': 7, 'analises': 50, 'concorrentes': 40, 'possiveis': 25, 'pecas': 50, 'precos': True, 'propostas': True, 'contratos': 30, 'marca': False, 'prioridade': True, 'radar_max': None, 'cofre_max': None, 'oportunidades_max': None, 'empresa_extra': 49}, 'consultor': {'nome': 'Consultor', 'preco': 797, 'slogan': 'Atenda seus clientes em escala', 'publico': 'Para consultorias e escritórios de licitação', 'empresas': 10, 'usuarios': 10, 'analises': 80, 'concorrentes': 60, 'possiveis': 40, 'pecas': 80, 'precos': True, 'propostas': True, 'contratos': 50, 'marca': True, 'prioridade': True, 'radar_max': None, 'cofre_max': None, 'oportunidades_max': None, 'empresa_extra': 49}, 'enterprise': {'nome': 'Enterprise', 'preco': None, 'slogan': 'Para grandes operações', 'publico': 'Sob consulta', 'empresas': 50, 'usuarios': 50, 'analises': 300, 'concorrentes': 200, 'possiveis': 150, 'pecas': 300, 'precos': True, 'propostas': True, 'contratos': 300, 'marca': True, 'prioridade': True, 'radar_max': None, 'cofre_max': None, 'oportunidades_max': None, 'empresa_extra': 49}}
 
 # Controlador dos dados pessoais (Política de Privacidade, Termos). Preencha CNPJ e endereço antes de publicar.
 EMPRESA = {
@@ -50,7 +42,7 @@ SOLUCOES = [
      "pontos": [("Fit da oportunidade", "Aderência da habilitação da sua empresa ao edital, combinada com a recomendação da IA."),
                 ("Risco em um olhar", "Cláusulas restritivas e riscos contratuais classificados por gravidade, conferidos por uma segunda IA."),
                 ("Histórico de decisões", "Go e No-Go com motivo registrado: a próxima decisão fica mais rápida e melhor.")],
-     "cta": "Testar grátis", "lp": "/lp/analisar-edital/"},
+     "cta": "Criar conta grátis", "lp": "/lp/analisar-edital/"},
     {"slug": "concorrentes", "nome": "Inteligência de concorrentes", "icone": "concorrentes",
      "titulo": "Saiba quem você vai enfrentar antes da sessão",
      "descricao": "Dossiê do concorrente com dados da Receita, sanções no TCU e na CGU, contratos e atas no PNCP, inabilitações anteriores e pontos de ataque para recursos.",
@@ -71,21 +63,21 @@ SOLUCOES = [
      "pontos": [("Preços praticados", "Pesquisa por CATMAT/CATSER e referências oficiais carregadas pela equipe Kasiski."),
                 ("BDI e tributos", "Formação de preço com BDI (fórmula do Acórdão TCU 2.622/2013) e tributos do regime da empresa."),
                 ("Alerta de exequibilidade", "Aviso quando o preço fica abaixo dos limites que costumam levar à desclassificação.")],
-     "cta": "Testar grátis", "lp": "/lp/software-licitacoes/"},
+     "cta": "Criar conta grátis", "lp": "/lp/software-licitacoes/"},
     {"slug": "propostas", "nome": "Propostas comerciais", "icone": "propostas",
      "titulo": "Proposta comercial pronta em minutos, no padrão do edital",
      "descricao": "Itens com formação de preço, minuta redigida pela IA a partir das regras do edital e exportação para Word.",
      "pontos": [("Regras do edital lidas pela IA", "Validade, prazo de entrega, garantia e declarações exigidas entram na minuta."),
                 ("Planilha e texto juntos", "Formação de preço item a item e a proposta redigida no mesmo lugar."),
                 ("Exportação para Word", "Documento pronto para revisar, assinar e enviar ao portal.")],
-     "cta": "Testar grátis", "lp": "/lp/software-licitacoes/"},
+     "cta": "Criar conta grátis", "lp": "/lp/software-licitacoes/"},
     {"slug": "gestao-contratos", "nome": "Gestão de contratos", "icone": "contratos",
      "titulo": "Contrato ganho é contrato bem gerido",
      "descricao": "Envie o PDF do contrato: a IA extrai vigência, garantia, reajuste e rotinas; o Kasiski avisa prorrogações, reajustes e pagamentos atrasados.",
      "pontos": [("Prazos preventivos", "Prorrogação avisada com 120 e 60 dias de antecedência, renovação da garantia e data-base do reajuste."),
                 ("Rotinas mensais", "Medição, faturamento e envio de documentos com lembrete diário por e-mail."),
                 ("Pagamentos em atraso", "Controle de recebimentos e requerimento de pagamento gerado pela IA.")],
-     "cta": "Testar grátis", "lp": "/lp/software-licitacoes/"},
+     "cta": "Criar conta grátis", "lp": "/lp/software-licitacoes/"},
 ]
 
 # ---------------------------------------------------------------- landing pages de campanha (/lp/...)
@@ -96,7 +88,7 @@ LPS = [
      "ferramenta": "analisar_edital",
      "provas": ["Checklist de habilitação por categoria", "Cláusulas restritivas à luz da Lei 14.133/2021", "Nota de participação de 0 a 100"]},
     {"slug": "software-licitacoes", "titulo": "O software de licitações que decide com você",
-     "subtitulo": "Radar no PNCP, análise de edital com IA, concorrentes, preços, propostas e contratos em um só lugar. Teste grátis por 7 dias, sem cartão.",
+     "subtitulo": "Radar no PNCP, análise de edital com IA, concorrentes, preços, propostas e contratos em um só lugar. Comece grátis, sem cartão.",
      "descricao": "Software de licitações com IA: radar de editais no PNCP, análise de edital, Go/No-Go, concorrentes, preços e gestão de contratos.",
      "ferramenta": "cadastro",
      "provas": ["Radar diário no PNCP com nota de aderência", "Análise de edital conferida por uma segunda IA", "Pipeline de oportunidades do edital ao contrato"]},

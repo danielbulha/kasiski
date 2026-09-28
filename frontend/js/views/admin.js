@@ -1,14 +1,15 @@
 // Administração: CRM de contas (testes e assinaturas), funil de conversão, receitas e revisões.
 const ETAPAS_CRM = {
   cadastrado: ["Cadastrado", "neutro"], ativado: ["Empresa cadastrada", "neutro"], engajado: ["Usou a IA", "oficio"],
-  teste_expirado: ["Teste expirado", "aviso"], assinante: ["Assinante", "ok"], cancelando: ["Cancelou (ainda ativo)", "aviso"],
+  em_teste: ["Testando o Profissional", "oficio"], teste_expirado: ["Voltou ao Free", "aviso"], assinante: ["Assinante", "ok"], cancelando: ["Cancelou (ainda ativo)", "aviso"],
   inadimplente: ["Inadimplente", "erro"], cancelado: ["Cancelado", "neutro"], suspenso: ["Suspenso", "erro"],
 };
 const FILTROS_CRM = [
   ["todos", "Todos", () => true],
-  ["teste", "Em teste", (c) => c.plano === "trial" && c.etapa !== "teste_expirado"],
+  ["teste", "Testando o Profissional", (c) => c.etapa === "em_teste"],
+  ["free", "Free", (c) => c.plano === "free" && c.etapa !== "em_teste"],
   ["expirando", "Teste acaba em 48h", (c) => c.dias_trial !== null && c.dias_trial >= 0 && c.dias_trial <= 2],
-  ["expirado", "Teste expirado", (c) => c.etapa === "teste_expirado"],
+  ["expirado", "Teste acabou (Free)", (c) => c.etapa === "teste_expirado"],
   ["assinantes", "Assinantes", (c) => ["assinante", "cancelando"].includes(c.etapa)],
   ["inadimplentes", "Inadimplentes", (c) => ["inadimplente", "suspenso"].includes(c.etapa)],
   ["cancelados", "Cancelados", (c) => ["cancelado", "cancelando"].includes(c.etapa)],
@@ -19,7 +20,7 @@ V.admin = async (el) => {
   el.innerHTML = `
     <div class="cabecalho"><h1>Administração</h1><button class="botao pequeno secundario" id="teste-email">Testar envio de e-mail</button></div>
     <div class="abas" role="tablist">
-      ${[["crm", "Clientes e testes"], ["marketing", "Marketing"], ["funil", "Funil de conversão"], ["receitas", "Receitas"], ["tabelas", "Tabelas de preços"], ["revisoes", "Pedidos de advogado"], ["atendimento", "Atendimento"], ["logs", "Logs de erros"]]
+      ${[["crm", "Clientes e testes"], ["marketing", "Marketing"], ["funil", "Funil de conversão"], ["receitas", "Receitas"], ["tabelas", "Tabelas de preços"], ["revisoes", "Pedidos de advogado"], ["atendimento", "Atendimento"], ["planos", "Planos e margem"], ["logs", "Logs de erros"], ["armazenamento", "Armazenamento"]]
         .map(([k, t]) => `<button role="tab" data-a-aba="${k}" class="${aba === k ? "ativa" : ""}" aria-selected="${aba === k}">${t}</button>`).join("")}
     </div>
     <div id="painel-admin"><p class="carregando">Carregando…</p></div>`;
@@ -50,6 +51,8 @@ V.admin = async (el) => {
     else if (aba === "receitas") await abaReceitas(painel);
     else if (aba === "tabelas") await abaTabelasAdmin(painel);
     else if (aba === "logs") await abaLogs(painel);
+    else if (aba === "armazenamento") await abaArmazenamento(painel);
+    else if (aba === "planos") await abaPlanosAdmin(painel);
     else if (aba === "atendimento") await abaAtendimento(painel);
     else desenharRevisoes(painel, await api("GET", "/api/admin/revisoes"));
   } catch (e) { painel.innerHTML = erroTela(e); }
@@ -65,7 +68,7 @@ async function abaCrm(el) {
   const estado = { filtro: V.admin.filtro || "todos", busca: "" };
   el.innerHTML = `
     <section class="bloco"><div class="grade grade-4 grade-kpi">
-      ${indicador(r.testes_ativos, "testes grátis ativos")}
+      ${indicador(`${r.testes_ativos} · ${r.contas_free ?? 0}`, "testando o Profissional · contas Free")}
       ${indicador(r.testes_expirando, "testes terminando em 48h", r.testes_expirando > 0)}
       ${indicador(r.assinantes, "assinantes")}
       ${indicador(r.inadimplentes, "inadimplentes", r.inadimplentes > 0)}
@@ -93,7 +96,7 @@ async function abaCrm(el) {
 function linhaCrm(c) {
   const email = c.usuarios[0]?.email || "";
   let acesso = "—";
-  if (c.plano === "trial" && c.dias_trial !== null) acesso = c.dias_trial < 0 ? `acabou há ${-c.dias_trial}d` : c.dias_trial === 0 ? "acaba hoje" : `${c.dias_trial} dia(s)`;
+  if (c.dias_trial !== null) acesso = c.dias_trial < 0 ? `acabou há ${-c.dias_trial}d` : c.dias_trial === 0 ? "acaba hoje" : `${c.dias_trial} dia(s)`;
   else if (c.pago_ate) acesso = `até ${fmt.data(c.pago_ate)}`;
   const limite = typeof c.limite_analises === "number" ? ` / ${c.limite_analises}` : "";
   return `<tr>
@@ -131,7 +134,8 @@ async function modalConta(id, aoSalvar) {
       </div>
       <div class="linha-campos">
         <div class="campo"><label for="crm-pago">Acesso pago até</label><input id="crm-pago" type="date" name="pago_ate" value="${fmt.paraInput(c.pago_ate)}"></div>
-        <div class="campo"><label for="crm-trial">Fim do teste grátis</label><input id="crm-trial" type="date" name="trial_fim" value="${fmt.paraInput(c.trial_fim)}"></div>
+        <div class="campo"><label for="crm-preco">Valor contratado (legado, R$/mês)</label><input id="crm-preco" name="preco_contratado" inputmode="decimal" value="${c.preco_contratado ?? ""}" placeholder="tabela"></div>
+        <div class="campo"><label for="crm-trial">Fim do teste do Profissional</label><input id="crm-trial" type="date" name="trial_fim" value="${fmt.paraInput(c.trial_fim)}"></div>
         <div class="campo"><label for="crm-tel">Telefone</label><input id="crm-tel" name="telefone" value="${esc(c.telefone || "")}"></div>
         <div class="campo"><label for="crm-etq">Etiqueta</label><input id="crm-etq" name="etiqueta_crm" list="etiquetas-crm" value="${esc(c.etiqueta_crm || "")}">
           <datalist id="etiquetas-crm"><option value="quente"><option value="negociando"><option value="sem resposta"><option value="perdido"></datalist></div>
@@ -322,9 +326,9 @@ async function abaTabelasAdmin(el) {
       <p class="fraco">Consultadas por todos os clientes na formação de preço e pela IA ao revisar as propostas. Ao sair nova data-base, envie a tabela nova e desative a antiga.</p>
       ${d.tabelas.length ? `<div class="tabela-rolagem"><table><thead><tr><th>Tabela</th><th>Fonte</th><th>UF</th><th>Data-base</th><th>Itens</th><th>Situação</th><th></th></tr></thead>
         <tbody>${d.tabelas.map((t) => `<tr><td><b>${esc(t.nome)}</b>${t.observacao ? `<br><small>${esc(t.observacao)}</small>` : ""}</td><td>${esc(d.fontes[t.fonte] || t.fonte)}</td>
-          <td>${esc(t.uf || "todas")}</td><td>${fmt.data(t.data_base)}</td><td>${fmt.num(t.n_itens, 0)}</td>
-          <td>${t.ativa ? carimbo("Ativa", "ok") : carimbo("Inativa", "neutro")}</td>
-          <td class="acoes-celula"><button class="botao pequeno secundario" data-ativar="${t.id}" data-valor="${t.ativa ? "0" : "1"}">${t.ativa ? "Desativar" : "Ativar"}</button>
+          <td>${esc(t.uf || "todas")}${t.desonerado === true ? "<br><small>desonerado</small>" : t.desonerado === false ? "<br><small>não desonerado</small>" : ""}</td><td>${fmt.data(t.data_base)}</td><td>${fmt.num(t.n_itens, 0)}</td>
+          <td>${t.ativa ? carimbo("Ativa", "ok") : t.itens_removidos_em ? carimbo("Itens removidos", "neutro") : carimbo("Inativa", "neutro")}${!t.ativa && t.desativada_em && !t.itens_removidos_em ? `<br><small class="fraco">itens apagados 30 dias após ${fmt.data(t.desativada_em)}</small>` : ""}</td>
+          <td class="acoes-celula">${t.itens_removidos_em ? "" : `<button class="botao pequeno secundario" data-ativar="${t.id}" data-valor="${t.ativa ? "0" : "1"}">${t.ativa ? "Desativar" : "Ativar"}</button>`}
             <button class="botao texto pequeno" data-excluir-tab="${t.id}">${icone("excluir", 14)} Excluir</button></td></tr>`).join("")}</tbody></table></div>`
         : vazio("Nenhuma tabela ainda", "Envie a primeira planilha abaixo.")}</section>
     <section class="bloco"><h2>Enviar tabela</h2>
@@ -348,9 +352,10 @@ async function abaTabelasAdmin(el) {
     const opcoes = (sel) => `<option value="-1">— não usar —</option>` + pv.colunas.map((c, i) => `<option value="${i}" ${sel === i ? "selected" : ""}>${esc(c || `coluna ${i + 1}`)}</option>`).join("");
     const nomeArq = arq.files[0].name.replace(/\.[^.]+$/, "");
     previa.innerHTML = `
-      <p class="fraco">Cabeçalho encontrado na linha ${pv.linha_cabecalho + 1}. Confira as colunas:</p>
+      <p class="fraco">Cabeçalho encontrado na linha ${pv.linha_cabecalho + 1}.${pv.perfil ? ` Formato reconhecido: <b>${esc(d.fontes[pv.perfil] || pv.perfil)}</b>.` : ""} Confira as colunas.
+        Todas as outras colunas também são guardadas: ${pv.colunas_preco.length} coluna(s) de preço${pv.perfil === "cmed" ? " (PF e PMVG por alíquota de ICMS: o Kasiski escolhe a do estado do órgão)" : ""} e as informativas (laboratório, registro, CAP, tarja...).</p>
       <div class="linha-campos mapa-colunas">
-        ${[["descricao", "Descrição *"], ["preco", "Preço *"], ["codigo", "Código"], ["unidade", "Unidade"]].map(([k, t]) =>
+        ${[["descricao", "Descrição *"], ["preco", "Preço principal *"], ["codigo", "Código"], ["unidade", "Unidade"], ...(pv.perfil === "cmed" ? [["apresentacao", "Apresentação (junta à descrição)"]] : [])].map(([k, t]) =>
           `<div class="campo"><label for="tb-${k}">${t}</label><select id="tb-${k}" name="col_${k}">${opcoes(pv.sugestao[k])}</select></div>`).join("")}
       </div>
       <div class="tabela-rolagem" style="margin-bottom:14px"><table><thead><tr>${pv.colunas.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead>
@@ -358,7 +363,8 @@ async function abaTabelasAdmin(el) {
       <input type="hidden" name="linha_cabecalho" value="${pv.linha_cabecalho}">
       <div class="linha-campos">
         <div class="campo"><label for="tb-nome">Nome da tabela *</label><input id="tb-nome" name="nome" required value="${esc(nomeArq)}" placeholder="Ex.: SINAPI SP 09/2026 não desonerado"></div>
-        <div class="campo"><label for="tb-fonte">Fonte</label><select id="tb-fonte" name="fonte">${Object.entries(d.fontes).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select></div>
+        <div class="campo"><label for="tb-fonte">Fonte</label><select id="tb-fonte" name="fonte">${Object.entries(d.fontes).map(([k, v]) => `<option value="${k}" ${k === pv.perfil ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></div>
+        <div class="campo"><label for="tb-des">Desoneração (SINAPI/SICRO)</label><select id="tb-des" name="desonerado"><option value="">Não se aplica</option><option value="nao">Não desonerado</option><option value="sim">Desonerado</option></select></div>
         <div class="campo"><label for="tb-uf">UF</label><input id="tb-uf" name="uf" maxlength="2" placeholder="vazio = nacional"></div>
         <div class="campo"><label for="tb-data">Data-base</label><input id="tb-data" name="data_base" type="date"></div>
       </div>
@@ -504,21 +510,22 @@ async function modalAtendimento(id, aoSalvar) {
 const STATUS_LEAD = { novo: ["Novo", "neutro"], engajado: ["Engajado", "neutro"], mql: ["MQL", "aviso"], sql: ["SQL — quente", "erro"],
   trial: ["Trial", "oficio"], ativado: ["Ativado", "oficio"], oportunidade: ["Oportunidade", "aviso"], assinante: ["Assinante", "ok"], perdido: ["Perdido", "neutro"] };
 const NOMES_CANAL_ADM = { busca_paga: "Busca paga (Google Ads)", social_pago: "Social pago", busca_organica: "Busca orgânica (SEO)", social: "Redes sociais",
-  email: "E-mail / newsletter", parceiro: "Parceiros", indicacao: "Sites que indicaram", direto: "Direto / desconhecido" };
+  email: "E-mail / newsletter", outbound: "Prospecção ativa (outbound)", parceiro: "Parceiros", indicacao: "Sites que indicaram", direto: "Direto / desconhecido" };
 const ISCAS = { analisar_edital: "Analisador de edital", consultar_concorrente: "Consulta de concorrente", newsletter: "Newsletter", diagnostico: "Diagnóstico B2G", consultorias: "Página de consultorias",
-  contato: "Contato", checklist: "Checklist", "cadastro direto": "Cadastro direto" };
+  contato: "Contato", checklist: "Checklist", prospeccao: "Prospecção ativa (PNCP)", "cadastro direto": "Cadastro direto" };
 const moedaOuTraco = (v) => (v === null || v === undefined ? "—" : fmt.moeda(v));
 const pctOuTraco = (v) => (v === null || v === undefined ? "—" : `${fmt.num(v, 1)}%`);
 
 async function abaMarketing(el) {
   const sub = V.admin.mk || "visao";
   el.innerHTML = `<div class="chips mk-abas" role="tablist" aria-label="Marketing">${[["visao", "Visão geral"], ["canais", "Canais e campanhas"], ["leads", "Leads"],
-    ["ferramentas", "Ferramentas grátis"], ["newsletter", "Newsletter"], ["automacoes", "Automações de e-mail"], ["investimentos", "Investimentos"]]
+    ["prospeccao", "Prospecção"], ["ferramentas", "Ferramentas grátis"], ["newsletter", "Newsletter"], ["automacoes", "Automações de e-mail"], ["investimentos", "Investimentos"]]
     .map(([k, t]) => `<button data-mk="${k}" aria-pressed="${sub === k}">${t}</button>`).join("")}</div><div id="mk-corpo"><p class="carregando">Carregando…</p></div>`;
   $$("[data-mk]", el).forEach((b) => b.onclick = () => { V.admin.mk = b.dataset.mk; abaMarketing(el); });
   const c = $("#mk-corpo", el);
   try {
     if (sub === "leads") await mkLeads(c);
+    else if (sub === "prospeccao") await mkProspeccao(c);
     else if (sub === "newsletter") await (V.admin.nlEdicao ? mkNewsletterEditor(c, V.admin.nlEdicao) : mkNewsletter(c));
     else if (sub === "automacoes") await mkAutomacoes(c);
     else if (sub === "investimentos") await mkInvestimentos(c);
@@ -625,7 +632,7 @@ async function mkLeads(el) {
   $("[data-csv]", el).onclick = () => baixarCsv(false);
 }
 
-const NOMES_EVENTO = { page_view: "Visitou o site", cta_click: "Clicou em um CTA", pricing_view: "Viu os planos", generate_lead: "Deixou o contato", tool_started: "Usou uma ferramenta grátis",
+const NOMES_EVENTO = { prospect_report_view: "Abriu o relatório da prospecção", prospect_converted: "Empresa prospectada virou cliente", page_view: "Visitou o site", cta_click: "Clicou em um CTA", pricing_view: "Viu os planos", generate_lead: "Deixou o contato", tool_started: "Usou uma ferramenta grátis",
   edital_free_analysis: "Análise gratuita de edital", diagnostic_completed: "Fez o diagnóstico B2G", checklist_import: "Montou o checklist para importar", checklist_download: "Baixou o checklist", competitor_search: "Consultou concorrente", sign_up: "Criou conta", trial_started: "Iniciou o teste", company_created: "Cadastrou a empresa",
   radar_configured: "Configurou o radar", edital_added: "Adicionou edital", edital_analyzed: "Analisou edital (IA)", competitor_analyzed: "Analisou concorrente", document_uploaded: "Enviou documento ao cofre",
   proposal_generated: "Gerou proposta", legal_document_generated: "Gerou peça", begin_checkout: "Abriu o pagamento", purchase: "Pagou", subscription_cancelled: "Cancelou a assinatura", visita: "Visitou a página inicial", cta: "Clicou em testar grátis" };
@@ -884,4 +891,175 @@ async function mkNewsletterEditor(el, id) {
     try { await api("DELETE", `/api/admin/marketing/newsletter/${id}`); V.admin.nlEdicao = null; mkNewsletter(el); } catch (e) { avisarErro(e); }
   };
   await previa();
+}
+
+// ---------------------------------------------------------------- Prospecção ativa (PNCP → Lead Score Kasiski)
+const STATUS_PROSP = { novo: ["Novo", "neutro"], contatado: ["Contatado", "oficio"], respondeu: ["Respondeu", "aviso"], lead: ["No CRM", "aviso"],
+  cliente: ["Cliente", "ok"], descartado: ["Descartado", "neutro"], nao_contatar: ["Não contatar", "erro"] };
+const FAIXA_PROSP = { A: ["A", "ok"], B: ["B", "oficio"], C: ["C", "aviso"], D: ["D", "neutro"] };
+const PLANO_PROSP = { essencial: "Essencial", profissional: "Profissional", business: "Business", avancado: "Business", consultor: "Consultor" };
+const BUSCA_ST = { na_fila: "na fila", buscando: "buscando no PNCP", enriquecendo: "consultando a Receita", concluida: "concluída", erro: "erro" };
+
+async function mkProspeccao(el) {
+  clearTimeout(V.admin.prTimer);
+  const f = V.admin.prFiltro || { faixa: "", status: "", uf: "", q: "", busca: "", ordem: "score" };
+  V.admin.prFiltro = f;
+  const qs = new URLSearchParams(Object.entries(f).filter(([, v]) => v)).toString();
+  const d = await api("GET", `/api/admin/marketing/prospeccao?${qs}`);
+  const k = d.kpi;
+  const andamento = d.buscas.find((b) => ["na_fila", "buscando", "enriquecendo"].includes(b.status));
+  el.innerHTML = `
+    <section class="bloco"><div class="grade grade-4 grade-kpi">
+      ${indicador(fmt.num(k.total, 0), "empresas mapeadas")}${indicador(fmt.num(k.faixa_a, 0), "faixa A (maior aderência)")}
+      ${indicador(`${fmt.num(k.contatados, 0)} · ${fmt.num(k.relatorios_abertos, 0)}`, "contatadas · abriram o relatório")}${indicador(`${fmt.num(k.leads, 0)} · ${fmt.num(k.clientes, 0)}`, "no CRM · viraram clientes")}</div>
+      <p class="fraco" style="margin:12px 0 0">Quem vence licitação é quem precisa do Kasiski. A busca lê no PNCP os contratos e atas do segmento, identifica as empresas vencedoras,
+        completa com os dados públicos da Receita e calcula o <b>Lead Score Kasiski</b>: volume, órgãos atendidos, recorrência, recência e porte. Só dados de empresas.
+        Abordagem por LinkedIn e telefone, com o relatório gratuito de cada empresa como gancho.</p></section>
+    <section class="bloco"><div class="bloco-titulo"><h2>Nova busca</h2>${andamento ? `<span class="carregando">${esc(andamento.nome)}: ${esc(andamento.etapa || BUSCA_ST[andamento.status])}</span>` : ""}</div>
+      <form id="pr-form"><div class="chips" style="margin-bottom:10px">${Object.keys(d.segmentos).map((s) => `<button type="button" data-seg="${esc(s)}">${esc(s)}</button>`).join("")}</div>
+        <div class="linha-campos">
+          <div class="campo" style="grid-column:span 2"><label for="pr-termos">Termos do segmento (separados por vírgula)</label><input id="pr-termos" name="termos" required placeholder="Ex.: limpeza predial, conservação e limpeza"></div>
+          <div class="campo"><label for="pr-ufs">UFs (opcional)</label><input id="pr-ufs" name="ufs" placeholder="SP, MG"></div>
+          <div class="campo"><label for="pr-meses">Período</label><select id="pr-meses" name="meses"><option value="6">6 meses</option><option value="12" selected>12 meses</option><option value="24">24 meses</option></select></div>
+          <div class="campo"><label for="pr-lim">Empresas a completar na Receita</label><select id="pr-lim" name="limite"><option>50</option><option selected>100</option><option>200</option></select></div></div>
+        <button class="botao" type="submit" ${andamento ? "disabled" : ""}>Buscar empresas</button> <small class="fraco">Leva de 3 a 10 minutos; pode sair da tela.</small></form>
+      ${d.buscas.length ? `<details style="margin-top:12px"><summary class="fraco">Buscas anteriores (${d.buscas.length})</summary><ul class="exemplos-conc">${d.buscas.map((b) => `<li><b>${esc(b.nome)}</b>${b.ufs.length ? " · " + esc(b.ufs.join(", ")) : ""} · ${b.meses} meses · ${esc(BUSCA_ST[b.status] || b.status)} · ${b.documentos} contratações, ${b.empresas} empresas · ${fmt.dataHora(b.criado_em)}
+        ${b.status === "concluida" ? ` <button class="botao pequeno texto" data-pr-busca="${b.id}">ver só esta</button>` : ""}${b.erro ? ` <span class="texto-alerta">${esc(b.erro)}</span>` : ""}</li>`).join("")}</ul></details>` : ""}</section>
+    <section class="bloco"><div class="filtros-admin">
+        <div class="chips" role="group" aria-label="Faixa">${[["", "Todas as faixas"], ["A", "A"], ["A,B", "A e B"], ["C", "C"], ["D", "D"]].map(([v, t]) => `<button data-pr-faixa="${v}" aria-pressed="${f.faixa === v}">${t}</button>`).join("")}</div>
+        <div class="chips" role="group" aria-label="Situação">${[["", "Em aberto"], ["novo", "Novos"], ["contatado,respondeu", "Em contato"], ["lead", "No CRM"], ["cliente", "Clientes"], ["descartado,nao_contatar", "Fora da lista"]].map(([v, t]) => `<button data-pr-status="${v}" aria-pressed="${f.status === v}">${t}</button>`).join("")}</div>
+        <select id="pr-ordem" aria-label="Ordenar">${[["score", "Maior score"], ["recentes", "Vitória mais recente"], ["valor", "Maior valor"], ["relatorio", "Abriram o relatório"]].map(([v, t]) => `<option value="${v}" ${f.ordem === v ? "selected" : ""}>${t}</option>`).join("")}</select>
+        <input id="pr-busca-txt" placeholder="Buscar empresa ou CNPJ" value="${esc(f.q)}" style="max-width:220px"><input id="pr-uf" placeholder="UF" maxlength="2" value="${esc(f.uf)}" style="max-width:70px">
+        <button class="botao pequeno secundario" id="pr-csv">Exportar CSV</button>${f.busca ? ` <button class="botao pequeno texto" id="pr-limpa-busca">× busca #${esc(f.busca)}</button>` : ""}</div>
+      <div class="tabela-rolagem">${d.prospects.length ? `<table class="tabela-prosp"><thead><tr><th>Score</th><th>Empresa</th><th>Atividade</th><th>Valor contratado</th><th>Plano sugerido</th><th>Contato (Receita)</th><th>Situação</th><th></th></tr></thead>
+        <tbody>${d.prospects.map((p) => `<tr>
+          <td><div class="score-prosp"><b>${p.score}</b>${carimboStatus(FAIXA_PROSP, p.faixa)}</div><div class="barra-score"><i style="width:${p.score}%"></i></div></td>
+          <td><b>${esc(p.nome_fantasia || p.razao_social || "—")}</b><br><small class="fraco">${fmt.cnpj(p.cnpj)} · ${esc(p.porte || "porte ?")}${p.municipio ? " · " + esc(p.municipio) + "/" + esc(p.uf) : ""}</small>
+            ${p.relatorio_visto_em ? `<br><small class="etiqueta-conc">abriu o relatório ${fmt.dataHora(p.relatorio_visto_em)}</small>` : ""}</td>
+          <td>${(p.contratos || 0) + (p.atas || 0)} vitória(s) · ${p.n_orgaos} órgão(s)<br><small class="fraco">última ${fmt.data(p.ultima_vitoria)}${p.ufs_atuacao.length > 1 ? " · " + esc(p.ufs_atuacao.join(", ")) : ""}</small></td>
+          <td>${fmt.moeda(p.valor_total)}</td><td>${esc(PLANO_PROSP[p.plano_sugerido] || "—")}</td>
+          <td><small>${esc(p.telefone || "—")}${p.email_empresa ? `<br>${esc(p.email_empresa)}` : ""}</small></td>
+          <td>${carimboStatus(STATUS_PROSP, p.status)}</td>
+          <td class="acoes-celula"><button class="botao pequeno secundario" data-pr-abrir="${p.id}">Abordar</button></td></tr>`).join("")}</tbody></table>`
+        : vazio("Nenhuma empresa na lista", "Faça uma busca por segmento para mapear quem vence licitações.")}</div></section>`;
+
+  const recarregar = () => mkProspeccao(el);
+  $$("[data-seg]", el).forEach((b) => b.onclick = () => { $("#pr-termos", el).value = d.segmentos[b.dataset.seg].join(", "); });
+  $("#pr-form", el).onsubmit = async (ev) => {
+    ev.preventDefault();
+    try { await api("POST", "/api/admin/marketing/prospeccao/buscas", dadosForm(ev.target)); toast("Busca iniciada. A lista atualiza sozinha.", "ok"); recarregar(); } catch (e) { avisarErro(e); }
+  };
+  $$("[data-pr-faixa]", el).forEach((b) => b.onclick = () => { f.faixa = b.dataset.prFaixa; recarregar(); });
+  $$("[data-pr-status]", el).forEach((b) => b.onclick = () => { f.status = b.dataset.prStatus; recarregar(); });
+  $$("[data-pr-busca]", el).forEach((b) => b.onclick = () => { f.busca = b.dataset.prBusca; recarregar(); });
+  const lb = $("#pr-limpa-busca", el); if (lb) lb.onclick = () => { f.busca = ""; recarregar(); };
+  $("#pr-ordem", el).onchange = (ev) => { f.ordem = ev.target.value; recarregar(); };
+  $("#pr-busca-txt", el).onchange = (ev) => { f.q = ev.target.value; recarregar(); };
+  $("#pr-uf", el).onchange = (ev) => { f.uf = ev.target.value; recarregar(); };
+  $("#pr-csv", el).onclick = (ev) => ocupado(ev.target, "Exportando…", () => baixar("/api/admin/marketing/prospeccao.csv", "kasiski-prospeccao.csv"));
+  $$("[data-pr-abrir]", el).forEach((b) => b.onclick = () => modalProspect(Number(b.dataset.prAbrir), recarregar));
+  if (andamento) V.admin.prTimer = setTimeout(() => { if (el.isConnected && (V.admin.mk === "prospeccao")) recarregar(); }, 6000);
+}
+
+async function modalProspect(id, aoMudar) {
+  let p = await api("GET", `/api/admin/marketing/prospeccao/${id}`);
+  const r = p.roteiro;
+  const copiar = (txt) => navigator.clipboard.writeText(txt).then(() => toast("Copiado.", "ok"), () => toast("Não foi possível copiar.", "erro"));
+  const m = modal({ titulo: p.nome_fantasia || p.razao_social || fmt.cnpj(p.cnpj), largo: true, corpo: `
+    <p class="fraco" style="margin-top:0">${esc(p.razao_social || "")} · ${fmt.cnpj(p.cnpj)} · ${esc(p.porte || "porte não informado")} · ${esc(p.cnae_descricao || "")}${p.municipio ? " · " + esc(p.municipio) + "/" + esc(p.uf) : ""}${p.situacao ? " · " + esc(p.situacao) : ""}</p>
+    <div class="grade grade-4 grade-kpi">${indicador(`${p.score} · ${p.faixa}`, "Lead Score Kasiski")}${indicador((p.contratos || 0) + (p.atas || 0), `vitórias (${p.contratos} contratos, ${p.atas} atas)`)}
+      ${indicador(p.n_orgaos, "órgãos atendidos")}${indicador(esc(PLANO_PROSP[p.plano_sugerido] || "—"), "plano sugerido")}</div>
+    <h3>Por que é um bom cliente</h3><ul>${(p.motivos || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
+    <h3>Contato</h3>
+    <p>${p.telefone ? `Telefone: <b>${esc(p.telefone)}</b>` : "Sem telefone na Receita"}${p.email_empresa ? ` · E-mail: ${esc(p.email_empresa)}` : ""}
+      <br><small class="fraco">Contato do cadastro na Receita: muitas vezes é do escritório de contabilidade. Use para achar o responsável por licitações.</small></p>
+    ${(p.socios || []).length ? `<p><small>Sócios/administradores (QSA público): ${p.socios.map((s) => `${esc(s.nome)}${s.qualificacao ? ` (${esc(s.qualificacao)})` : ""}`).join(" · ")}</small></p>` : ""}
+    <div class="acoes"><a class="botao pequeno secundario" href="https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(p.nome_fantasia || p.razao_social || "")}" target="_blank" rel="noopener">Procurar a empresa no LinkedIn</a>
+      <a class="botao pequeno secundario" href="${esc(p.link_relatorio)}&previa=1" target="_blank" rel="noopener">Ver o relatório gratuito</a>
+      <button class="botao pequeno secundario" data-copiar="link">Copiar link do relatório</button></div>
+    <h3>Mensagens prontas</h3>
+    <div class="roteiro"><div class="bloco-titulo"><b>LinkedIn: pedido de conexão</b><button class="botao pequeno texto" data-copiar="conexao">Copiar</button></div><p>${esc(r.linkedin_conexao)}</p></div>
+    <div class="roteiro"><div class="bloco-titulo"><b>LinkedIn: mensagem após aceitar</b><button class="botao pequeno texto" data-copiar="mensagem">Copiar</button></div><p style="white-space:pre-line">${esc(r.linkedin_mensagem)}</p></div>
+    <div class="roteiro"><b>Roteiro de telefone</b><ol>${r.telefone.map((x) => `<li>${esc(x)}</li>`).join("")}</ol></div>
+    <h3>Onde vende</h3><p><small>${Object.entries(p.orgaos || {}).slice(0, 10).map(([o, n]) => `${esc(o)} (${n})`).join(" · ") || "—"}</small></p>
+    ${(p.exemplos || []).length ? `<ul class="exemplos-conc">${p.exemplos.slice(0, 6).map((x) => `<li>${x.tipo === "ata" ? "Ata" : "Contrato"} · ${esc(x.orgao || "")} · ${fmt.data(x.data)}${x.valor ? " · " + fmt.moeda(x.valor) : ""}<br><span class="fraco">${esc(x.objeto || "")}</span>${x.link ? ` <a href="${esc(x.link)}" target="_blank" rel="noopener">PNCP</a>` : ""}</li>`).join("")}</ul>` : ""}
+    <form id="pr-edit" class="linha-campos" style="margin-top:14px">
+      <div class="campo"><label for="pe-st">Situação</label><select id="pe-st" name="status">${Object.entries(STATUS_PROSP).map(([k, [t]]) => `<option value="${k}" ${p.status === k ? "selected" : ""}>${t}</option>`).join("")}</select></div>
+      <div class="campo"><label for="pe-resp">Responsável</label><input id="pe-resp" name="responsavel" value="${esc(p.responsavel || "")}"></div>
+      <div class="campo" style="grid-column:1/-1"><label for="pe-notas">Anotações</label><textarea id="pe-notas" name="notas" rows="3">${esc(p.notas || "")}</textarea></div></form>`,
+    acoes: `<button class="botao texto" id="pe-reav">Atualizar dados da Receita</button>
+      ${p.lead_id ? `<span class="fraco">Lead #${p.lead_id} no CRM</span>` : `<button class="botao secundario" id="pe-crm" ${p.status === "nao_contatar" ? "disabled" : ""}>Enviar ao CRM de leads</button>`}
+      <button class="botao" id="pe-salvar">Salvar</button>` });
+  const textos = { link: p.link_relatorio, conexao: r.linkedin_conexao, mensagem: r.linkedin_mensagem };
+  $$("[data-copiar]", m).forEach((b) => b.onclick = () => copiar(textos[b.dataset.copiar]));
+  $("#pe-salvar", m).onclick = async () => { try { await api("PATCH", `/api/admin/marketing/prospeccao/${id}`, dadosForm($("#pr-edit", m))); m.fechar(); toast("Salvo.", "ok"); aoMudar(); } catch (e) { avisarErro(e); } };
+  const crm = $("#pe-crm", m);
+  if (crm) crm.onclick = () => ocupado(crm, "Enviando…", async () => { try { const x = await api("POST", `/api/admin/marketing/prospeccao/${id}/crm`); toast(`Lead #${x.lead_id} criado no CRM (canal Prospecção ativa).`, "ok"); m.fechar(); aoMudar(); } catch (e) { avisarErro(e); } });
+  $("#pe-reav", m).onclick = (ev) => ocupado(ev.target, "Consultando…", async () => { try { await api("POST", `/api/admin/marketing/prospeccao/${id}/reavaliar`); m.fechar(); modalProspect(id, aoMudar); aoMudar(); } catch (e) { avisarErro(e); } });
+}
+
+
+// ---------------------------------------------------------------- armazenamento (banco e disco no Render)
+const tamanho = (b) => { if (b === null || b === undefined) return "—"; const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0; b = Number(b); while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; } return `${fmt.num(b, b < 10 && i ? 1 : 0)} ${u[i]}`; };
+
+function medidor(titulo, m, legenda) {
+  const pct = m.pct ?? 0, alerta = pct >= 70;
+  return `<div class="medidor ${alerta ? "alerta" : ""}"><div class="bloco-titulo"><b>${esc(titulo)}</b><span>${m.pct === null || m.pct === undefined ? "—" : `${fmt.num(pct, 1)}%`}</span></div>
+    <div class="medidor-trilho" role="img" aria-label="${esc(titulo)}: ${fmt.num(pct, 0)}% usado"><i style="width:${Math.min(100, pct)}%"></i><s style="left:70%" title="alerta em 70%"></s></div>
+    <small class="fraco">${tamanho(m.usado)} de ${tamanho(m.limite)}${legenda ? " · " + legenda : ""}</small></div>`;
+}
+
+async function abaArmazenamento(el) {
+  const d = await api("GET", "/api/admin/armazenamento");
+  const b = d.banco, k = d.disco;
+  const maior = Math.max(1, ...b.tabelas.map((x) => x.bytes || 0));
+  el.innerHTML = `${d.alertas.map((a) => `<div class="aviso erro">${esc(a)}</div>`).join("")}
+    <section class="bloco"><div class="grade grade-2">
+      ${medidor("Banco de dados (PostgreSQL)", b, "limite definido em DB_LIMITE_GB")}
+      ${medidor("Disco de arquivos (PDFs)", k, `${fmt.num(k.arquivos, 0)} arquivo(s), ${tamanho(k.bytes_arquivos)} do Kasiski`)}</div>
+      <p class="fraco" style="margin-top:12px">Alerta a partir de 70% (aqui e por e-mail aos administradores, no máximo a cada 3 dias). Para crescer: no Render, <b>Database → Storage</b> (US$ 0,30/GB/mês)
+        e <b>serviço da API → Disks</b> (US$ 0,25/GB/mês). O espaço só aumenta, não diminui. Depois de aumentar o banco, atualize a variável <code>DB_LIMITE_GB</code>.</p></section>
+    <section class="bloco"><div class="bloco-titulo"><h2>Maiores tabelas do banco</h2><button class="botao pequeno secundario" id="arm-limpar">Rodar limpeza agora</button></div>
+      <div class="tabela-rolagem"><table><thead><tr><th>Tabela</th><th>Tamanho</th><th></th><th>Linhas (aprox.)</th></tr></thead>
+      <tbody>${b.tabelas.map((x) => `<tr><td><code>${esc(x.tabela)}</code></td><td>${tamanho(x.bytes)}</td>
+        <td style="width:40%">${x.bytes !== null ? `<div class="medidor-trilho fino"><i style="width:${(100 * (x.bytes || 0)) / maior}%"></i></div>` : ""}</td><td>${fmt.num(x.linhas, 0)}</td></tr>`).join("")}</tbody></table></div>
+      <p class="fraco" style="margin-top:10px">Limpeza automática (todo dia, no job do radar): itens de tabelas de preços desativadas há mais de ${d.limpeza.dias_tabela_inativa} dias
+        (a tabela fica no histórico; para usar de novo, reimporte) e eventos de rastreamento com mais de ${d.limpeza.meses_eventos} meses, como diz a política de privacidade.
+        ${d.tabelas_inativas.length ? `<br>Tabelas desativadas aguardando limpeza: ${d.tabelas_inativas.map((t) => `${esc(t.nome)} (${fmt.num(t.n_itens, 0)} itens)`).join(" · ")}.` : ""}</p></section>`;
+  $("#arm-limpar", el).onclick = (ev) => ocupado(ev.target, "Limpando…", async () => {
+    try { const r = await api("POST", "/api/admin/armazenamento/limpar"); toast(`Limpeza: ${r.itens} item(ns) de ${r.tabelas} tabela(s) e ${r.eventos} evento(s) removidos.`, "ok"); abaArmazenamento(el); } catch (e) { avisarErro(e); }
+  });
+}
+
+
+// ---------------------------------------------------------------- planos: custo de IA, margem e transição da tabela antiga
+async function abaPlanosAdmin(el) {
+  const [e, tr] = await Promise.all([api("GET", "/api/admin/planos/economia"), api("GET", "/api/admin/planos/transicao")]);
+  const cu = e.custo_por_uso;
+  const reduzir = tr.filter((x) => x.reduzir);
+  el.innerHTML = `
+    <section class="bloco"><h2>Custo de IA por uso</h2>
+      <div class="grade grade-4 grade-kpi">${[["analises", "análise de edital"], ["concorrentes", "análise de concorrente"], ["pecas", "peça com IA"], ["propostas", "minuta de proposta"]].map(([k, t]) =>
+        indicador(fmt.moeda((cu[k]?.usd || 0) * e.usd_brl), `${t} · ${cu[k]?.real ? `média real de ${cu[k].amostra} usos (90 dias)` : "estimativa (poucos dados ainda)"}`)).join("")}</div>
+      <p class="fraco" style="margin-top:10px">Câmbio US$ 1 = ${fmt.moeda(e.usd_brl)} (variável USD_BRL). Estimativas até haver 5 usos reais de cada recurso.</p></section>
+    <section class="bloco"><h2>Margem de cada plano no uso máximo</h2>
+      <div class="tabela-rolagem"><table><thead><tr><th>Plano</th><th>Preço</th><th>Limites (edital · concorrente · possíveis · peças)</th><th>IA no uso máximo</th><th>CMV máximo</th><th>Margem bruta mínima</th><th>Contas · IA média real/mês</th></tr></thead>
+      <tbody>${e.planos.map((p) => `<tr><td><b>${esc(p.nome)}</b></td><td>${fmt.moeda(p.preco)}</td>
+        <td>${[p.limites.analises, p.limites.concorrentes, p.limites.possiveis, p.limites.pecas].map((v) => v || 0).join(" · ")}</td>
+        <td>${fmt.moeda(p.ia_max_brl)}</td><td>${fmt.moeda(p.cmv_max_brl)}</td>
+        <td>${p.margem_uso_maximo === null ? "—" : `<b class="${p.margem_uso_maximo < 60 ? "texto-alerta" : ""}">${fmt.num(p.margem_uso_maximo, 1)}%</b>`}</td>
+        <td>${p.contas} · ${p.ia_media_real_brl === null ? "—" : fmt.moeda(p.ia_media_real_brl)}</td></tr>`).join("")}</tbody></table></div>
+      <p class="fraco" style="margin-top:10px">CMV = IA no uso máximo + infraestrutura (${fmt.moeda(e.infra_por_conta)}/conta) + taxa de pagamento (${fmt.num(e.taxa_pagamento * 100, 2)}%). Quase ninguém usa 100% do limite: a coluna da direita mostra o gasto real médio.
+        Créditos por uso acima do limite: ${Object.entries(e.creditos).map(([k, v]) => `${k} ${v}`).join(" · ")} · pacote ${e.pacote.creditos} créditos por ${fmt.moeda(e.pacote.preco)}.</p></section>
+    <section class="bloco"><div class="bloco-titulo"><h2>Assinantes da tabela antiga</h2>${reduzir.length ? `<button class="botao pequeno" id="aplicar-transicao">Reduzir ${reduzir.length} cobrança(s) para a tabela nova</button>` : ""}</div>
+      <p class="fraco">Cada assinante mantém o valor que pagava e ganhou o plano novo equivalente ou superior. Quem paga acima da tabela nova (ex.: Consultor R$ 1.290 → R$ 797) tem a cobrança reduzida: o botão ajusta as assinaturas automáticas no Mercado Pago; as pagas por Pix já renovam pelo menor valor.</p>
+      ${tr.length ? `<div class="tabela-rolagem"><table><thead><tr><th>Conta</th><th>Plano novo</th><th>Paga hoje</th><th>Tabela nova</th><th>Forma</th><th></th></tr></thead>
+        <tbody>${tr.map((x) => `<tr><td><b>${esc(x.nome)}</b><br><small class="fraco">${esc(x.email || "")}</small></td><td>${esc(S.planos[x.plano]?.nome || x.plano)}</td>
+          <td>${fmt.moeda(x.preco_contratado)}</td><td>${x.preco_tabela ? fmt.moeda(x.preco_tabela) : "—"}</td><td>${x.recorrente ? "Cartão recorrente" : esc(x.metodo || "—")}</td>
+          <td>${x.reduzir ? carimbo("Reduzir", "aviso") : carimbo("Mantém valor menor", "ok")}</td></tr>`).join("")}</tbody></table></div>` : vazio("Nenhum assinante da tabela antiga", "")}</section>`;
+  const b = $("#aplicar-transicao", el);
+  if (b) b.onclick = async () => {
+    if (!(await confirmar(`Reduzir ${reduzir.length} cobrança(s) para o preço da tabela nova? As assinaturas automáticas são alteradas no Mercado Pago a partir da próxima cobrança.`, "Reduzir cobranças"))) return;
+    try { const r = await api("POST", "/api/admin/planos/transicao/aplicar"); toast(`${r.ajustados.length} ajustada(s)${r.falhas.length ? `, ${r.falhas.length} falha(s)` : ""}.`, r.falhas.length ? "erro" : "ok"); abaPlanosAdmin(el); } catch (e2) { avisarErro(e2); }
+  };
 }

@@ -397,6 +397,28 @@ async function abrirDocumentoEdital(id, botao) {
 }
 
 // ---------------------------------------------------------------- possíveis concorrentes (histórico do PNCP)
+function blocoPrecosItens(pc) {
+  const lista = pc.precos_itens || [];
+  if (!pc.itens_edital) return `<div class="aviso info" style="margin-top:14px">Para ver o preço médio dos concorrentes em cada item, o Kasiski precisa da lista de itens do edital:
+    crie uma proposta comercial para este edital (os itens são lidos do PDF) ou traga o edital pelo Radar (itens do PNCP) e avalie de novo.</div>`;
+  const com = lista.filter((p) => p.n);
+  const pct = (v) => (v === null || v === undefined ? "—" : `${fmt.num(v, 0)}%`);
+  return `<h3 style="margin-top:20px">Preço médio dos concorrentes nos itens deste edital</h3>
+    <p class="fraco">Preço unitário homologado em ${pc.amostras_preco || 0} resultado(s) de itens parecidos nas atas e contratações anteriores. Cada empresa conta uma vez por item (média das médias). Confira a unidade: itens com unidade diferente foram descartados.</p>
+    ${com.length ? `<div class="tabela-rolagem"><table class="tabela-precos-conc"><thead><tr><th>Item</th><th>Descrição</th><th>Unid.</th><th>Estimado</th><th>Média dos concorrentes</th><th>Menor média</th><th>Média / estimado</th><th>Empresas</th></tr></thead>
+      <tbody>${lista.map((p, k) => `<tr>
+        <td>${esc(p.numero || "—")}</td><td>${esc((p.descricao || "").slice(0, 120))}</td><td>${esc(p.unidade || "—")}</td>
+        <td>${p.estimado ? fmt.moeda(p.estimado) : "—"}</td>
+        <td>${p.n ? `<b>${fmt.moeda(p.media)}</b>` : '<small class="fraco">sem histórico</small>'}</td>
+        <td>${p.n ? fmt.moeda(p.minimo) : "—"}</td>
+        <td>${p.pct_estimado ? `<span class="${p.pct_estimado < 75 ? "texto-alerta" : ""}">${pct(p.pct_estimado)}</span>` : "—"}</td>
+        <td>${p.n ? `<button class="botao pequeno texto" data-precos-item="${k}" aria-expanded="false">${p.n_empresas} empresa(s)</button>` : "—"}</td></tr>
+        ${p.n ? `<tr class="oculto" data-precos-linha="${k}"><td colspan="8"><ul class="exemplos-conc">${p.empresas.map((e) => `<li><b>${esc(e.nome || fmt.cnpj(e.cnpj))}</b>: média ${fmt.moeda(e.media)} · menor ${fmt.moeda(e.minimo)} <small class="fraco">(${e.n} preço(s))</small></li>`).join("")}</ul>
+          ${(p.exemplos || []).length ? `<small class="fraco">Exemplos: ${p.exemplos.map((x) => `${esc((x.descricao || "").slice(0, 70))} — ${fmt.moeda(x.valor_unitario)}/${esc(x.unidade || "un")} (${esc(x.nome || "")}${x.orgao ? ", " + esc(x.orgao) : ""}${x.data ? ", " + fmt.data(x.data) : ""})`).join(" · ")}</small>` : ""}</td></tr>` : ""}`).join("")}</tbody></table></div>
+      <p class="fraco"><small>Esses preços entram automaticamente como referência na proposta comercial deste edital (botão <b>Precificar pelo edital</b>).</small></p>`
+      : `<p class="fraco">Não encontramos preços homologados de itens parecidos nas contratações anteriores.</p>`}`;
+}
+
 const RELEVANCIA_CONC = { alta: ["Alta", "aviso"], media: ["Média", "oficio"], baixa: ["Baixa", "neutro"] };
 
 function desenharPossiveis(el, ed) {
@@ -418,13 +440,14 @@ function desenharPossiveis(el, ed) {
   else if (!pc) corpo = `<p class="fraco">${ed.objeto ? "Clique em <b>Avaliar possíveis concorrentes</b> para consultar no PNCP quem venceu contratações com objeto parecido. Cada avaliação conta no limite mensal do seu plano." : "Analise o edital (ou preencha o objeto) para avaliar os possíveis concorrentes."}</p>`;
   else if (!itens.length) corpo = `<div class="aviso ${pc.status === "erro" ? "erro" : "info"}">${esc(pc.erro || pc.aviso || "Nenhuma empresa encontrada.")}</div>`;
   else corpo = `${pc.status === "erro" ? `<div class="aviso erro">${esc(pc.erro)}</div>` : ""}
-    <div class="tabela-rolagem"><table class="tabela-possiveis"><thead><tr><th>Empresa</th><th>Relevância</th><th>Vitórias</th><th>Valor contratado</th><th>Onde atua</th><th>Última</th><th class="nao-imprimir"></th></tr></thead>
+    <div class="tabela-rolagem"><table class="tabela-possiveis"><thead><tr><th>Empresa</th><th>Relevância</th><th>Vitórias</th><th>Valor contratado</th><th>Preço nos itens do edital</th><th>Onde atua</th><th>Última</th><th class="nao-imprimir"></th></tr></thead>
     <tbody>${itens.map((c, i) => `<tr>
       <td><b>${esc(c.nome)}</b><br><small class="fraco">${fmt.cnpj(c.cnpj)}</small>
         ${c.mesmo_orgao ? `<br><small class="etiqueta-conc">já venceu neste órgão</small>` : c.mesma_uf ? `<br><small class="etiqueta-conc">atua em ${esc(ed.uf)}</small>` : ""}</td>
       <td>${carimboStatus(RELEVANCIA_CONC, c.relevancia)}</td>
       <td>${c.vitorias}<br><small class="fraco">${[c.contratos ? `${c.contratos} contrato(s)` : "", c.atas ? `${c.atas} ata(s)` : ""].filter(Boolean).join(" · ")}</small></td>
       <td>${c.valor_total ? fmt.moeda(c.valor_total) : "—"}</td>
+      <td>${(c.precos || []).length ? `${c.pct_medio_estimado ? `<b>${fmt.num(c.pct_medio_estimado, 0)}%</b> do estimado<br>` : ""}<small class="fraco">em ${c.precos.length} item(ns)</small>` : '<small class="fraco">—</small>'}</td>
       <td><small>${esc((c.ufs || []).join(", ") || "—")}${c.orgaos?.length ? `<br><span class="fraco">${esc(c.orgaos.join("; ")).slice(0, 160)}</span>` : ""}</small></td>
       <td style="white-space:nowrap">${c.ultima_data ? fmt.data(c.ultima_data) : "—"}</td>
       <td class="nao-imprimir"><div class="acoes-conc">
@@ -432,9 +455,11 @@ function desenharPossiveis(el, ed) {
         ${c.concorrente_id ? `<a class="botao pequeno secundario" href="#/concorrentes/${c.concorrente_id}">Ver dossiê</a>`
           : `<button class="botao pequeno secundario" data-dossie="${esc(c.cnpj)}">Montar dossiê</button>`}
         <button class="botao pequeno texto" data-analisar-doc="${esc(c.cnpj)}">Analisar documento</button></div></td></tr>
-      <tr class="oculto" data-exemplos-linha="${i}"><td colspan="7"><ul class="exemplos-conc">${(c.exemplos || []).map((x) => `<li>
+      <tr class="oculto" data-exemplos-linha="${i}"><td colspan="8">
+        ${(c.precos || []).length ? `<p style="margin:4px 0 6px"><b>Preço unitário médio praticado por esta empresa</b></p><ul class="exemplos-conc">${c.precos.map((x) => `<li>Item ${esc(x.numero || "—")} · ${esc((x.descricao || "").slice(0, 90))}: <b>${fmt.moeda(x.media)}</b>${x.pct_estimado ? ` (${fmt.num(x.pct_estimado, 0)}% do estimado)` : ""} <small class="fraco">${x.n} preço(s)</small></li>`).join("")}</ul>` : ""}<ul class="exemplos-conc">${(c.exemplos || []).map((x) => `<li>
         <b>${x.tipo === "ata" ? "Ata/registro de preços" : "Contrato"}</b> · ${esc(x.orgao || "—")}${x.uf ? "/" + esc(x.uf) : ""} · ${x.data ? fmt.data(x.data) : "—"}${x.valor ? " · " + fmt.moeda(x.valor) : ""}
         <br><span class="fraco">${esc(x.objeto || "")}</span>${x.link ? ` <a href="${esc(x.link)}" target="_blank" rel="noopener">Ver no PNCP</a>` : ""}</li>`).join("")}</ul></td></tr>`).join("")}</tbody></table></div>
+    ${blocoPrecosItens(pc)}
     <p class="fraco" style="margin-top:10px"><small>Termos pesquisados: ${esc((pc.termos || []).join(" · "))} · ${pc.documentos_analisados || 0} contratação(ões) conferida(s) · consultado em ${fmt.dataHora(pc.consultado_em + "Z")}</small></p>`;
   el.innerHTML = `<section class="bloco">${cab}${corpo}</section>`;
 
@@ -448,6 +473,10 @@ function desenharPossiveis(el, ed) {
     try { ed.possiveis_concorrentes = await api("POST", `/api/editais/${ed.id}/possiveis-concorrentes`); desenharPossiveis(el, ed); }
     catch (e) { avisarErro(e); }
   };
+  $$("[data-precos-item]", el).forEach((x) => x.onclick = () => {
+    const linha = $(`[data-precos-linha="${x.dataset.precosItem}"]`, el);
+    x.setAttribute("aria-expanded", String(linha.classList.toggle("oculto") === false));
+  });
   $$("[data-exemplos]", el).forEach((x) => x.onclick = () => {
     const linha = $(`[data-exemplos-linha="${x.dataset.exemplos}"]`, el);
     const abrir = linha.classList.toggle("oculto") === false;

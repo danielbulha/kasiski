@@ -73,10 +73,12 @@ function erroTela(e) {
 
 function avisarErro(e) {
   if (e.status === 402) {
+    const [msg, oferta] = String(e.message).split(/ (?=(?:Essencial|Profissional|Business|Consultor) — R\$)/);
+    const teste = S.plano?.teste_disponivel;
     modal({
-      titulo: "Recurso fora do seu plano",
-      corpo: `<p>${esc(e.message)}</p>`,
-      acoes: `<a class="botao" href="#/conta" data-fechar>Ver planos</a>`,
+      titulo: e.codigo === "limite_atingido" ? "Você chegou ao limite do plano" : "Recurso fora do seu plano",
+      corpo: `<p>${esc(msg)}</p>${oferta ? `<p class="oferta-limite"><b>${esc(oferta.replace(/ Continue →.*/, ""))}</b>${/Pacote/.test(oferta) ? `<br><small>${esc(oferta.replace(/^.*Continue → ?/, ""))}</small>` : ""}</p>` : ""}`,
+      acoes: `${teste ? `<button class="botao secundario" data-iniciar-teste>Experimentar o Profissional por 7 dias</button>` : ""}<a class="botao" href="#/conta" data-fechar>Continuar →</a>`,
     });
   } else toast(e.message, "erro");
 }

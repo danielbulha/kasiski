@@ -28,9 +28,9 @@ PADRAO = [
     ("radar_ok", "Radar configurado", "radar", 60, None, "Seu Radar está funcionando"),
     ("sem_analise_24h", "24h sem análise de edital", "cadastro", 1440, "sem_analise", "Experimente o recurso mais poderoso do Kasiski"),
     ("primeira_analise", "Primeira análise concluída", "analise", 5, None, "Seu primeiro edital foi analisado"),
-    ("trial_48h", "Teste termina em 48h", "trial_fim", 2880, "em_teste", "Seu teste termina em dois dias"),
-    ("trial_24h", "Teste termina em 24h", "trial_fim", 1440, "em_teste", "O que você já conseguiu no Kasiski"),
-    ("trial_6h", "Teste termina em 6h", "trial_fim", 360, "em_teste", "Continue com seus dados e análises"),
+    ("trial_48h", "Teste do Profissional termina em 48h", "trial_fim", 2880, "em_teste", "Seu teste do Profissional termina em dois dias"),
+    ("trial_24h", "Teste do Profissional termina em 24h", "trial_fim", 1440, "em_teste", "O que você já conseguiu no Kasiski"),
+    ("trial_6h", "Teste do Profissional termina em 6h", "trial_fim", 360, "em_teste", "Continue no Profissional"),
 ]
 
 
@@ -88,7 +88,8 @@ def condicao_ok(a, conta, m):
     if c == "sem_analise":
         return m["analises"] == 0
     if c == "em_teste":
-        return conta.plano == "trial" and conta.trial_fim and conta.trial_fim > datetime.utcnow()
+        import planos
+        return planos.em_teste(conta)
     return True
 
 
@@ -144,16 +145,17 @@ def montar(a, conta, usuario, m):
     itens = [(v, t) for v, t in itens if v] or [(m["editais"], "edital(is) acompanhado(s)")]
     resumo = "<ul style='padding-left:18px'>" + "".join(f"<li><b>{v}</b> {t}</li>" for v, t in itens) + "</ul>"
     if ch == "trial_48h":
-        return (a.assunto, "Seu teste termina em dois dias", f"<p>Até aqui, no Kasiski:</p>{resumo}<p>Escolha um plano para manter o Radar, os editais, "
-                "os prazos e as análises. Nada se perde.</p>", "Ver planos", _link("#/conta", ch))
+        return (a.assunto, "Seu teste do Profissional termina em dois dias", f"<p>Até aqui, no Kasiski:</p>{resumo}<p>Depois do teste, a conta "
+                "volta ao Free: nada se perde, mas as análises e os recursos do Profissional ficam limitados. Assinando, tudo continua como está.</p>",
+                "Ver planos", _link("#/conta", ch))
     if ch == "trial_24h":
         titulo = (f"Você analisou {m['analises']} edital(is) e encontrou {m['radar_itens']} oportunidade(s)" if m["analises"] and m["radar_itens"]
                   else f"Você analisou {m['analises']} edital(is) no Kasiski" if m["analises"] else "Seu teste termina amanhã")
         return (a.assunto, titulo, f"{resumo}"
-                "<p>Seu teste termina amanhã. Assinando agora, tudo continua exatamente de onde parou.</p>", "Continuar no Kasiski", _link("#/conta", ch))
+                "<p>Seu teste do Profissional termina amanhã. Assinando agora, tudo continua exatamente de onde parou.</p>", "Continuar no Profissional", _link("#/conta", ch))
     if ch == "trial_6h":
-        return (a.assunto, "Continue com seus dados e análises", f"<p>Seu teste termina hoje. Seus editais, documentos do cofre e prazos ficam guardados.</p>{resumo}",
-                "Escolher um plano", _link("#/conta", ch))
+        return (a.assunto, "Continue no Profissional", f"<p>Seu teste termina hoje e a conta volta ao Free. Seus editais, documentos do cofre e prazos ficam guardados.</p>{resumo}",
+                "Assinar o Profissional", _link("#/conta", ch))
     return (a.assunto, a.assunto, "", None, None)
 
 
@@ -185,7 +187,8 @@ def rodar(agora=None):
         return []
     feitos = []
     enviados = {(e.automacao_id, e.conta_id) for e in AutomacaoEnvio.query.filter(AutomacaoEnvio.enviado_em >= agora - timedelta(days=45))}
-    for conta in Conta.query.filter(Conta.criado_em >= agora - timedelta(days=30)):
+    for conta in Conta.query.filter(db.or_(Conta.criado_em >= agora - timedelta(days=30),
+                                           Conta.trial_fim >= agora - timedelta(days=3))):
         if conta.marketing_optout:
             continue
         usuario = Usuario.query.filter_by(conta_id=conta.id).order_by(Usuario.id).first()

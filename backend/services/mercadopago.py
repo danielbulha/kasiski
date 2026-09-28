@@ -10,6 +10,7 @@ Documentação: https://www.mercadopago.com.br/developers/pt/reference
 """
 import hashlib
 import hmac
+import time
 import uuid
 
 import requests
@@ -100,6 +101,11 @@ def pagamento_autorizado(aid):
     return _req("GET", f"/authorized_payments/{aid}")
 
 
+def atualizar_valor_assinatura(aid, valor):
+    """Muda o valor das próximas cobranças de uma assinatura (usado para aplicar preço menor da tabela nova)."""
+    return _req("PUT", f"/preapproval/{aid}", {"auto_recurring": {"transaction_amount": round(float(valor), 2), "currency_id": "BRL"}})
+
+
 def cancelar_assinatura(aid):
     return _req("PUT", f"/preapproval/{aid}", {"status": "cancelled"})
 
@@ -107,14 +113,23 @@ def cancelar_assinatura(aid):
 # ---------------------------------------------------------------- webhook
 def assinatura_valida(request, data_id):
     """Confere o cabeçalho x-signature (HMAC-SHA256) enviado pelo Mercado Pago.
-    Sem MP_WEBHOOK_SECRET configurado, aceita — o webhook só dispara uma consulta à API do Mercado
-    Pago, que é a fonte da verdade, então um aviso forjado não libera plano sozinho."""
+    Sem MP_WEBHOOK_SECRET: em produção recusa; em desenvolvimento aceita (o webhook só dispara uma consulta à
+    API do Mercado Pago, que é a fonte da verdade, então um aviso forjado não libera plano sozinho)."""
     segredo = current_app.config["MP_WEBHOOK_SECRET"]
     if not segredo:
+        if current_app.config.get("PRODUCAO"):
+            current_app.logger.error("Webhook do Mercado Pago recusado: MP_WEBHOOK_SECRET não configurado em produção.")
+            return False
         return True
     partes = dict(p.split("=", 1) for p in (request.headers.get("x-signature") or "").split(",") if "=" in p)
     ts, v1 = partes.get("ts", "").strip(), partes.get("v1", "").strip()
     if not ts or not v1:
+        return False
+    try:  # avisos com carimbo de tempo muito antigo são reenvios gravados (replay)
+        idade = abs(time.time() - int(ts) / (1000 if len(ts) > 11 else 1))
+        if idade > 60 * 60 * 24:
+            return False
+    except ValueError:
         return False
     rid = request.headers.get("x-request-id", "")
     did = str(data_id or "")

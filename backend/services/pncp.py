@@ -229,10 +229,12 @@ def documentos_de_julgamento(numero_controle_compra, limite=3):
 
 
 # ---------------------------------------------------------------- vencedores de contratações anteriores
-def buscar_documentos(termo, tipo, limite=20, timeout=20):
+def buscar_documentos(termo, tipo, limite=20, timeout=20, pagina=1, ufs=None):
     """Busca textual do PNCP por tipo de documento ('contrato' ou 'ata'), mais recentes primeiro."""
-    dados = _get(BASE_BUSCA, {"q": termo, "tipos_documento": tipo, "ordenacao": "-data", "pagina": 1,
-                              "tam_pagina": limite}, timeout=timeout) or {}
+    params = {"q": termo, "tipos_documento": tipo, "ordenacao": "-data", "pagina": pagina, "tam_pagina": limite}
+    if ufs:
+        params["ufs"] = ",".join(ufs) if isinstance(ufs, (list, tuple)) else ufs
+    dados = _get(BASE_BUSCA, params, timeout=timeout) or {}
     saida = []
     for it in dados.get("items") or []:
         saida.append({"tipo": tipo, "numero_controle": it.get("numero_controle_pncp") or it.get("numeroControlePNCP"),
@@ -265,22 +267,22 @@ def fornecedor_do_contrato(numero_controle_contrato, timeout=15):
             "orgao": (d.get("orgaoEntidade") or {}).get("razaoSocial"), "uf": (d.get("unidadeOrgao") or {}).get("ufSigla")}
 
 
-def vencedores_da_compra(numero_controle, max_itens=4, timeout=15):
-    """Fornecedores homologados nos itens de uma compra (atas de registro de preços, pregões).
-    Aceita o número da compra ou da ata ('CNPJ-1-000123/2025-000001'). Devolve [{cnpj, nome, valor}]."""
+def resultados_da_compra(numero_controle, max_itens=12, timeout=15):
+    """Resultado homologado por item de uma compra (atas de registro de preços, pregões):
+    [{numero_item, descricao, unidade, cnpj, nome, valor_unitario, quantidade, valor_total, data}]."""
     partes = partes_controle(numero_controle)
     if not partes:
         return []
     cnpj, ano, seq = partes
     base = f"{BASE_PNCP}/orgaos/{cnpj}/compras/{ano}/{seq}/itens"
     try:
-        itens = _get(base, {"pagina": 1, "tamanhoPagina": 20}, timeout=timeout) or []
+        itens = _get(base, {"pagina": 1, "tamanhoPagina": 50}, timeout=timeout) or []
     except Exception as e:
         log.info("Itens da compra %s indisponíveis: %s", numero_controle, e)
         return []
     if isinstance(itens, dict):
         itens = itens.get("data") or []
-    saida = {}
+    saida = []
     for it in [i for i in itens if i.get("temResultado", True)][:max_itens]:
         try:
             res = _get(f"{base}/{it.get('numeroItem')}/resultados", timeout=timeout) or []
@@ -290,8 +292,21 @@ def vencedores_da_compra(numero_controle, max_itens=4, timeout=15):
             ni = _cnpj_fornecedor(r)
             if not ni:
                 continue
-            atual = saida.setdefault(ni, {"cnpj": ni, "nome": r.get("nomeRazaoSocialFornecedor") or "", "valor": 0.0})
-            atual["valor"] += float(r.get("valorTotalHomologado") or 0)
+            vu = r.get("valorUnitarioHomologado")
+            saida.append({"numero_item": it.get("numeroItem"), "descricao": it.get("descricao") or it.get("materialOuServicoNome") or "",
+                          "unidade": it.get("unidadeMedida") or "", "cnpj": ni, "nome": r.get("nomeRazaoSocialFornecedor") or "",
+                          "valor_unitario": float(vu) if isinstance(vu, (int, float)) else None,
+                          "quantidade": r.get("quantidadeHomologada"), "valor_total": float(r.get("valorTotalHomologado") or 0),
+                          "data": r.get("dataResultado") or r.get("dataInclusao")})
+    return saida
+
+
+def vencedores_da_compra(numero_controle, max_itens=4, timeout=15):
+    """Fornecedores homologados nos itens de uma compra. Devolve [{cnpj, nome, valor}]."""
+    saida = {}
+    for r in resultados_da_compra(numero_controle, max_itens, timeout):
+        atual = saida.setdefault(r["cnpj"], {"cnpj": r["cnpj"], "nome": r["nome"], "valor": 0.0})
+        atual["valor"] += r["valor_total"]
     return list(saida.values())
 
 

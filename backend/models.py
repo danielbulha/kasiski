@@ -12,8 +12,18 @@ def _iso(v):
 class Conta(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(200), nullable=False)
-    plano = db.Column(db.String(30), default="trial")  # trial, essencial, profissional, avancado, consultor, suspenso
-    trial_fim = db.Column(db.DateTime)
+    plano = db.Column(db.String(30), default="free")  # free, essencial, profissional, business, consultor, enterprise, suspenso
+    trial_fim = db.Column(db.DateTime)            # fim do teste do Profissional (a conta segue no Free por baixo)
+    trial_usado = db.Column(db.Boolean, default=False)
+    tabela_precos = db.Column(db.Integer, default=2026)   # versão da tabela de preços em que a conta foi criada/migrada
+    preco_contratado = db.Column(db.Float)        # assinante da tabela antiga: valor mensal que continua pagando
+    creditos = db.Column(db.Integer, default=0)   # Pacote de inteligência: créditos para uso acima do limite do plano
+    creditos_validade = db.Column(db.DateTime)
+    empresas_extras = db.Column(db.Integer, default=0)   # empresas adicionais (R$ 49/mês cada; Business e Consultor)
+    empresas_extras_ate = db.Column(db.DateTime)
+    empresas_extras_status = db.Column(db.String(20))
+    empresas_extras_metodo = db.Column(db.String(20))
+    empresas_extras_mp_id = db.Column(db.String(60), index=True)
     marca_relatorio = db.Column(db.String(200))  # plano Consultor: nome do escritório nos relatórios
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -48,7 +58,7 @@ class Conta(db.Model):
     ultimo_aviso_contratos = db.Column(db.Date)
 
     def to_dict(self):
-        return {"id": self.id, "nome": self.nome, "plano": self.plano, "trial_fim": _iso(self.trial_fim),
+        return {"id": self.id, "nome": self.nome, "plano": self.plano, "trial_fim": _iso(self.trial_fim), "trial_usado": self.trial_usado,
                 "marca_relatorio": self.marca_relatorio, "criado_em": _iso(self.criado_em),
                 "ciclo": self.ciclo, "metodo_pagamento": self.metodo_pagamento,
                 "assinatura_status": self.assinatura_status, "pago_ate": _iso(self.pago_ate),
@@ -69,6 +79,7 @@ class Usuario(db.Model):
     email_verificado = db.Column(db.Boolean)
     falhas_login = db.Column(db.Integer, default=0)
     bloqueado_ate = db.Column(db.DateTime)
+    papel = db.Column(db.String(20))              # dono (gerencia equipe e assinatura) ou membro
     conta = db.relationship("Conta")
 
     @property
@@ -76,7 +87,8 @@ class Usuario(db.Model):
         return self.email_verificado is not False
 
     def to_dict(self, admin=False):
-        return {"id": self.id, "nome": self.nome, "email": self.email, "modo_guiado": self.modo_guiado, "admin": admin}
+        return {"id": self.id, "nome": self.nome, "email": self.email, "modo_guiado": self.modo_guiado, "admin": admin,
+                "papel": self.papel or "dono"}
 
 
 class TrialCnpj(db.Model):
@@ -692,12 +704,17 @@ class TabelaReferencia(db.Model):
     observacao = db.Column(db.Text)
     n_itens = db.Column(db.Integer, default=0)
     ativa = db.Column(db.Boolean, default=True)
+    desonerado = db.Column(db.Boolean)                  # SINAPI/SICRO: preços com desoneração da folha
+    colunas = db.Column(db.JSON)                        # [{nome, tipo: preco|info}] colunas extras guardadas na importação
+    desativada_em = db.Column(db.DateTime)              # a limpeza apaga os itens 30 dias depois
+    itens_removidos_em = db.Column(db.DateTime)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     def to_dict(self):
         return {"id": self.id, "nome": self.nome, "fonte": self.fonte, "uf": self.uf, "data_base": _iso(self.data_base),
-                "observacao": self.observacao, "n_itens": self.n_itens, "ativa": self.ativa,
-                "criado_em": _iso(self.criado_em)}
+                "observacao": self.observacao, "n_itens": self.n_itens, "ativa": self.ativa, "desonerado": self.desonerado,
+                "colunas": self.colunas or [], "desativada_em": _iso(self.desativada_em),
+                "itens_removidos_em": _iso(self.itens_removidos_em), "criado_em": _iso(self.criado_em)}
 
 
 class ItemReferencia(db.Model):
@@ -708,12 +725,15 @@ class ItemReferencia(db.Model):
     unidade = db.Column(db.String(40))
     preco = db.Column(db.Float)
     termos = db.Column(db.Text)  # descrição normalizada (minúsculas, sem acento) para a busca
+    precos = db.Column(db.JSON)  # todas as colunas de preço da linha {rótulo: valor} (ex.: CMED PF 18%, PMVG 18%)
+    extras = db.Column(db.JSON)  # demais colunas informativas {rótulo: texto} (ex.: laboratório, registro, CAP, tarja)
 
     def to_dict(self, tabela=None):
         d = {"id": self.id, "tabela_id": self.tabela_id, "codigo": self.codigo, "descricao": self.descricao,
-             "unidade": self.unidade, "preco": self.preco}
+             "unidade": self.unidade, "preco": self.preco, "precos": self.precos or {}, "extras": self.extras or {}}
         if tabela:
-            d.update({"tabela": tabela.nome, "fonte": tabela.fonte, "uf": tabela.uf, "data_base": _iso(tabela.data_base)})
+            d.update({"tabela": tabela.nome, "fonte": tabela.fonte, "uf": tabela.uf, "data_base": _iso(tabela.data_base),
+                      "desonerado": tabela.desonerado})
         return d
 
 
@@ -731,6 +751,7 @@ class Proposta(db.Model):
     bdi_pct = db.Column(db.Float, default=20.0)              # BDI/margem padrão aplicado aos itens
     bdi_detalhe = db.Column(db.JSON)                         # componentes da fórmula do TCU, se usada
     validade_dias = db.Column(db.Integer, default=60)
+    parametros = db.Column(db.JSON)  # referência de preço: {uf, icms_pct, criterio_cmed, desonerado, fontes, modo}
     condicoes = db.Column(db.JSON)   # o que o edital exige da proposta (lido pela IA)
     itens = db.Column(db.JSON)       # [{descricao, unidade, quantidade, custo_unitario, bdi, preco_unitario, ...}]
     texto = db.Column(db.Text)       # minuta (markdown simples)
@@ -746,7 +767,7 @@ class Proposta(db.Model):
              "demonstracao": self.demonstracao, "criado_em": _iso(self.criado_em),
              "atualizado_em": _iso(self.atualizado_em), "n_itens": len(self.itens or [])}
         if completo:
-            d.update({"bdi_detalhe": self.bdi_detalhe or {}, "condicoes": self.condicoes or {},
+            d.update({"bdi_detalhe": self.bdi_detalhe or {}, "condicoes": self.condicoes or {}, "parametros": self.parametros or {},
                       "itens": self.itens or [], "texto": self.texto or "", "alertas": self.alertas or []})
         return d
 
@@ -861,3 +882,108 @@ class NewsletterEnvio(db.Model):
     cliques = db.Column(db.JSON)          # {índice do link: quantidade}
     descadastrou_em = db.Column(db.DateTime)
     __table_args__ = (db.UniqueConstraint("edicao_id", "lead_id"),)
+
+
+class BuscaProspeccao(db.Model):
+    """Varredura do PNCP por segmento para achar empresas que vendem ao governo (possíveis clientes do Kasiski)."""
+    __tablename__ = "busca_prospeccao"
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(160))
+    termos = db.Column(db.JSON)            # ["limpeza predial", "conservação"]
+    ufs = db.Column(db.JSON)               # ["SP", "MG"] ou []
+    meses = db.Column(db.Integer, default=12)
+    limite = db.Column(db.Integer, default=100)
+    status = db.Column(db.String(20), default="na_fila")  # na_fila, buscando, enriquecendo, concluida, erro
+    etapa = db.Column(db.String(160))
+    documentos = db.Column(db.Integer, default=0)
+    empresas = db.Column(db.Integer, default=0)
+    erro = db.Column(db.Text)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    concluido_em = db.Column(db.DateTime)
+
+    def to_dict(self):
+        return {"id": self.id, "nome": self.nome, "termos": self.termos or [], "ufs": self.ufs or [], "meses": self.meses,
+                "limite": self.limite, "status": self.status, "etapa": self.etapa, "documentos": self.documentos,
+                "empresas": self.empresas, "erro": self.erro, "criado_em": _iso(self.criado_em),
+                "concluido_em": _iso(self.concluido_em)}
+
+
+class Prospect(db.Model):
+    """Empresa que vence licitações (dados públicos do PNCP e da Receita) avaliada como possível cliente."""
+    __tablename__ = "prospect"
+    id = db.Column(db.Integer, primary_key=True)
+    cnpj = db.Column(db.String(14), unique=True, nullable=False, index=True)
+    razao_social = db.Column(db.String(250))
+    nome_fantasia = db.Column(db.String(250))
+    uf = db.Column(db.String(2), index=True)
+    municipio = db.Column(db.String(120))
+    porte = db.Column(db.String(60))
+    cnae = db.Column(db.String(20))
+    cnae_descricao = db.Column(db.String(250))
+    situacao = db.Column(db.String(40))
+    abertura = db.Column(db.String(20))
+    capital_social = db.Column(db.Float)
+    simples = db.Column(db.Boolean)
+    telefone = db.Column(db.String(60))         # contato cadastrado na Receita (pode ser do contador)
+    email_empresa = db.Column(db.String(200))   # idem
+    socios = db.Column(db.JSON)                 # [{nome, qualificacao}] do QSA público
+    segmentos = db.Column(db.JSON)              # termos de busca em que apareceu
+    buscas = db.Column(db.JSON)                 # ids das buscas
+    contratos = db.Column(db.Integer, default=0)
+    atas = db.Column(db.Integer, default=0)
+    valor_total = db.Column(db.Float, default=0)
+    orgaos = db.Column(db.JSON)                 # {órgão: vitórias}
+    ufs_atuacao = db.Column(db.JSON)
+    meses_ativos = db.Column(db.Integer, default=0)
+    primeira_vitoria = db.Column(db.Date)
+    ultima_vitoria = db.Column(db.Date)
+    exemplos = db.Column(db.JSON)               # contratos/atas com link do PNCP
+    score = db.Column(db.Integer, default=0, index=True)
+    faixa = db.Column(db.String(1), index=True)  # A, B, C, D
+    motivos = db.Column(db.JSON)
+    plano_sugerido = db.Column(db.String(20))
+    status = db.Column(db.String(20), default="novo", index=True)  # novo, contatado, respondeu, lead, cliente, descartado, nao_contatar
+    responsavel = db.Column(db.String(120))
+    notas = db.Column(db.Text)
+    lead_id = db.Column(db.Integer, index=True)
+    conta_id = db.Column(db.Integer, index=True)
+    token = db.Column(db.String(40), unique=True, index=True)   # link do relatório gratuito
+    relatorio_visitas = db.Column(db.Integer, default=0)
+    relatorio_visto_em = db.Column(db.DateTime)
+    editais_cache = db.Column(db.JSON)          # editais abertos que combinam (cache do relatório)
+    editais_cache_em = db.Column(db.DateTime)
+    contatado_em = db.Column(db.DateTime)
+    enriquecido_em = db.Column(db.DateTime)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    atualizado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self, completo=False):
+        d = {k: getattr(self, k) for k in ("id", "cnpj", "razao_social", "nome_fantasia", "uf", "municipio", "porte", "cnae",
+                                           "cnae_descricao", "situacao", "telefone", "email_empresa", "contratos", "atas",
+                                           "valor_total", "meses_ativos", "score", "faixa", "plano_sugerido", "status",
+                                           "responsavel", "lead_id", "conta_id", "token", "relatorio_visitas")}
+        d.update({"segmentos": self.segmentos or [], "n_orgaos": len(self.orgaos or {}), "ufs_atuacao": self.ufs_atuacao or [],
+                  "ultima_vitoria": _iso(self.ultima_vitoria), "primeira_vitoria": _iso(self.primeira_vitoria),
+                  "relatorio_visto_em": _iso(self.relatorio_visto_em), "contatado_em": _iso(self.contatado_em),
+                  "motivos": self.motivos or [], "criado_em": _iso(self.criado_em)})
+        if completo:
+            d.update({"orgaos": self.orgaos or {}, "exemplos": self.exemplos or [], "socios": self.socios or [],
+                      "notas": self.notas, "abertura": self.abertura, "capital_social": self.capital_social,
+                      "simples": self.simples, "buscas": self.buscas or []})
+        return d
+
+
+class Convite(db.Model):
+    """Convite para entrar na equipe da conta (limite de usuários do plano)."""
+    id = db.Column(db.Integer, primary_key=True)
+    conta_id = db.Column(db.Integer, db.ForeignKey("conta.id"), nullable=False, index=True)
+    email = db.Column(db.String(200), nullable=False, index=True)
+    token = db.Column(db.String(60), unique=True, nullable=False)
+    convidado_por = db.Column(db.Integer)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    expira_em = db.Column(db.DateTime)
+    aceito_em = db.Column(db.DateTime)
+
+    def to_dict(self):
+        return {"id": self.id, "email": self.email, "criado_em": _iso(self.criado_em), "expira_em": _iso(self.expira_em),
+                "aceito_em": _iso(self.aceito_em)}

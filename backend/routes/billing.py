@@ -22,14 +22,17 @@ def checkout():
     boleto ou cartão, vale um ciclo). ciclo: 'mensal' ou 'anual'."""
     d = dados()
     plano, ciclo, metodo = d.get("plano"), d.get("ciclo") or "mensal", d.get("metodo") or "recorrente"
-    if plano not in planos.PAGOS or ciclo not in ("mensal", "anual") or metodo not in ("recorrente", "avulso"):
+    plano = planos.ALIAS.get(plano, plano)
+    if plano == "enterprise":
+        raise ErroAPI("O plano Enterprise é sob consulta. Fale com a gente pelo chat ou pelo e-mail comercial.")
+    if plano not in planos.VENDAVEIS or ciclo not in ("mensal", "anual") or metodo not in ("recorrente", "avulso"):
         raise ErroAPI("Escolha um plano, o ciclo e a forma de pagamento.")
     conta = g.conta
     if metodo == "recorrente" and conta.assinatura_status == "ativa" and conta.metodo_pagamento == "recorrente" \
             and conta.mp_assinatura_id:
         raise ErroAPI("Você já tem uma assinatura automática ativa. Cancele a atual antes de trocar de plano, "
                       "ou fale com o suporte para ajustar.", 409, "assinatura_ativa")
-    valor = planos.preco(plano, ciclo)
+    valor = planos.preco_da_conta(conta, plano, ciclo)
     titulo = f"Kasiski {planos.PLANOS[plano]['nome']} — {'anual' if ciclo == 'anual' else 'mensal'}"
     ref = cob.referencia(conta, plano, ciclo, metodo)
     if metodo == "recorrente":
@@ -76,7 +79,7 @@ def cancelar():
 def sincronizar():
     """Chamado quando o cliente volta do Mercado Pago: confere a assinatura na hora, sem esperar o webhook."""
     conta = g.conta
-    for aid in (conta.mp_assinatura_id, conta.pacotes_mp_assinatura_id):
+    for aid in (conta.mp_assinatura_id, conta.pacotes_mp_assinatura_id, conta.empresas_extras_mp_id):
         if aid and mp.configurado():
             try:
                 cob.processar_assinatura(aid)
@@ -97,7 +100,7 @@ def comprar_pacotes():
     """Pacotes extras de contratos (mensal). metodo: recorrente (cartão) ou avulso (Pix/boleto/cartão, 1 mês)."""
     d = dados()
     conta = g.conta
-    if conta.plano not in planos.PAGOS or not planos.PLANOS[conta.plano].get("contratos"):
+    if planos.codigo(conta) not in planos.PAGOS or not planos.dados_plano(conta).get("contratos"):
         raise ErroAPI("Pacotes extras de contratos estão disponíveis a partir do plano Profissional.", 402, "fora_do_plano")
     try:
         qtd = max(1, min(int(d.get("quantidade") or 1), 20))
@@ -130,6 +133,67 @@ def cancelar_pacotes():
     conta.pacotes_status = "cancelada"
     db.session.commit()
     return jsonify({"ok": True, "ate": conta.pacotes_ate.isoformat() if conta.pacotes_ate else None})
+
+
+@bp.post("/billing/creditos")
+@login_requerido
+def comprar_creditos():
+    """Pacote de inteligência (avulso, Pix/boleto/cartão): créditos para usar acima do limite do plano."""
+    d = dados()
+    conta = g.conta
+    if planos.codigo(conta) not in planos.PAGOS:
+        raise ErroAPI("O Pacote de inteligência é para assinantes. No Free, experimente o Profissional ou assine um plano.", 402)
+    try:
+        qtd = max(1, min(int(d.get("quantidade") or 1), 10))
+    except (TypeError, ValueError):
+        raise ErroAPI("Quantidade inválida.")
+    pk = planos.PACOTE_INTELIGENCIA
+    valor = round(pk["preco"] * qtd, 2)
+    _, url = mp.criar_pagamento_avulso(email=g.usuario.email, valor=valor, anual=False,
+                                       titulo=f"Kasiski — {qtd} Pacote(s) de inteligência", referencia=f"c:{conta.id}:{qtd}")
+    db.session.commit()
+    return jsonify({"url": url, "valor": valor})
+
+
+@bp.post("/billing/empresas")
+@login_requerido
+def comprar_empresas():
+    """Empresas adicionais (mensal, R$ 49 cada) nos planos Business e Consultor."""
+    d = dados()
+    conta = g.conta
+    if planos.codigo(conta) not in planos.PAGOS or not planos.PLANOS[planos.codigo(conta)].get("empresa_extra"):
+        raise ErroAPI("Empresas adicionais estão disponíveis nos planos Business e Consultor.", 402, "fora_do_plano")
+    try:
+        qtd = max(1, min(int(d.get("quantidade") or 1), 50))
+    except (TypeError, ValueError):
+        raise ErroAPI("Quantidade inválida.")
+    metodo = d.get("metodo") if d.get("metodo") in ("recorrente", "avulso") else "avulso"
+    if metodo == "recorrente" and conta.empresas_extras_status == "ativa" and conta.empresas_extras_metodo == "recorrente":
+        raise ErroAPI("Você já tem empresas adicionais com renovação automática. Cancele a renovação atual para mudar a quantidade.", 409)
+    valor = round(planos.EMPRESA_EXTRA_PRECO * qtd, 2)
+    titulo = f"Kasiski — {qtd} empresa(s) adicional(is) (mensal)"
+    ref = f"e:{conta.id}:{qtd}:{metodo}"
+    if metodo == "recorrente":
+        aid, url = mp.criar_assinatura(email=g.usuario.email, valor=valor, anual=False, titulo=titulo, referencia=ref)
+        conta.empresas_extras_mp_id = aid
+        if conta.empresas_extras_status != "ativa":
+            conta.empresas_extras_status = "pendente"
+    else:
+        _, url = mp.criar_pagamento_avulso(email=g.usuario.email, valor=valor, anual=False, titulo=titulo, referencia=ref)
+    db.session.commit()
+    return jsonify({"url": url, "valor": valor})
+
+
+@bp.post("/billing/empresas/cancelar")
+@login_requerido
+def cancelar_empresas():
+    conta = g.conta
+    if conta.empresas_extras_metodo != "recorrente" or not conta.empresas_extras_mp_id:
+        raise ErroAPI("Não há renovação automática de empresas adicionais.")
+    mp.cancelar_assinatura(conta.empresas_extras_mp_id)
+    conta.empresas_extras_status = "cancelada"
+    db.session.commit()
+    return jsonify({"ok": True, "ate": conta.empresas_extras_ate.isoformat() if conta.empresas_extras_ate else None})
 
 
 @bp.post("/billing/webhook")

@@ -1,4 +1,5 @@
 """Inteligência de preços e propostas comerciais; busca nas tabelas de referência; admin das tabelas."""
+import re
 from datetime import datetime, timedelta
 
 from flask import Blueprint, current_app, g, jsonify, request, send_file
@@ -9,7 +10,7 @@ from extensions import ErroAPI, db
 from models import Edital, Empresa, ItemReferencia, PesquisaPreco, Proposta, TabelaReferencia
 from routes import dados, edital_da_conta, empresa_da_conta, para_data, para_float
 from services import propostas as svc
-from services import tabelas, tarefas
+from services import precificacao, tabelas, tarefas
 from services.dados_publicos import estatisticas, pesquisa_precos
 
 bp = Blueprint("propostas", __name__, url_prefix="/api")
@@ -47,6 +48,9 @@ def _ler_edital(pid, edital_id, conta_id):
     p, ed, conta = Proposta.query.get(pid), Edital.query.get(edital_id), Conta.query.get(conta_id)
     try:
         respostas = svc.ler_condicoes(p, ed)
+        p.etapa = "Buscando os preços nas tabelas que o edital exige"
+        db.session.commit()
+        precificacao.precificar(p, ed, Empresa.query.get(p.empresa_id))
         svc.recalcular(p)
         p.status, p.etapa, p.erro = "rascunho", None, None
         planos.registrar_uso(conta, "propostas", respostas, cobravel=False)
@@ -118,10 +122,33 @@ def editar(pid):
     if isinstance(d.get("itens"), list):
         permitidos = ("numero", "lote", "descricao", "unidade", "quantidade", "custo_unitario", "bdi", "preco_unitario",
                       "preco_manual", "valor_unitario_estimado", "catmat", "tipo_catalogo", "pagina", "referencias",
-                      "observacao")
+                      "observacao", "codigo_referencia", "fonte_referencia", "marca", "fabricante", "modelo", "registro",
+                      "fabricante_sugerido", "registro_sugerido", "sugestao", "desconto_pct", "aceito")
         p.itens = [{k: v for k, v in it.items() if k in permitidos} for it in d["itens"][:500] if isinstance(it, dict)]
     if "texto" in d:
         p.texto = d["texto"] or ""
+    if isinstance(d.get("parametros"), dict):
+        par = dict(p.parametros or {})
+        e = d["parametros"]
+        if "uf" in e:
+            par["uf"] = (e["uf"] or "").upper()[:2] or None
+        if "icms_pct" in e:
+            par["icms_pct"] = para_float(e["icms_pct"])
+        if e.get("criterio_cmed") in ("auto", "PMVG", "PF"):
+            par["criterio_cmed"] = e["criterio_cmed"]
+        if "desonerado" in e:
+            par["desonerado"] = {"sim": True, "nao": False, True: True, False: False}.get(e["desonerado"])
+        if e.get("modo") in ("preco", "desconto"):
+            par["modo"] = e["modo"]
+        if isinstance(e.get("fontes"), list):
+            par["fontes"] = [f for f in e["fontes"] if f in tabelas.FONTES or f == "mercado"]
+        for k in ("usar_concorrentes", "usar_mercado"):
+            if k in e:
+                par[k] = bool(e[k])
+        p.parametros = par
+        if d.get("reprecificar"):
+            ed = Edital.query.get(p.edital_id) if p.edital_id else None
+            precificacao.precificar(p, ed, Empresa.query.get(p.empresa_id), consultar_mercado=False)
     svc.recalcular(p)
     db.session.commit()
     return jsonify(_saida(p))
@@ -201,6 +228,37 @@ def baixar_docx(pid):
                      mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 
+@bp.post("/propostas/<int:pid>/precificar")
+@login_requerido
+def precificar(pid):
+    """Busca de novo as referências e sugestões de todos os itens (tabelas exigidas, mercado, concorrentes)."""
+    p = _proposta(pid)
+    planos.exigir(g.conta, "propostas")
+    if p.status in EM_ANDAMENTO:
+        raise ErroAPI("Aguarde a tarefa em andamento terminar.", 409)
+    ed = Edital.query.get(p.edital_id) if p.edital_id else None
+    precificacao.precificar(p, ed, Empresa.query.get(p.empresa_id))
+    svc.recalcular(p)
+    db.session.commit()
+    return jsonify(_saida(p))
+
+
+@bp.post("/propostas/<int:pid>/aceitar")
+@login_requerido
+def aceitar(pid):
+    """Aplica as sugestões de preço: todas (sem `indices`) ou só as dos itens informados."""
+    p = _proposta(pid)
+    if p.status in EM_ANDAMENTO:
+        raise ErroAPI("Aguarde a tarefa em andamento terminar.", 409)
+    d = dados()
+    indices = d.get("indices")
+    indices = {int(i) for i in indices if str(i).isdigit()} if isinstance(indices, list) else None
+    n = precificacao.aceitar(p, indices)
+    svc.recalcular(p)
+    db.session.commit()
+    return jsonify({**_saida(p), "aceitos": n})
+
+
 # ---------------------------------------------------------------- inteligência de preço por item
 @bp.post("/propostas/<int:pid>/referencias")
 @login_requerido
@@ -227,7 +285,16 @@ def referencias(pid):
         alvo = tabelas.norm(ps.descricao)
         if ts and sum(t in alvo for t in ts) >= max(1, len(ts) // 2) and (ps.estatisticas or {}).get("n"):
             salvas.append({"id": ps.id, "descricao": ps.descricao, "estatisticas": ps.estatisticas})
-    return jsonify({"tabelas": tabelas.buscar(descricao, uf=uf, limite=12), "mercado": mercado, "pesquisas": salvas[:5],
+    par = p.parametros or {}
+    uf_orgao = par.get("uf") or uf
+    crit = None if par.get("criterio_cmed") in (None, "auto") else par["criterio_cmed"]
+    achados = tabelas.por_codigo(d.get("codigo_referencia"), None) if d.get("codigo_referencia") else []
+    vistos = {a["id"] for a in achados}
+    achados += [r for r in tabelas.buscar(descricao, uf=uf, limite=12) if r["id"] not in vistos]
+    for r in achados:
+        ap = tabelas.preco_aplicavel(r, r.get("fonte"), uf_orgao, par.get("icms_pct"), crit)
+        r["preco_aplicavel"], r["coluna_aplicavel"], r["regra"] = ap.get("valor"), ap.get("coluna"), ap.get("regra")
+    return jsonify({"tabelas": achados[:14], "mercado": mercado, "pesquisas": salvas[:5], "parametros": par,
                     "uf": uf, "tem_tabelas": TabelaReferencia.query.filter_by(ativa=True).count() > 0})
 
 
@@ -244,7 +311,14 @@ def buscar_tabelas():
     if len(q) < 3:
         raise ErroAPI("Digite pelo menos 3 letras para buscar.")
     fontes = [f for f in (request.args.get("fontes") or "").split(",") if f in tabelas.FONTES] or None
-    return jsonify(tabelas.buscar(q, uf=(request.args.get("uf") or "").upper()[:2] or None, fontes=fontes, limite=40))
+    uf = (request.args.get("uf") or "").upper()[:2] or None
+    achados = tabelas.por_codigo(q, uf, fontes) if re.fullmatch(r"[\d.\-/ ]{3,}", q) else []
+    achados = achados or tabelas.buscar(q, uf=uf, fontes=fontes, limite=40)
+    icms = para_float(request.args.get("icms"))
+    for r in achados:
+        ap = tabelas.preco_aplicavel(r, r.get("fonte"), uf, icms, request.args.get("criterio") or None)
+        r["preco_aplicavel"], r["coluna_aplicavel"], r["regra"] = ap.get("valor"), ap.get("coluna"), ap.get("regra")
+    return jsonify(achados)
 
 
 # ---------------------------------------------------------------- admin: tabelas de referência
@@ -280,10 +354,11 @@ def admin_importar():
     def idx(campo):
         v = d.get(f"col_{campo}")
         return int(v) if v not in (None, "", "-1") and str(v).lstrip("-").isdigit() else None
-    mapa = {c: idx(c) for c in ("codigo", "descricao", "unidade", "preco")}
+    mapa = {c: idx(c) for c in ("codigo", "descricao", "unidade", "preco", "apresentacao")}
     t = TabelaReferencia(nome=d["nome"].strip()[:200], fonte=d.get("fonte") if d.get("fonte") in tabelas.FONTES else "outra",
                          uf=(d.get("uf") or "").upper()[:2] or None, data_base=para_data(d.get("data_base")),
-                         observacao=(d.get("observacao") or "").strip() or None)
+                         observacao=(d.get("observacao") or "").strip() or None,
+                         desonerado={"sim": True, "nao": False}.get(d.get("desonerado")))
     db.session.add(t)
     db.session.flush()
     try:
@@ -300,7 +375,14 @@ def admin_editar_tabela(tid):
     t = TabelaReferencia.query.get_or_404(tid)
     d = dados()
     if "ativa" in d:
-        t.ativa = bool(d["ativa"])
+        nova = bool(d["ativa"])
+        if nova and t.itens_removidos_em:
+            raise ErroAPI("Os itens desta tabela já foram removidos pela limpeza automática. Envie a planilha de novo.")
+        if nova != t.ativa:
+            t.desativada_em = None if nova else datetime.utcnow()
+        t.ativa = nova
+    if "desonerado" in d:
+        t.desonerado = {"sim": True, "nao": False, True: True, False: False}.get(d["desonerado"])
     for campo in ("nome", "observacao"):
         if campo in d:
             setattr(t, campo, (d[campo] or "").strip() or getattr(t, campo))

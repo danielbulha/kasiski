@@ -443,7 +443,7 @@ def montar_html(ed, envio=None, lead=None, web=False):
                  f'<p style="margin:0 0 16px;font-size:14px;color:#C9D5DE">O Radar do Kasiski procura no PNCP os editais que combinam com a sua empresa, '
                  f'e a IA analisa o edital em minutos: requisitos, riscos e documentos.</p>'
                  f'<a href="{L(app_url + "/#/cadastro", "cta_teste")}" style="background:#fff;color:{TINTA};text-decoration:none;padding:11px 20px;'
-                 f'border-radius:6px;font-weight:700;display:inline-block;font-size:14px">Testar grátis por 7 dias</a></td></tr></table></td></tr>')
+                 f'border-radius:6px;font-weight:700;display:inline-block;font-size:14px">Criar conta grátis</a></td></tr></table></td></tr>')
 
     rodape = cfg.get("NEWSLETTER_RODAPE") or "Kasiski · D.B.C. Consultoria e Serviços Ltda."
     fontes = "Fonte dos dados: Portal Nacional de Contratações Públicas (PNCP), consulta pública."

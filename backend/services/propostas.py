@@ -43,6 +43,7 @@ def _num(v):
 def recalcular(proposta):
     """Recalcula preço unitário/total de cada item e os alertas objetivos (regras, sem IA)."""
     obra = bool((proposta.condicoes or {}).get("obra_ou_servico_engenharia"))
+    modo_desconto = (proposta.parametros or {}).get("modo") == "desconto"
     itens, alertas = [], []
     total = total_estimado = 0.0
     for n, it in enumerate(proposta.itens or [], start=1):
@@ -51,7 +52,11 @@ def recalcular(proposta):
         custo = _num(it.get("custo_unitario"))
         bdi = _num(it.get("bdi"))
         bdi = proposta.bdi_pct if bdi is None else bdi
-        if it.get("preco_manual") and _num(it.get("preco_unitario")) is not None:
+        tab = (it.get("referencias") or {}).get("tabela") or {}
+        desconto = _num(it.get("desconto_pct"))
+        if modo_desconto and desconto is not None and tab.get("preco"):
+            preco = round(float(tab["preco"]) * (1 - desconto / 100), 2)
+        elif it.get("preco_manual") and _num(it.get("preco_unitario")) is not None:
             preco = round(_num(it["preco_unitario"]), 2)
         elif custo is not None:
             preco = round(custo * (1 + (bdi or 0) / 100), 2)
@@ -85,12 +90,25 @@ def recalcular(proposta):
                     alertas.append({"nivel": "medio", "texto": f"{rotulo}: abaixo de 50% do orçado — indício de "
                                     "inexequibilidade; prepare a demonstração de custos.",
                                     "fundamento": "IN SEGES/ME 73/2022, art. 34"})
+            if tab.get("tipo") == "teto" and tab.get("preco") and preco > float(tab["preco"]) + 0.005:
+                situacao.append("acima_teto")
+                alertas.append({"nivel": "alto", "texto": f"{rotulo}: preço acima do teto da {tab.get('nome') or 'tabela'} "
+                                f"({tab.get('coluna') or 'preço máximo'}: {moeda(tab['preco'])}). Venda ao governo acima do teto "
+                                "CMED é irregular e a proposta tende a ser desclassificada.",
+                                "fundamento": "Lei 10.742/2003; Resolução CMED 3/2011 (CAP/PMVG)" if tab.get("fonte") == "cmed" else ""})
             if custo is not None and preco < custo:
                 situacao.append("prejuizo")
                 alertas.append({"nivel": "alto", "texto": f"{rotulo}: preço abaixo do custo informado.", "fundamento": ""})
         mediana = ((it.get("referencias") or {}).get("mercado") or {}).get("mediana")
         if preco is not None and mediana:
             it["pct_mercado"] = round(preco / mediana * 100, 1)
+        if (it.get("referencias") or {}).get("concorrentes", {}).get("media") and preco is not None:
+            it["pct_concorrentes"] = round(preco / it["referencias"]["concorrentes"]["media"] * 100, 1)
+        if tab.get("tipo") == "piso" and tab.get("preco") and preco is not None and preco < float(tab["preco"]):
+            situacao.append("abaixo_piso")
+            alertas.append({"nivel": "alto", "texto": f"{rotulo}: preço abaixo do piso salarial da {tab.get('nome') or 'convenção coletiva'} "
+                            f"({moeda(tab['preco'])}), sem contar encargos e benefícios. A proposta seria inexequível.",
+                            "fundamento": "Lei 14.133, art. 59, III e §3º; IN SEGES/MP 5/2017, Anexo VII-A"})
         it["situacao"] = situacao
         itens.append(it)
     proposta.itens = itens
@@ -115,8 +133,13 @@ def prompt_condicoes(texto):
 {{
  "objeto": "", "orgao": "", "numero": "", "criterio_julgamento": "", "modo_disputa": "",
  "obra_ou_servico_engenharia": false, "valor_estimado_global": null, "orcamento_sigiloso": false,
+ "uf_orgao": "", "icms_aliquota": null,
+ "referencias_preco": [{{"fonte": "SINAPI|SICRO|CMED|BPS|SIGTAP|CCT|Painel de Preços|outra", "detalhe": "",
+                        "uf": "", "data_base": "", "desonerado": null, "criterio_cmed": "PMVG|PF|", "pagina": ""}}],
+ "desconto_sobre": "",
  "itens": [{{"numero": "", "lote": "", "descricao": "", "unidade": "", "quantidade": null,
-            "valor_unitario_estimado": null, "codigo_catmat_catser": "", "pagina": ""}}],
+            "valor_unitario_estimado": null, "codigo_catmat_catser": "", "codigo_referencia": "",
+            "fonte_referencia": "", "marca_exigida": "", "pagina": ""}}],
  "validade_minima_dias": null, "prazo_entrega_execucao": "", "local_entrega": "", "condicoes_pagamento": "",
  "reajuste": "", "exige_planilha_custos": false, "exige_composicao_bdi": false, "bdi_referencia": "",
  "exige_marca_modelo": false, "amostra_ou_prova_conceito": "", "garantia_proposta": "",
@@ -126,6 +149,15 @@ def prompt_condicoes(texto):
 Regras: liste TODOS os itens/lotes da planilha do termo de referência (até 200), com quantidades e valores
 estimados unitários quando o edital os divulgar (use null se o orçamento for sigiloso ou não constar).
 Números sem símbolo de moeda, com ponto decimal. Indique a página no formato do texto ([pág. N]).
+"referencias_preco": TODAS as tabelas/fontes que o edital manda usar como referência ou teto de preço (ex.: "preço
+máximo = PMVG da CMED com ICMS de 18%", "SINAPI-SP data-base 07/2026 não desonerado", "piso da CCT SEAC/SP 2026",
+"Banco de Preços em Saúde", "Painel de Preços"). "detalhe" copia a regra do edital. "criterio_cmed" = PMVG ou PF quando
+o edital disser. "desonerado": true/false quando o edital indicar a tabela SINAPI/SICRO desonerada ou não.
+"uf_orgao": UF do órgão comprador. "icms_aliquota": alíquota de ICMS citada no edital para os medicamentos (número).
+"desconto_sobre": se o critério for maior desconto, sobre qual tabela/preço o desconto incide.
+Nos itens: "codigo_referencia" = código da composição/insumo SINAPI ou SICRO, código GGREM/registro ANVISA ou outro
+código de tabela que a planilha do edital trouxer; "fonte_referencia" = de qual tabela é esse código ou preço
+(ex.: "SINAPI 94990", "CMED"); "marca_exigida" só se o edital fixar marca de referência.
 "declaracoes_exigidas": declarações que o edital exige junto com a proposta (ex.: que os preços incluem
 todos os custos, cumprimento de reserva de cargos, enquadramento ME/EPP). Não invente o que não constar.
 
@@ -135,6 +167,10 @@ EDITAL:
         "objeto": "Prestação de serviços contínuos de limpeza e conservação predial", "orgao": "Prefeitura Municipal de Exemplo",
         "numero": "Pregão Eletrônico 45/2026", "criterio_julgamento": "Menor preço global", "modo_disputa": "Aberto",
         "obra_ou_servico_engenharia": False, "valor_estimado_global": 1850000.0, "orcamento_sigiloso": False,
+        "uf_orgao": "SP", "icms_aliquota": None,
+        "referencias_preco": [{"fonte": "CCT", "detalhe": "Salários não inferiores ao piso da CCT SIEMACO/SP 2026", "uf": "SP",
+                               "data_base": "", "desonerado": None, "criterio_cmed": "", "pagina": "41"}],
+        "desconto_sobre": "",
         "itens": [
             {"numero": "1", "lote": "", "descricao": "Servente de limpeza — 44h semanais (posto)", "unidade": "posto/mês",
              "quantidade": 24, "valor_unitario_estimado": 5600.0, "codigo_catmat_catser": "", "pagina": "38"},
@@ -169,6 +205,9 @@ def ler_condicoes(proposta, edital):
                       "quantidade": _num(it.get("quantidade")) or 1,
                       "valor_unitario_estimado": _num(it.get("valor_unitario_estimado")),
                       "catmat": str(it.get("codigo_catmat_catser") or "").strip(), "pagina": str(it.get("pagina") or ""),
+                      "codigo_referencia": str(it.get("codigo_referencia") or "").strip()[:60],
+                      "fonte_referencia": str(it.get("fonte_referencia") or "").strip()[:80],
+                      "marca": str(it.get("marca_exigida") or "").strip()[:120] or None,
                       "custo_unitario": None, "bdi": None})
     cond.pop("itens", None)
     proposta.condicoes = cond
@@ -194,6 +233,11 @@ def prompt_minuta(proposta, empresa, edital, tot, refs, contexto):
                      "quantidade": it.get("quantidade"), "preco_unitario": it.get("preco_unitario"),
                      "valor_unitario_estimado": it.get("valor_unitario_estimado"),
                      "mediana_mercado": ((it.get("referencias") or {}).get("mercado") or {}).get("mediana"),
+                     "referencia_oficial": {k: ((it.get("referencias") or {}).get("tabela") or {}).get(k)
+                                            for k in ("nome", "codigo", "coluna", "preco", "regra")} if (it.get("referencias") or {}).get("tabela") else None,
+                     "media_concorrentes": ((it.get("referencias") or {}).get("concorrentes") or {}).get("media"),
+                     "desconto_pct": it.get("desconto_pct"), "marca": it.get("marca"), "fabricante": it.get("fabricante"),
+                     "registro": it.get("registro"),
                      "custo_unitario": it.get("custo_unitario")} for it in (proposta.itens or [])[:60]]
     sistema = BASE + (" Você redige PROPOSTAS COMERCIAIS de empresas licitantes e revisa a formação de preço. "
                       "A tabela de itens e o valor por extenso são inseridos pelo sistema: no texto, escreva apenas o "
@@ -338,8 +382,15 @@ def docx(proposta, empresa):
         for i, parte in enumerate(re.split(r"\*\*", linha)):
             par.add_run(parte).bold = bool(i % 2)
 
+    cond = proposta.condicoes or {}
+    itens_ = proposta.itens or []
+    com_marca = bool(cond.get("exige_marca_modelo")) or any(it.get("marca") or it.get("fabricante") for it in itens_)
+    com_registro = any(it.get("registro") for it in itens_)
+    com_desconto = (proposta.parametros or {}).get("modo") == "desconto"
+
     def tabela_itens():
-        cols = ["Item", "Descrição", "Unid.", "Qtd.", "Preço unitário", "Preço total"]
+        cols = ["Item", "Descrição"] + (["Marca / fabricante"] if com_marca else []) + (["Registro ANVISA"] if com_registro else []) + \
+            ["Unid.", "Qtd."] + (["Desconto"] if com_desconto else []) + ["Preço unitário", "Preço total"]
         t = doc.add_table(rows=1, cols=len(cols))
         t.style = "Table Grid"
         for c, nome in zip(t.rows[0].cells, cols):
@@ -347,20 +398,24 @@ def docx(proposta, empresa):
             c.paragraphs[0].add_run(nome).bold = True
         for n, it in enumerate(proposta.itens or [], start=1):
             q = it.get("quantidade")
-            vals = [str(it.get("numero") or n), it.get("descricao") or "", it.get("unidade") or "",
-                    (f"{q:g}" if isinstance(q, (int, float)) else str(q or "")).replace(".", ","),
-                    moeda(it.get("preco_unitario")), moeda(it.get("preco_total"))]
+            marca = " / ".join(x for x in (it.get("marca"), it.get("fabricante")) if x)
+            vals = [str(it.get("numero") or n), it.get("descricao") or ""] + ([marca] if com_marca else []) + \
+                ([it.get("registro") or ""] if com_registro else []) + [it.get("unidade") or "",
+                (f"{q:g}" if isinstance(q, (int, float)) else str(q or "")).replace(".", ",")] + \
+                ([f"{it.get('desconto_pct') or 0:.2f}%".replace(".", ",")] if com_desconto else []) + \
+                [moeda(it.get("preco_unitario")), moeda(it.get("preco_total"))]
             cells = t.add_row().cells
             for i, (c, v) in enumerate(zip(cells, vals)):
                 c.text = v
-                if i >= 3:
+                if i >= len(cols) - 3:
                     c.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
         cells = t.add_row().cells
-        cells[0].merge(cells[4]).text = ""
+        ult = len(cols) - 1
+        cells[0].merge(cells[ult - 1]).text = ""
         cells[0].paragraphs[0].add_run("VALOR GLOBAL").bold = True
-        cells[5].text = ""
-        cells[5].paragraphs[0].add_run(moeda(tot["total"])).bold = True
-        cells[5].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        cells[ult].text = ""
+        cells[ult].paragraphs[0].add_run(moeda(tot["total"])).bold = True
+        cells[ult].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
         for row in t.rows:
             for i, c in enumerate(row.cells):
                 for p in c.paragraphs:

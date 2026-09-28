@@ -24,6 +24,13 @@ def radar(eid):
     if status != "todos":
         q = q.filter_by(status=status)
     itens = q.order_by(RadarItem.nota.desc().nullslast(), RadarItem.criado_em.desc()).limit(200).all()
+    lim = planos.limite(g.conta, "radar_max")
+    if lim is not None and len(itens) > lim:
+        from flask import make_response
+        resp = make_response(jsonify([i.to_dict() for i in itens[:lim]]))
+        resp.headers["X-Radar-Ocultos"] = str(len(itens) - lim)
+        resp.headers["Access-Control-Expose-Headers"] = "X-Radar-Ocultos, Content-Disposition"
+        return resp
     return jsonify([i.to_dict() for i in itens])
 
 
@@ -31,8 +38,6 @@ def radar(eid):
 @login_requerido
 def radar_atualizar(eid):
     e = empresa_da_conta(eid)
-    if planos.teste_expirado(g.conta):
-        raise ErroAPI("Seu teste grátis terminou. Escolha um plano para continuar.", 402)
     novos, respostas = fluxos.atualizar_radar(e)
     planos.registrar_uso(g.conta, "radar", respostas, cobravel=False)
     db.session.commit()
@@ -53,6 +58,10 @@ def radar_status(rid):
 @bp.post("/radar/<int:rid>/acompanhar")
 @login_requerido
 def radar_acompanhar(rid):
+    from models import Empresa as _Emp
+    _ids = [x.id for x in _Emp.query.filter_by(conta_id=g.conta.id)]
+    planos.exigir_volume(g.conta, "oportunidades_max", Edital.query.filter(Edital.empresa_id.in_(_ids)).count() if _ids else 0,
+                         "oportunidades acompanhadas")
     item = RadarItem.query.get_or_404(rid)
     empresa_da_conta(item.empresa_id)
     ed = _importar_pncp(item.empresa_id, item.numero_controle, item.dados, como="Capturada pelo radar do Kasiski (PNCP).")
@@ -113,6 +122,10 @@ def listar(eid):
 @bp.post("/empresas/<int:eid>/editais")
 @login_requerido
 def criar(eid):
+    from models import Empresa as _Emp
+    _ids = [x.id for x in _Emp.query.filter_by(conta_id=g.conta.id)]
+    planos.exigir_volume(g.conta, "oportunidades_max", Edital.query.filter(Edital.empresa_id.in_(_ids)).count() if _ids else 0,
+                         "oportunidades acompanhadas")
     empresa_da_conta(eid)
     d = dados()
     if d.get("numero_controle"):

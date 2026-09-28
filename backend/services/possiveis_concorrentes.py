@@ -11,6 +11,7 @@ import logging
 import re
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections import defaultdict
 from datetime import datetime, timedelta
 
 from services import pncp
@@ -22,6 +23,8 @@ CONTRATOS_POR_TERMO = 20
 ATAS_POR_TERMO = 10
 MAX_DETALHES = 30       # consultas de detalhe (contrato ou itens de ata) por busca
 MAX_RESULTADO = 15
+MAX_ITENS_PRECO = 12    # itens por compra semelhante consultados para o preço unitário
+LIMIAR_ITEM = 0.5       # semelhança mínima entre o item do edital e o item da compra anterior
 PRAZO_TOTAL_S = 100     # a busca inteira não passa disso
 
 _VAZIAS = set("""a o as os de da do das dos e em no na nos nas para por com sem ao aos um uma uns umas que se sua seu suas seus
@@ -84,8 +87,9 @@ def _peso_data(d):
     return 1.0 if anos <= 1 else 0.8 if anos <= 2 else 0.6 if anos <= 4 else 0.4
 
 
-def buscar(edital, extracao=None, cnpjs_proprios=(), monitorados=None, etapa=None):
-    """Monta a lista de possíveis concorrentes. `monitorados` = {cnpj: id do Concorrente} da conta."""
+def buscar(edital, extracao=None, cnpjs_proprios=(), monitorados=None, etapa=None, itens_edital=None):
+    """Monta a lista de possíveis concorrentes. `monitorados` = {cnpj: id do Concorrente} da conta.
+    Com `itens_edital`, calcula também o preço médio que eles praticaram nos itens que o edital pede."""
     inicio = datetime.utcnow()
     limite = inicio + timedelta(seconds=PRAZO_TOTAL_S)
     termos = termos_de_busca(edital, extracao)
@@ -114,13 +118,28 @@ def buscar(edital, extracao=None, cnpjs_proprios=(), monitorados=None, etapa=Non
     candidatos = sorted((d for d in documentos.values() if d["semelhanca"] > 0),
                         key=lambda d: (-d["semelhanca"], -(_data(d.get("data")) or datetime.min).timestamp()))[:MAX_DETALHES]
 
-    # 2) quem venceu cada um (em paralelo, com tempo limitado)
+    # 2) quem venceu cada um e por quanto (preço unitário homologado por item), em paralelo e com tempo limitado
+    registros = []  # preços unitários homologados dos itens das compras semelhantes
+
     def vencedores(doc):
         if doc["tipo"] == "contrato":
             f = pncp.fornecedor_do_contrato(doc["numero_controle"])
-            return doc, [f] if f else []
-        return doc, pncp.vencedores_da_compra(doc.get("numero_controle_compra") or doc["numero_controle"])
+            res = []
+            if com_precos:
+                try:
+                    compra = pncp.compra_do_contrato(doc["numero_controle"])
+                    res = pncp.resultados_da_compra(compra, MAX_ITENS_PRECO) if compra else []
+                except Exception:
+                    res = []
+            return doc, [f] if f else [], res
+        res = pncp.resultados_da_compra(doc.get("numero_controle_compra") or doc["numero_controle"], MAX_ITENS_PRECO)
+        venc = {}
+        for r in res:
+            v = venc.setdefault(r["cnpj"], {"cnpj": r["cnpj"], "nome": r["nome"], "valor": 0.0})
+            v["valor"] += r["valor_total"]
+        return doc, list(venc.values()), res
 
+    com_precos = bool(itens_edital)
     empresas = {}
     restante = max(10, (limite - datetime.utcnow()).total_seconds())
     with ThreadPoolExecutor(max_workers=6) as ex:
@@ -128,10 +147,14 @@ def buscar(edital, extracao=None, cnpjs_proprios=(), monitorados=None, etapa=Non
         try:
             for fut in as_completed(futuros, timeout=restante):
                 try:
-                    doc, lista = fut.result()
+                    doc, lista, res = fut.result()
                 except Exception as e:
                     log.info("Detalhe PNCP falhou: %s", e)
                     continue
+                for r in res:
+                    if r["cnpj"] not in proprios and r.get("valor_unitario"):
+                        registros.append({**r, "orgao": doc.get("orgao"), "uf": doc.get("uf"),
+                                          "data": (r.get("data") or doc.get("data") or "")[:10]})
                 for f in lista:
                     if f["cnpj"] in proprios:
                         continue
@@ -182,13 +205,102 @@ def buscar(edital, extracao=None, cnpjs_proprios=(), monitorados=None, etapa=Non
     for it in itens:
         r = it["pontuacao"] / maior if maior else 0
         it["relevancia"] = "alta" if r >= 0.6 or it["mesmo_orgao"] else "media" if r >= 0.3 else "baixa"
+    precos_itens = precos_por_item(itens_edital or [], registros)
+    por_empresa = defaultdict(list)
+    for p in precos_itens:
+        for e in p.get("empresas") or []:
+            por_empresa[e["cnpj"]].append({"numero": p.get("numero"), "descricao": p.get("descricao"), "media": e["media"], "n": e["n"],
+                                           "pct_estimado": round(e["media"] / p["estimado"] * 100, 1) if p.get("estimado") else None})
+    for it in itens:
+        it["precos"] = por_empresa.get(it["cnpj"], [])
+        pcts = [x["pct_estimado"] for x in it["precos"] if x.get("pct_estimado")]
+        it["pct_medio_estimado"] = round(sum(pcts) / len(pcts), 1) if pcts else None
     saida = {"status": "concluida", "itens": itens, "termos": termos, "consultado_em": inicio.isoformat(),
-             "documentos_analisados": len(candidatos), "documentos_encontrados": len(documentos)}
+             "documentos_analisados": len(candidatos), "documentos_encontrados": len(documentos),
+             "precos_itens": precos_itens, "itens_edital": len(itens_edital or []), "amostras_preco": len(registros)}
     if not itens:
         saida["pncp_indisponivel"] = bool(falhas and not documentos)
         saida["aviso"] = ("O PNCP não respondeu agora. Nada foi descontado do seu plano; tente de novo em alguns minutos." if falhas and not documentos else
                           "Não encontramos contratações anteriores com objeto parecido no PNCP.")
     return saida
+
+
+def _unid(u):
+    return re.sub(r"[^a-z0-9]", "", _norm(u))[:2]
+
+
+def precos_por_item(itens_edital, registros):
+    """Para cada item do edital: preço unitário médio homologado dos possíveis concorrentes em itens parecidos.
+    Média por empresa (cada empresa pesa igual) e média geral dessas médias; ignora unidades claramente diferentes."""
+    saida = []
+    for it in itens_edital[:200]:
+        desc = it.get("descricao") or ""
+        u = _unid(it.get("unidade"))
+        achados = []
+        for r in registros:
+            sim = semelhanca(desc, r.get("descricao"))
+            if sim < LIMIAR_ITEM:
+                continue
+            ur = _unid(r.get("unidade"))
+            if u and ur and u != ur:
+                continue
+            achados.append((sim, r))
+        if not achados:
+            saida.append({"numero": it.get("numero"), "descricao": desc[:300], "unidade": it.get("unidade"),
+                          "estimado": it.get("valor_unitario_estimado"), "n": 0, "empresas": []})
+            continue
+        emp = defaultdict(list)
+        nomes = {}
+        for sim, r in achados:
+            emp[r["cnpj"]].append(r["valor_unitario"])
+            nomes[r["cnpj"]] = r.get("nome") or nomes.get(r["cnpj"]) or ""
+        empresas = sorted(({"cnpj": c, "nome": nomes[c], "media": round(sum(v) / len(v), 4), "n": len(v),
+                            "minimo": round(min(v), 4)} for c, v in emp.items()), key=lambda x: x["media"])
+        medias = [e["media"] for e in empresas]
+        est = it.get("valor_unitario_estimado")
+        media = round(sum(medias) / len(medias), 4)
+        saida.append({"numero": it.get("numero"), "descricao": desc[:300], "unidade": it.get("unidade"), "estimado": est,
+                      "media": media, "minimo": min(medias), "maximo": max(medias), "n": len(achados),
+                      "n_empresas": len(empresas), "pct_estimado": round(media / float(est) * 100, 1) if est else None,
+                      "empresas": empresas[:8],
+                      "exemplos": _exemplos(achados)})
+    return saida
+
+
+def _exemplos(achados, n=5):
+    vistos, saida = set(), []
+    for _, r in sorted(achados, key=lambda x: -x[0]):
+        chave = (r.get("cnpj"), r.get("valor_unitario"), r.get("orgao"))
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        saida.append({"descricao": r["descricao"][:160], "valor_unitario": r["valor_unitario"], "unidade": r.get("unidade"),
+                      "nome": r.get("nome"), "orgao": r.get("orgao"), "data": r.get("data")})
+        if len(saida) >= n:
+            break
+    return saida
+
+
+def itens_do_edital(edital):
+    """Itens que o edital pede: da proposta ligada ao edital, do PNCP (quando veio do radar) ou da análise."""
+    from models import Analise, Proposta
+    p = Proposta.query.filter_by(edital_id=edital.id).order_by(Proposta.id.desc()).first()
+    if p and p.itens:
+        return [{k: it.get(k) for k in ("numero", "descricao", "unidade", "quantidade", "valor_unitario_estimado")} for it in p.itens]
+    if edital.numero_controle:
+        try:
+            itens = pncp.itens_da_compra(edital.numero_controle, limite=100)
+            if itens:
+                return [{"numero": str(i.get("numero") or ""), "descricao": i.get("descricao"), "unidade": i.get("unidade"),
+                         "quantidade": i.get("quantidade"), "valor_unitario_estimado": i.get("valor_unitario")} for i in itens]
+        except Exception as e:
+            log.info("Itens do edital %s no PNCP indisponíveis: %s", edital.id, e)
+    a = Analise.query.filter_by(edital_id=edital.id, status="concluida").order_by(Analise.id.desc()).first()
+    ex = ((a.resultado or {}).get("extracao") or {}) if a else {}
+    itens = ex.get("itens") or ex.get("lotes") or []
+    return [{"numero": str(i.get("numero") or ""), "descricao": i.get("descricao"), "unidade": i.get("unidade"),
+             "quantidade": i.get("quantidade"), "valor_unitario_estimado": i.get("valor_unitario_estimado")}
+            for i in itens if isinstance(i, dict) and i.get("descricao")]
 
 
 def atualizar(edital, extracao=None, etapa=None):
@@ -199,7 +311,12 @@ def atualizar(edital, extracao=None, etapa=None):
     proprios = [e.cnpj for e in Empresa.query.filter_by(conta_id=conta_id)] if conta_id else []
     monitorados = {c.cnpj: c.id for c in Concorrente.query.filter_by(conta_id=conta_id)} if conta_id else {}
     try:
-        r = buscar(edital, extracao, proprios, monitorados, etapa)
+        try:
+            itens_ed = itens_do_edital(edital)
+        except Exception:
+            log.exception("Falha ao montar os itens do edital %s", edital.id)
+            itens_ed = []
+        r = buscar(edital, extracao, proprios, monitorados, etapa, itens_ed)
     except Exception as e:
         log.exception("Falha ao buscar possíveis concorrentes do edital %s", edital.id)
         anterior = edital.possiveis_concorrentes or {}

@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
 from extensions import db
-from models import Conta, Empresa, Evento, Lead, UsoIA
+from models import Conta, Empresa, Evento, Lead, UsoIA, Usuario
 
 log = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ SOCIAIS = ("linkedin", "lnkd.in", "facebook", "instagram", "t.co", "twitter", "x
 CAMPOS_TOQUE = ("utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "gclid", "fbclid", "li_fat_id",
                 "ref", "landing", "referrer", "em")
 NOMES_CANAL = {"busca_paga": "Busca paga (Google Ads)", "social_pago": "Social pago (LinkedIn/Meta)",
-               "busca_organica": "Busca orgânica (SEO)", "social": "Redes sociais (orgânico)", "email": "E-mail / newsletter",
+               "busca_organica": "Busca orgânica (SEO)", "social": "Redes sociais (orgânico)", "email": "E-mail / newsletter", "outbound": "Prospecção ativa (outbound)",
                "parceiro": "Parceiros (indicação com ref)", "indicacao": "Sites que indicaram", "direto": "Direto / desconhecido"}
 
 
@@ -62,6 +62,8 @@ def canal_de(toque):
     social = any(s in fonte for s in SOCIAIS) or any(s in ref for s in SOCIAIS)
     if pago:
         return "social_pago" if (social or t.get("fbclid") or t.get("li_fat_id")) and not t.get("gclid") else "busca_paga"
+    if meio in ("outbound", "prospeccao", "prospecção"):
+        return "outbound"
     if meio in ("email", "e-mail", "newsletter"):
         return "email"
     if social or meio in ("social", "organic_social", "organico"):
@@ -166,10 +168,12 @@ def status_por_conta(lead):
     c = Conta.query.get(lead.conta_id)
     if not c:
         return None
-    if c.plano in planos.PAGOS:
+    if planos.codigo(c) in planos.PAGOS:
         return "assinante"
-    if c.plano in ("trial", "suspenso") and c.trial_fim and c.trial_fim < datetime.utcnow() - timedelta(days=15):
-        return "perdido"
+    ultimo = db.session.query(db.func.max(Usuario.ultimo_acesso)).filter(Usuario.conta_id == c.id).scalar()
+    if planos.codigo(c) == "free" and c.criado_em < datetime.utcnow() - timedelta(days=60) and \
+            (not ultimo or ultimo < datetime.utcnow() - timedelta(days=60)):
+        return "perdido"  # conta grátis sem uso há 60 dias
     usou_ia = UsoIA.query.filter(UsoIA.conta_id == c.id, UsoIA.cobravel.is_(True)).first() is not None
     tem_empresa = Empresa.query.filter_by(conta_id=c.id).first() is not None
     if usou_ia or tem_empresa:
@@ -266,13 +270,12 @@ def canal_da_conta(conta):
 
 
 def marcar_perdidos():
-    """Trial vencido há mais de 15 dias sem pagamento → perdido (rodado pelo job diário)."""
-    import planos
-    limite = datetime.utcnow() - timedelta(days=15)
+    """Conta Free sem acesso há 60 dias → lead perdido (rodado pelo job diário)."""
     n = 0
-    for c in Conta.query.filter(Conta.plano == "trial", Conta.trial_fim < limite, Conta.lead_id.isnot(None)):
+    for c in Conta.query.filter(Conta.plano == "free", Conta.lead_id.isnot(None),
+                                Conta.criado_em < datetime.utcnow() - timedelta(days=60)):
         lead = Lead.query.get(c.lead_id)
-        if lead and lead.status in ("trial", "ativado"):
+        if lead and lead.status in ("trial", "ativado") and status_por_conta(lead) == "perdido":
             lead.status = "perdido"
             n += 1
     return n

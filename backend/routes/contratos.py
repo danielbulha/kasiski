@@ -159,7 +159,7 @@ def painel_gestao(eid):
                                 Prazo.data <= hoje + timedelta(days=45)).order_by(Prazo.data).limit(40).all() if ids else []
     return jsonify({"uso": planos.contar_contratos(g.conta), "limite": planos.limite_contratos(g.conta),
                     "prazos": [p.to_dict() for p in prazos], "pacote": planos.PACOTE_CONTRATOS,
-                    "plano_permite": bool(planos.PLANOS.get(g.conta.plano, {}).get("contratos"))})
+                    "plano_permite": bool(planos.dados_plano(g.conta).get("contratos"))})
 
 
 @bp.get("/contratos/<int:cid>")

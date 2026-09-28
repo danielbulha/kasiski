@@ -10,7 +10,11 @@ def _lista(nome):
 
 
 class Config:
-    SECRET_KEY = os.getenv("SECRET_KEY", "troque-esta-chave-em-producao")
+    # Produção = rodando no Render (RENDER=true) ou PRODUCAO=sim. Em produção o servidor se recusa a subir com chave
+    # fraca e fecha CORS e webhook quando falta configuração (ver app.checar_seguranca).
+    PRODUCAO = os.getenv("RENDER", "").lower() == "true" or os.getenv("PRODUCAO", "").lower() in ("sim", "1", "true")
+    CHAVE_PADRAO = "troque-esta-chave-em-producao"
+    SECRET_KEY = os.getenv("SECRET_KEY", CHAVE_PADRAO)
 
     _db = os.getenv("DATABASE_URL", "sqlite:///certame.db")
     if _db.startswith("postgres://"):  # Render entrega assim; SQLAlchemy exige postgresql://
@@ -75,8 +79,15 @@ class Config:
     PUBLICO_MAX_CHARS = int(os.getenv("PUBLICO_MAX_CHARS", "90000"))          # texto do edital enviado à IA na triagem
     TURNSTILE_SECRET = os.getenv("TURNSTILE_SECRET", "")                      # Cloudflare Turnstile (opcional)
     # ------------------------------------------------------------ automações de e-mail (onboarding/trial)
+    # limites por IP (anti-abuso), contados no banco para valer entre os processos do servidor
+    LOGIN_FALHAS_IP = int(os.getenv("LOGIN_FALHAS_IP", "20"))          # senhas erradas por IP a cada 15 min
+    CADASTROS_IP_HORA = int(os.getenv("CADASTROS_IP_HORA", "5"))       # contas novas por IP a cada hora
+    CODIGOS_IP_HORA = int(os.getenv("CODIGOS_IP_HORA", "15"))          # reenvios/verificações de código por IP a cada hora
     AUTOMACOES_ATIVAS = os.getenv("AUTOMACOES_ATIVAS", "sim").lower() in ("sim", "1", "true")
     AUTOMACOES_INTERVALO_S = int(os.getenv("AUTOMACOES_INTERVALO_S", "600"))
+    # armazenamento contratado no Render (para o painel e o alerta de 70%)
+    DB_LIMITE_GB = float(os.getenv("DB_LIMITE_GB", "1"))            # espaço do PostgreSQL (Database → Storage)
+    DISCO_LIMITE_GB = os.getenv("DISCO_LIMITE_GB") or None          # vazio = lê o tamanho do disco montado
     # newsletter Kasiski Intelligence
     NEWSLETTER_RASCUNHO_AUTO = os.getenv("NEWSLETTER_RASCUNHO_AUTO", "sim").lower() in ("sim", "1", "true")  # rascunho toda segunda
     NEWSLETTER_MAX_PAGINAS = int(os.getenv("NEWSLETTER_MAX_PAGINAS", "60"))    # páginas de 50 por modalidade lidas no PNCP

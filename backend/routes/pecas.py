@@ -87,7 +87,7 @@ def gerar(eid):
     if edital and tipo in ("intencao_recurso", "recurso", "contrarrazoes"):
         from services import oportunidades
         oportunidades.avancar(edital, "recurso", f"{TIPOS_PECA[tipo]} gerada no Kasiski.", autor=g.usuario.nome)
-    planos.registrar_uso(g.conta, "pecas", [r], cobravel=False)
+    planos.registrar_uso(g.conta, "pecas", [r], cobravel=True)
     from services import marketing
     marketing.evento_conta(g.conta, "legal_document_generated", {"tipo": tipo})
     db.session.commit()

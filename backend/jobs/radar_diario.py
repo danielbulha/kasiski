@@ -9,6 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+os.environ.setdefault("KASISKI_JOB", "1")
 from app import app  # noqa: E402
 from extensions import db  # noqa: E402
 from models import Conta, Empresa  # noqa: E402
@@ -77,3 +78,12 @@ if __name__ == "__main__":
         except Exception as e:
             db.session.rollback()
             log.warning("Newsletter falhou: %s", e)
+    # Armazenamento: limpeza (tabelas de preços desativadas há 30 dias, eventos com mais de 24 meses) e alerta de 70%
+    with app.app_context():
+        from services import armazenamento
+        try:
+            log.info("Limpeza: %s", armazenamento.limpar())
+            armazenamento.avisar_se_preciso()
+        except Exception as e:
+            db.session.rollback()
+            log.warning("Rotina de armazenamento falhou: %s", e)

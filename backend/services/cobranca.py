@@ -26,7 +26,7 @@ def ler_referencia(ref):
     """'k:12:profissional:mensal:avulso' -> (12, 'profissional', 'mensal', 'avulso')"""
     try:
         k, cid, plano, ciclo, metodo = (ref or "").split(":")
-        if k != "k" or plano not in planos.PAGOS:
+        if k != "k" or (plano not in planos.PAGOS and plano not in planos.PRECOS_ANTIGOS):
             return None
         return int(cid), plano, ciclo, metodo
     except ValueError:
@@ -48,7 +48,23 @@ def _data_mp(v):
         return None
 
 
-def ativar(conta, plano, ciclo, metodo):
+def plano_pago(plano, ciclo, valor):
+    """Plano a liberar por um pagamento. Pagamentos/assinaturas criados na tabela antiga (valor antigo) liberam o
+    plano novo equivalente ou superior e guardam o valor contratado (regra de transição da tabela 2026)."""
+    if plano in planos.PRECOS_ANTIGOS and valor:
+        antigo = planos.PRECOS_ANTIGOS[plano] * (current_app.config["ANUAL_MESES_PAGOS"] if ciclo == "anual" else 1)
+        if abs(float(valor) - antigo) < 1.0:
+            return planos.MIGRACAO[plano], float(planos.PRECOS_ANTIGOS[plano])
+    return planos.ALIAS.get(plano, plano), None
+
+
+def ativar(conta, plano, ciclo, metodo, valor=None):
+    plano, legado = plano_pago(plano, ciclo, valor)
+    if legado:
+        conta.preco_contratado = legado
+    elif conta.preco_contratado and plano != planos.codigo(conta):
+        conta.preco_contratado = None  # trocou de plano: passa a valer a tabela nova
+    conta.tabela_precos = 2026
     conta.plano = plano
     conta.ciclo = ciclo
     conta.metodo_pagamento = metodo
@@ -74,6 +90,11 @@ def processar_pagamento(pid):
         return processar_servico(pid, p)
     sub = ((p.get("point_of_interaction") or {}).get("transaction_data") or {}).get("subscription_id") \
         or (p.get("metadata") or {}).get("preapproval_id")
+    if str(p.get("external_reference") or "").startswith("c:"):
+        return processar_creditos(pid, p)
+    if str(p.get("external_reference") or "").startswith("e:") or \
+            (sub and Conta.query.filter_by(empresas_extras_mp_id=sub).first()):
+        return processar_empresas_extras(pid, p, sub)
     if str(p.get("external_reference") or "").startswith("p:") or \
             (sub and Conta.query.filter_by(pacotes_mp_assinatura_id=sub).first()):
         return processar_pacote(pid, p, sub)
@@ -104,12 +125,12 @@ def processar_pagamento(pid):
     liquido = (p.get("transaction_details") or {}).get("net_received_amount")
     c.valor_liquido = float(liquido) if liquido is not None else None
     c.status = STATUS_PAGAMENTO.get(p.get("status"), p.get("status"))
-    c.descricao = p.get("description") or f"{planos.PLANOS[plano]['nome']} ({ciclo})"
+    c.descricao = p.get("description") or f"{planos.PLANOS[plano_pago(plano, ciclo, c.valor)[0]]['nome']} ({ciclo})"
     c.pago_em = _data_mp(p.get("date_approved")) or c.pago_em
 
     if c.status == "aprovado" and not c.aplicado:
-        if plano in planos.PAGOS:
-            ativar(conta, plano, ciclo, metodo)
+        if plano in planos.PAGOS or plano in planos.PRECOS_ANTIGOS:
+            ativar(conta, plano, ciclo, metodo, c.valor)
             estender_acesso(conta, ciclo)
         c.aplicado = True
     db.session.commit()
@@ -120,6 +141,8 @@ def processar_assinatura(aid):
     a = mp.assinatura(aid)
     if str(a.get("external_reference") or "").startswith("p:"):
         return processar_assinatura_pacote(aid, a)
+    if str(a.get("external_reference") or "").startswith("e:"):
+        return processar_assinatura_empresas(aid, a)
     ref = ler_referencia(a.get("external_reference"))
     conta = Conta.query.filter_by(mp_assinatura_id=str(aid)).first() or (Conta.query.get(ref[0]) if ref else None)
     if not conta:
@@ -130,7 +153,7 @@ def processar_assinatura(aid):
         return conta
     conta.mp_assinatura_id = str(aid)
     if status == "ativa" and ref:
-        ativar(conta, ref[1], ref[2], "recorrente")
+        ativar(conta, ref[1], ref[2], "recorrente", (a.get("auto_recurring") or {}).get("transaction_amount"))
         if not conta.pago_ate or conta.pago_ate < datetime.utcnow():
             # Libera já; o pagamento aprovado (aviso separado) estende o acesso pelo ciclo completo
             conta.pago_ate = datetime.utcnow()
@@ -270,5 +293,94 @@ def processar_assinatura_pacote(aid, a):
             conta.pacotes_ate = datetime.utcnow()  # libera já; o pagamento aprovado estende 1 mês
     elif status in ("cancelada", "pausada", "pendente"):
         conta.pacotes_status = status
+    db.session.commit()
+    return conta
+
+
+# ---------------------------------------------------------------- Pacote de inteligência (créditos, avulso)
+def processar_creditos(pid, p):
+    """'c:<conta>:<qtd>' — créditos entram na aprovação (uma única vez por pagamento)."""
+    try:
+        _, cid, qtd = str(p.get("external_reference")).split(":")
+        conta, qtd = Conta.query.get(int(cid)), max(1, int(qtd))
+    except (ValueError, TypeError):
+        return None
+    if not conta:
+        return None
+    c = Cobranca.query.filter_by(mp_pagamento_id=str(pid)).first()
+    if not c:
+        c = Cobranca(mp_pagamento_id=str(pid), conta_id=conta.id, origem="mercadopago", tipo="servico")
+        db.session.add(c)
+    c.plano, c.ciclo = "pacote_inteligencia", "avulso"
+    c.meio = "pix" if p.get("payment_method_id") == "pix" else MEIOS.get(p.get("payment_type_id"), "outro")
+    c.valor = float(p.get("transaction_amount") or 0)
+    liquido = (p.get("transaction_details") or {}).get("net_received_amount")
+    c.valor_liquido = float(liquido) if liquido is not None else None
+    c.status = STATUS_PAGAMENTO.get(p.get("status"), p.get("status"))
+    c.descricao = f"{qtd} Pacote(s) de inteligência ({qtd * planos.PACOTE_INTELIGENCIA['creditos']} créditos)"
+    c.pago_em = _data_mp(p.get("date_approved")) or c.pago_em
+    if c.status == "aprovado" and not c.aplicado:
+        planos.adicionar_creditos(conta, qtd * planos.PACOTE_INTELIGENCIA["creditos"])
+        c.aplicado = True
+        from services import marketing
+        marketing.evento_conta(conta, "purchase", {"item": "pacote_inteligencia", "valor": c.valor})
+    db.session.commit()
+    return c
+
+
+# ---------------------------------------------------------------- empresas adicionais (R$ 49/mês cada)
+def _ref_empresas(ref):
+    try:
+        _, cid, qtd, metodo = str(ref).split(":")
+        return int(cid), max(1, int(qtd)), metodo
+    except ValueError:
+        return None
+
+
+def processar_empresas_extras(pid, p, sub=None):
+    ref = _ref_empresas(p.get("external_reference"))
+    conta = Conta.query.get(ref[0]) if ref else Conta.query.filter_by(empresas_extras_mp_id=sub).first()
+    if not conta:
+        return None
+    qtd = ref[1] if ref else (conta.empresas_extras or 1)
+    metodo = ref[2] if ref else "recorrente"
+    c = Cobranca.query.filter_by(mp_pagamento_id=str(pid)).first()
+    if not c:
+        c = Cobranca(mp_pagamento_id=str(pid), conta_id=conta.id, origem="mercadopago", tipo="assinatura")
+        db.session.add(c)
+    c.mp_assinatura_id = sub or c.mp_assinatura_id
+    c.plano, c.ciclo = "empresas_extras", "mensal"
+    c.meio = "pix" if p.get("payment_method_id") == "pix" else MEIOS.get(p.get("payment_type_id"), "outro")
+    c.valor = float(p.get("transaction_amount") or 0)
+    liquido = (p.get("transaction_details") or {}).get("net_received_amount")
+    c.valor_liquido = float(liquido) if liquido is not None else None
+    c.status = STATUS_PAGAMENTO.get(p.get("status"), p.get("status"))
+    c.descricao = f"{qtd} empresa(s) adicional(is) (mensal)"
+    c.pago_em = _data_mp(p.get("date_approved")) or c.pago_em
+    if c.status == "aprovado" and not c.aplicado:
+        agora = datetime.utcnow()
+        base = conta.empresas_extras_ate if conta.empresas_extras_ate and conta.empresas_extras_ate > agora else agora
+        conta.empresas_extras_ate = somar_meses(base, 1)
+        conta.empresas_extras, conta.empresas_extras_metodo, conta.empresas_extras_status = qtd, metodo, "ativa"
+        c.aplicado = True
+    db.session.commit()
+    return c
+
+
+def processar_assinatura_empresas(aid, a):
+    ref = _ref_empresas(a.get("external_reference"))
+    conta = Conta.query.filter_by(empresas_extras_mp_id=str(aid)).first() or (Conta.query.get(ref[0]) if ref else None)
+    if not conta:
+        return None
+    status = STATUS_ASSINATURA.get(a.get("status"), a.get("status"))
+    if conta.empresas_extras_mp_id and conta.empresas_extras_mp_id != str(aid) and status != "ativa":
+        return conta
+    conta.empresas_extras_mp_id = str(aid)
+    if status == "ativa" and ref:
+        conta.empresas_extras, conta.empresas_extras_metodo, conta.empresas_extras_status = ref[1], "recorrente", "ativa"
+        if not conta.empresas_extras_ate or conta.empresas_extras_ate < datetime.utcnow():
+            conta.empresas_extras_ate = datetime.utcnow()
+    elif status in ("cancelada", "pausada", "pendente"):
+        conta.empresas_extras_status = status
     db.session.commit()
     return conta

@@ -61,10 +61,10 @@ def criar():
         raise ErroAPI("Informe um CNPJ válido.")
     if Empresa.query.filter_by(conta_id=g.conta.id, cnpj=cnpj).first():
         raise ErroAPI("Esta empresa já está cadastrada na sua conta.")
-    if g.conta.plano == "trial":
+    if planos.codigo(g.conta) == "free":  # um CNPJ só pode estar em uma conta Free / teste do Profissional
         usado = TrialCnpj.query.filter_by(cnpj=cnpj).first()
         if usado and usado.conta_id != g.conta.id:
-            raise ErroAPI("Este CNPJ já usou o teste grátis. Escolha um plano para cadastrá-lo.", 402)
+            raise ErroAPI("Este CNPJ já está em outra conta Free do Kasiski. Escolha um plano para cadastrá-lo aqui.", 402)
         if not usado:
             db.session.add(TrialCnpj(cnpj=cnpj, conta_id=g.conta.id))
     if not (d.get("razao_social") or "").strip():
@@ -83,6 +83,13 @@ def criar():
         checklist.importar_publicos(g.conta, g.usuario, e)
     except Exception:
         current_app.logger.exception("Falha ao importar o checklist do site")
+    try:
+        from services import prospeccao
+        pr = prospeccao.vincular_cadastro(e)
+        if pr:
+            marketing.evento_conta(g.conta, "prospect_converted", {"prospect_id": pr.id, "score": pr.score})
+    except Exception:
+        current_app.logger.exception("Falha ao ligar a empresa à prospecção")
     db.session.commit()
     return jsonify(e.to_dict()), 201
 
@@ -133,6 +140,12 @@ def documentos(eid):
     return jsonify([d.to_dict() for d in docs])
 
 
+def _limite_cofre():
+    ids = [x.id for x in Empresa.query.filter_by(conta_id=g.conta.id)]
+    n = Documento.query.filter(Documento.empresa_id.in_(ids), Documento.arquivo.isnot(None)).count() if ids else 0
+    planos.exigir_volume(g.conta, "cofre_max", n, "documentos com arquivo no cofre")
+
+
 @bp.post("/empresas/<int:eid>/documentos")
 @login_requerido
 def novo_documento(eid):
@@ -144,6 +157,7 @@ def novo_documento(eid):
                     categoria=d.get("categoria") if d.get("categoria") in CATEGORIAS else "outro",
                     validade=para_data(d.get("validade")))
     if "arquivo" in request.files and request.files["arquivo"].filename:
+        _limite_cofre()
         doc.arquivo, doc.nome_arquivo = arquivos.salvar(request.files["arquivo"], f"cofre/{eid}")
     db.session.add(doc)
     from services import marketing
@@ -166,6 +180,8 @@ def editar_documento(did):
     if "validade" in d:
         doc.validade = para_data(d["validade"])
     if "arquivo" in request.files and request.files["arquivo"].filename:
+        if not doc.arquivo:
+            _limite_cofre()
         doc.arquivo, doc.nome_arquivo = arquivos.salvar(request.files["arquivo"], f"cofre/{doc.empresa_id}")
     if doc.arquivo or doc.validade or str(d.get("pendente")).lower() in ("0", "false"):
         doc.pendente = False  # providenciado

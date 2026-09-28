@@ -29,7 +29,7 @@ def _inicio_mes(dt=None):
 
 def etapa(conta, n_empresas, n_analises, pagou):
     """Em que ponto do funil a conta está hoje."""
-    if conta.plano in planos.PAGOS:
+    if planos.codigo(conta) in planos.PAGOS:
         if conta.assinatura_status == "inadimplente":
             return "inadimplente"
         if conta.assinatura_status == "cancelada":
@@ -37,7 +37,9 @@ def etapa(conta, n_empresas, n_analises, pagou):
         return "assinante"
     if conta.plano == "suspenso":
         return "cancelado" if conta.assinatura_status == "cancelada" else ("inadimplente" if pagou else "suspenso")
-    if planos.teste_expirado(conta):
+    if planos.em_teste(conta):
+        return "em_teste"
+    if planos.teste_encerrado(conta):
         return "teste_expirado"
     if n_analises:
         return "engajado"
@@ -69,15 +71,15 @@ def _agregados():
 def _linha_crm(c, ag):
     us = ag["usuarios"].get(c.id, [])
     acessos = [u.ultimo_acesso for u in us if u.ultimo_acesso]
-    p = planos.PLANOS.get(c.plano, planos.PLANOS["suspenso"])
+    p = planos.dados_plano(c)
     usd = current_app.config["USD_BRL"]
     receita = float(ag["receita"].get(c.id) or 0)
     custo = float(ag["custo_total"].get(c.id) or 0)
     dias_trial = None
-    if c.plano == "trial" and c.trial_fim:
+    if planos.em_teste(c):
         dias_trial = (c.trial_fim.date() - datetime.utcnow().date()).days
     return {
-        **c.to_dict(), "plano_nome": p["nome"], "telefone": c.telefone, "notas_crm": c.notas_crm,
+        **c.to_dict(), "plano_nome": p["nome"] + (" (teste)" if planos.em_teste(c) else ""), "preco_contratado": c.preco_contratado, "telefone": c.telefone, "notas_crm": c.notas_crm,
         "etiqueta_crm": c.etiqueta_crm, "origem": c.origem, "campanha": c.campanha,
         "usuarios": [{"nome": u.nome, "email": u.email, "verificado": u.verificado} for u in us],
         "ultimo_acesso": _iso(max(acessos)) if acessos else None,
@@ -104,7 +106,8 @@ def crm():
         "contas": linhas,
         "resumo": {
             "total": len(linhas),
-            "testes_ativos": sum(1 for l in linhas if l["plano"] == "trial" and l["etapa"] not in ("teste_expirado",)),
+            "testes_ativos": resumo["em_teste"],
+            "contas_free": sum(1 for l in linhas if l["plano"] == "free"),
             "testes_expirando": sum(1 for l in linhas if l["dias_trial"] is not None and 0 <= l["dias_trial"] <= 2),
             "testes_expirados": resumo["teste_expirado"],
             "assinantes": resumo["assinante"] + resumo["cancelando"],
@@ -146,8 +149,8 @@ def funil():
                    {c.id for c in contas if c.plano in planos.PAGOS}
     etapas = [
         ("visitas", "Visitaram a página inicial", visitantes("visita")),
-        ("cta", "Clicaram em testar grátis", visitantes("cta")),
-        ("cadastros", "Criaram conta (teste grátis)", len(contas)),
+        ("cta", "Clicaram em criar conta", visitantes("cta")),
+        ("cadastros", "Criaram conta (Free)", len(contas)),
         ("ativados", "Cadastraram a empresa", sum(1 for i in ids if ag["empresas"].get(i))),
         ("engajados", "Fizeram 1ª análise de edital", sum(1 for i in ids if ag["analises_total"].get(i))),
         ("checkout", "Abriram o pagamento", sum(1 for i in ids if i in ag["checkout"])),
@@ -170,13 +173,14 @@ def funil():
 
     # Leads para abordar: em teste (ou teste vencido há até 15 dias), sem pagamento, ordenados por "temperatura"
     leads = []
-    for c in Conta.query.filter(Conta.plano == "trial").all():
+    for c in Conta.query.filter(Conta.plano.in_(("free", "trial"))).all():
         l = _linha_crm(c, ag)
         if l["receita_total"]:
             continue
-        if l["dias_trial"] is not None and l["dias_trial"] < -15:
+        if c.criado_em and c.criado_em < datetime.utcnow() - timedelta(days=90) and not planos.em_teste(c):
             continue
-        pontos = l["analises_total"] * 3 + (2 if l["empresas"] else 0) + (4 if l["iniciou_checkout"] else 0)
+        pontos = l["analises_total"] * 3 + (2 if l["empresas"] else 0) + (4 if l["iniciou_checkout"] else 0) + \
+            (3 if planos.em_teste(c) else 0) + (2 if l["analises_mes"] >= l["limite_analises"] else 0)
         if l["dias_trial"] is not None and 0 <= l["dias_trial"] <= 2:
             pontos += 3
         l["pontos"] = pontos
@@ -384,3 +388,98 @@ def exportar_logs():
             linhas += ["Detalhe:", "```", l.detalhe[-6000:], "```"]
         linhas.append("")
     return current_app.response_class("\n".join(linhas), mimetype="text/plain; charset=utf-8")
+
+
+@bp.get("/armazenamento")
+@admin_requerido
+def armazenamento_visao():
+    from services import armazenamento
+    return jsonify(armazenamento.medir())
+
+
+@bp.post("/armazenamento/limpar")
+@admin_requerido
+def armazenamento_limpar():
+    from services import armazenamento
+    return jsonify(armazenamento.limpar())
+
+
+# ---------------------------------------------------------------- tabela 2026: economia dos planos e transição
+ESTIMATIVA_USD = {"analises": 0.32, "concorrentes": 0.15, "possiveis": 0.0, "pecas": 0.12, "propostas": 0.20}
+
+
+@bp.get("/planos/economia")
+@admin_requerido
+def economia_planos():
+    """Custo de IA por uso (real, últimos 90 dias; estimado sem dados) e margem de cada plano no uso máximo."""
+    desde = datetime.utcnow() - timedelta(days=90)
+    usd = current_app.config["USD_BRL"]
+    custo_uso = {}
+    for rec, est in ESTIMATIVA_USD.items():
+        total = db.session.query(db.func.coalesce(db.func.sum(UsoIA.custo_usd), 0)).filter(
+            UsoIA.recurso == rec, UsoIA.criado_em >= desde).scalar() or 0
+        n = UsoIA.query.filter(UsoIA.recurso == rec, UsoIA.cobravel.is_(True), UsoIA.criado_em >= desde).count()
+        custo_uso[rec] = {"usd": round(total / n, 4) if n >= 5 else est, "amostra": n, "real": n >= 5}
+    taxa_pagamento, infra = 0.0499, 4.0   # Mercado Pago (cartão, aprox.) e infraestrutura por conta ativa (R$/mês)
+    linhas = []
+    for k in planos.ORDEM:
+        p = planos.PLANOS[k]
+        if p["preco"] is None:
+            continue
+        ia = sum((p.get(r) or 0) * custo_uso[r]["usd"] for r in ("analises", "concorrentes", "possiveis", "pecas"))
+        ia += (custo_uso["propostas"]["usd"] * 10 if p.get("propostas") else 0)
+        ia_brl = ia * usd
+        cmv = ia_brl + infra + p["preco"] * taxa_pagamento
+        margem = (p["preco"] - cmv) / p["preco"] * 100 if p["preco"] else None
+        linhas.append({"plano": k, "nome": p["nome"], "preco": p["preco"], "ia_max_brl": round(ia_brl, 2),
+                       "cmv_max_brl": round(cmv, 2), "margem_uso_maximo": round(margem, 1) if margem is not None else None,
+                       "limites": {r: p.get(r) for r in ("analises", "concorrentes", "possiveis", "pecas")}})
+    # uso real médio por conta em cada plano (mês corrente)
+    ini = datetime(datetime.utcnow().year, datetime.utcnow().month, 1)
+    reais = defaultdict(list)
+    for c in Conta.query.all():
+        gasto = db.session.query(db.func.coalesce(db.func.sum(UsoIA.custo_usd), 0)).filter(UsoIA.conta_id == c.id, UsoIA.criado_em >= ini).scalar() or 0
+        reais[planos.efetivo(c)].append(float(gasto) * usd)
+    for l in linhas:
+        v = reais.get(l["plano"], [])
+        l["contas"], l["ia_media_real_brl"] = len(v), round(sum(v) / len(v), 2) if v else None
+    return jsonify({"custo_por_uso": custo_uso, "planos": linhas, "usd_brl": usd, "taxa_pagamento": taxa_pagamento, "infra_por_conta": infra,
+                    "creditos": planos.CREDITOS, "pacote": planos.PACOTE_INTELIGENCIA})
+
+
+@bp.get("/planos/transicao")
+@admin_requerido
+def transicao_planos():
+    """Assinantes da tabela antiga: plano novo, valor contratado e se a cobrança automática precisa ser reduzida."""
+    saida = []
+    for c in Conta.query.filter(Conta.preco_contratado.isnot(None)).all():
+        tabela = planos.preco(planos.codigo(c), "mensal") if planos.PLANOS.get(planos.codigo(c), {}).get("preco") else None
+        u = Usuario.query.filter_by(conta_id=c.id).order_by(Usuario.id).first()
+        saida.append({"id": c.id, "nome": c.nome, "email": u.email if u else None, "plano": planos.codigo(c),
+                      "preco_contratado": c.preco_contratado, "preco_tabela": tabela, "metodo": c.metodo_pagamento,
+                      "status": c.assinatura_status, "reduzir": bool(tabela and c.preco_contratado > tabela),
+                      "recorrente": c.metodo_pagamento == "recorrente" and bool(c.mp_assinatura_id)})
+    return jsonify(saida)
+
+
+@bp.post("/planos/transicao/aplicar")
+@admin_requerido
+def aplicar_transicao():
+    """Reduz no Mercado Pago as assinaturas automáticas que pagam acima da tabela nova (ex.: Consultor R$ 1.290 → R$ 797)."""
+    from services import mercadopago as mp
+    feitos, falhas = [], []
+    for c in Conta.query.filter(Conta.preco_contratado.isnot(None)).all():
+        tabela = planos.PLANOS.get(planos.codigo(c), {}).get("preco")
+        if not tabela or c.preco_contratado <= tabela:
+            continue
+        if c.metodo_pagamento == "recorrente" and c.mp_assinatura_id and mp.configurado():
+            valor = tabela * (current_app.config["ANUAL_MESES_PAGOS"] if c.ciclo == "anual" else 1)
+            try:
+                mp.atualizar_valor_assinatura(c.mp_assinatura_id, valor)
+            except Exception as e:
+                falhas.append({"id": c.id, "nome": c.nome, "erro": str(getattr(e, "mensagem", e))[:200]})
+                continue
+        c.preco_contratado = None  # passa a pagar a tabela nova (menor)
+        feitos.append({"id": c.id, "nome": c.nome, "novo_valor": tabela})
+    db.session.commit()
+    return jsonify({"ajustados": feitos, "falhas": falhas})

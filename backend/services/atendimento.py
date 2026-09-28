@@ -57,19 +57,23 @@ def brl(v):
 def base_conhecimento():
     cfg = current_app.config
     linhas = ["PLANOS (preço mensal; anual = preço mensal x %d):" % cfg["ANUAL_MESES_PAGOS"]]
-    for k in ("trial", "essencial", "profissional", "avancado", "consultor"):
+    for k in planos.ORDEM:
         p = planos.PLANOS[k]
-        preco = "grátis por %d dias, sem cartão" % TRIAL_DIAS if k == "trial" else brl(p['preco']) + "/mês"
+        preco = "grátis para sempre" if k == "free" else "sob consulta" if p["preco"] is None else brl(p['preco']) + "/mês"
         itens = [_limite(p["empresas"], "empresa", "empresas"), _limite(p["analises"], "análise de edital/mês", "análises de edital/mês"),
                  _limite(p["concorrentes"], "análise de concorrente/mês", "análises de concorrente/mês"),
                  _limite(p.get("possiveis"), "avaliação de possíveis concorrentes/mês", "avaliações de possíveis concorrentes/mês"),
-                 "gerador de peças" if p["pecas"] else "sem gerador de peças",
+                 _limite(p.get("usuarios"), "usuário", "usuários"),
+                 _limite(p["pecas"], "peça com IA/mês", "peças com IA/mês") if p["pecas"] else "sem peças com IA",
                  "inteligência de preços" if p["precos"] else "sem inteligência de preços",
                  "proposta comercial com IA" if p.get("propostas") else "sem proposta comercial com IA",
                  _limite(p.get("contratos"), "contrato em gestão", "contratos em gestão"),
                  "relatórios com a marca do escritório" if p.get("marca") else ""]
         linhas.append(f"- {p['nome']}: {preco}; " + "; ".join(i for i in itens if i))
     pk = planos.PACOTE_CONTRATOS
+    linhas.append(f"- No Free há o teste do Profissional por {planos.TRIAL_DIAS} dias (uma vez por conta); no fim a conta volta ao Free sem perder nada.")
+    linhas.append(f"- Pacote de inteligência: {planos.PACOTE_INTELIGENCIA['descricao']} por {brl(planos.PACOTE_INTELIGENCIA['preco'])}")
+    linhas.append(f"- Empresa adicional (Business e Consultor): {brl(planos.EMPRESA_EXTRA_PRECO)}/mês cada")
     linhas.append(f"- Pacote extra: +{pk['contratos']} contratos por {brl(pk['preco'])}/mês")
     linhas.append("SERVIÇO DE ADVOGADO (elaboração ou revisão, pagamento único):")
     for k, nome in TIPOS_PECA.items():
@@ -130,16 +134,17 @@ def resposta_por_regras(pergunta, ctx=None):
         return {"resposta": "Claro! Vou encaminhar sua conversa para a nossa equipe. Toque em **Falar com atendimento** e deixe seu contato: "
                             "a conversa vai junto, para você não precisar repetir.", "encaminhar_para_humano": True, "sugestoes": []}
     if re.search(r"plano|preco|valor|quanto custa|assinatura|mensal|anual|pagar|pagamento", q):
-        return {"resposta": f"Planos mensais: **Essencial** {preco('essencial')}, **Profissional** {preco('profissional')}, "
-                            f"**Avançado** {preco('avancado')} (com proposta comercial com IA) e **Consultor** {preco('consultor')}. "
-                            f"No anual você paga {current_app.config['ANUAL_MESES_PAGOS']} mensalidades e leva 12. Dá para começar com o **teste grátis de {TRIAL_DIAS} dias**, sem cartão. "
-                            "A assinatura é feita em `Plano e conta`, com cartão recorrente ou Pix.",
-                "sugestoes": ["O que cada plano inclui?", "Como funciona o teste grátis?", "Posso cancelar quando quiser?"]}
+        return {"resposta": f"O **Free** é grátis para sempre (diagnóstico, checklist, cofre, radar e 1 análise de edital por mês). Planos mensais: "
+                            f"**Essencial** {preco('essencial')}, **Profissional** {preco('profissional')} (o mais escolhido: análise com IA, preços, "
+                            f"concorrentes, propostas e peças), **Business** {preco('business')} (3 empresas) e **Consultor** {preco('consultor')} (10 empresas). "
+                            f"No anual você paga {current_app.config['ANUAL_MESES_PAGOS']} mensalidades e leva 12. Dentro do Free dá para **experimentar o Profissional "
+                            f"por {planos.TRIAL_DIAS} dias**, sem cartão. A assinatura é feita em `Plano e conta`, com cartão recorrente ou Pix.",
+                "sugestoes": ["O que cada plano inclui?", "Como funciona o teste do Profissional?", "Posso cancelar quando quiser?"]}
     if re.search(r"teste|gratis|trial|periodo gratuito", q):
-        t = P["trial"]
-        return {"resposta": f"O teste grátis dura **{TRIAL_DIAS} dias**, sem cartão, com {t['analises']} análises de edital, "
-                            f"{t['concorrentes']} análise de concorrente, gerador de peças, inteligência de preços e {t['contratos']} contrato em gestão. "
-                            "É só clicar em **Testar grátis**, confirmar o e-mail com o código e cadastrar a empresa pelo CNPJ.",
+        t = P["profissional"]
+        return {"resposta": f"A conta **Free** é grátis para sempre. Dentro dela, o botão **Experimentar o Profissional** libera por {planos.TRIAL_DIAS} dias "
+                            f"tudo do Profissional ({t['analises']} análises de edital, concorrentes, preços, propostas e peças), sem cartão. "
+                            "Terminado o teste, a conta volta ao Free sem perder nada.",
                 "sugestoes": ["Quais são os planos?", "Como cadastro minha empresa?"]}
     if re.search(r"cancel", q):
         return {"resposta": "Você cancela em `Plano e conta` > **Cancelar renovação automática**. O acesso continua até o fim do período já pago. "
@@ -152,12 +157,12 @@ def resposta_por_regras(pergunta, ctx=None):
     if re.search(r"contrato|vigencia|garantia|medicao|faturamento", q):
         return {"resposta": "Na **Gestão de contratos** você envia o PDF do contrato e a IA preenche vigência, garantia, reajuste, medição e faturamento. "
                             "O Kasiski avisa a prorrogação 120 e 60 dias antes, a renovação da garantia e as rotinas mensais, com e-mail diário. "
-                            f"Limites: Profissional {P['profissional']['contratos']}, Avançado {P['avancado']['contratos']}, Consultor {P['consultor']['contratos']} contratos "
+                            f"Limites: Profissional {P['profissional']['contratos']}, Business {P['business']['contratos']}, Consultor {P['consultor']['contratos']} contratos "
                             f"(+{planos.PACOTE_CONTRATOS['contratos']} por {brl(planos.PACOTE_CONTRATOS['preco'])}/mês).", "sugestoes": ["Quais são os planos?"]}
     if re.search(r"proposta|bdi|preco praticado|sinapi|cotacao", q):
         return {"resposta": "Em `Preços e propostas` você pesquisa preços praticados e consulta tabelas oficiais (SINAPI, CMED, convenções coletivas). "
-                            "Nos planos **Avançado** e **Consultor**, a IA lê as regras da proposta no edital, calcula o preço com BDI e tributos, "
-                            "checa a exequibilidade e gera a minuta em Word.", "sugestoes": ["Quanto custa o plano Avançado?"]}
+                            "A partir do **Profissional**, a IA lê as regras da proposta no edital, busca os preços nas tabelas exigidas, sugere o preço de cada item "
+                            "e gera a minuta em Word.", "sugestoes": ["Quanto custa o plano Profissional?"]}
     if re.search(r"concorrent|dossie|inabilit", q):
         return {"resposta": "Em `Concorrentes` você consulta o CNPJ e monta o **dossiê completo**: dados públicos, sanções, atas e decisões no PNCP, "
                             "documentos de outros certames e inabilitações anteriores. Nas análises da habilitação ou da proposta, a IA usa esse histórico para sugerir recursos.",

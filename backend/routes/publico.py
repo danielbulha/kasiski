@@ -245,6 +245,40 @@ def newsletter_edicao(numero):
                     "semana_fim": e.semana_fim.isoformat(), "html": corpo})
 
 
+# ---------------------------------------------------------------- relatório gratuito da prospecção
+def _prospect(token):
+    from models import Prospect
+    p = Prospect.query.filter_by(token=(token or "")[:40]).first() if token else None
+    if not p or p.status == "nao_contatar":
+        raise ErroAPI("Relatório não encontrado.", 404)
+    return p
+
+
+@bp.get("/relatorio/<token>")
+def relatorio_prospect(token):
+    from services import prospeccao
+    p = _prospect(token)
+    publico.limitar("relatorio", publico.ip_hash(), por_ip=120, horas_ip=1)
+    dados_rel = prospeccao.relatorio_publico(p)
+    if request.args.get("visita") == "1":
+        prospeccao.registrar_visita(p)
+    db.session.commit()
+    return jsonify(dados_rel)
+
+
+@bp.post("/relatorio/<token>/nao-contatar")
+def relatorio_nao_contatar(token):
+    """Oposição ao tratamento (LGPD, art. 18, §2º): a empresa sai de todas as listas de prospecção."""
+    p = _prospect(token)
+    p.status, p.notas = "nao_contatar", ((p.notas or "") + f"\nPediu para não ser contatada pelo relatório em {datetime.utcnow():%d/%m/%Y}.").strip()
+    if p.lead_id:
+        lead = Lead.query.get(p.lead_id)
+        if lead:
+            lead.marketing_optout = True
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
 # ---------------------------------------------------------------- leads e eventos
 @bp.post("/leads")
 def leads():

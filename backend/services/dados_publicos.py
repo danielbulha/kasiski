@@ -55,6 +55,8 @@ def receita(cnpj):
             "porte": d.get("porte") or d.get("descricao_porte"), "natureza_juridica": d.get("natureza_juridica"),
             "municipio": d.get("municipio"), "uf": d.get("uf"),
             "opcao_simples": d.get("opcao_pelo_simples"), "cnaes": cnaes,
+            "telefone": " / ".join(t for t in (d.get("ddd_telefone_1"), d.get("ddd_telefone_2")) if t and str(t).strip()) or None,
+            "email": (d.get("email") or "").strip().lower() or None,
             "socios": [{"nome": s.get("nome_socio"), "qualificacao": s.get("qualificacao_socio")}
                        for s in d.get("qsa") or []],
         }

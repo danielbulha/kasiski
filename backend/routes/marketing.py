@@ -559,3 +559,141 @@ def reenviar_falhas_newsletter(eid):
         raise ErroAPI("Não há falhas para reenviar.")
     newsletter.reenviar_falhas(ed)
     return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------- prospecção ativa (PNCP → Lead Score Kasiski)
+def _link_relatorio(p):
+    from flask import current_app
+    site = current_app.config["SITE_URL"]
+    if site.startswith("https://"):  # link curto; o Netlify redireciona para /relatorio/ com as UTMs (site/gerar.py)
+        return f"{site}/r/{p.token}"
+    return f"{site}/relatorio/?t={p.token}&utm_source=prospeccao&utm_medium=outbound&utm_campaign=relatorio"
+
+
+@bp.get("/prospeccao")
+@admin_requerido
+def prospeccao_visao():
+    from models import BuscaProspeccao, Prospect
+    from services import prospeccao as pr
+    q = Prospect.query
+    f = request.args
+    if f.get("faixa"):
+        q = q.filter(Prospect.faixa.in_(f["faixa"].split(",")))
+    if f.get("status"):
+        q = q.filter(Prospect.status.in_(f["status"].split(",")))
+    else:
+        q = q.filter(Prospect.status.notin_(("nao_contatar", "descartado", "cliente")))
+    if f.get("uf"):
+        q = q.filter(Prospect.uf == f["uf"].upper()[:2])
+    if f.get("busca", "").isdigit():
+        b = int(f["busca"])
+        ids = [p.id for p in Prospect.query.with_entities(Prospect.id, Prospect.buscas) if b in (p.buscas or [])]
+        q = q.filter(Prospect.id.in_(ids or [0]))
+    if f.get("q"):
+        termo = f"%{f['q'].strip()}%"
+        q = q.filter(db.or_(Prospect.razao_social.ilike(termo), Prospect.nome_fantasia.ilike(termo), Prospect.cnpj.like(termo)))
+    ordem = {"score": Prospect.score.desc(), "recentes": Prospect.ultima_vitoria.desc(), "valor": Prospect.valor_total.desc(),
+             "relatorio": Prospect.relatorio_visto_em.desc()}.get(f.get("ordem"), Prospect.score.desc())
+    lista = q.order_by(ordem, Prospect.id).limit(300).all()
+    todos = Prospect.query
+    kpi = {"total": todos.count(), "faixa_a": todos.filter(Prospect.faixa == "A", Prospect.status.notin_(("nao_contatar", "descartado"))).count(),
+           "contatados": todos.filter(Prospect.status.in_(("contatado", "respondeu", "lead", "cliente"))).count(),
+           "relatorios_abertos": todos.filter(Prospect.relatorio_visto_em.isnot(None)).count(),
+           "leads": todos.filter(Prospect.lead_id.isnot(None)).count(),
+           "clientes": todos.filter(Prospect.status == "cliente").count()}
+    return jsonify({"kpi": kpi, "prospects": [p.to_dict() for p in lista], "segmentos": pr.SEGMENTOS, "status": pr.STATUS,
+                    "buscas": [b.to_dict() for b in BuscaProspeccao.query.order_by(BuscaProspeccao.id.desc()).limit(20)]})
+
+
+@bp.post("/prospeccao/buscas")
+@admin_requerido
+def prospeccao_nova_busca():
+    from models import BuscaProspeccao
+    from services import prospeccao as pr, tarefas
+    d = dados()
+    termos = [t.strip() for t in (d.get("termos") if isinstance(d.get("termos"), list) else str(d.get("termos") or "").split(","))
+              if t and t.strip()][:6]
+    if not termos:
+        raise ErroAPI("Informe pelo menos um termo do segmento (ex.: limpeza predial).")
+    ufs = [u.strip().upper()[:2] for u in (d.get("ufs") if isinstance(d.get("ufs"), list) else str(d.get("ufs") or "").split(","))
+           if u and u.strip()][:10]
+    andamento = BuscaProspeccao.query.filter(BuscaProspeccao.status.in_(("na_fila", "buscando", "enriquecendo")),
+                                             BuscaProspeccao.criado_em > datetime.utcnow() - timedelta(minutes=30)).first()
+    if andamento:
+        raise ErroAPI("Já há uma busca em andamento. Aguarde terminar para começar outra.", 409)
+    b = BuscaProspeccao(nome=(d.get("nome") or ", ".join(termos))[:160], termos=termos, ufs=ufs,
+                        meses=max(1, min(int(d.get("meses") or 12), 36)), limite=max(10, min(int(d.get("limite") or 100), 200)))
+    db.session.add(b)
+    db.session.commit()
+    tarefas.rodar(pr.executar, b.id)
+    return jsonify(b.to_dict()), 201
+
+
+@bp.get("/prospeccao/<int:pid>")
+@admin_requerido
+def prospeccao_ver(pid):
+    from models import Prospect
+    from services import prospeccao as pr
+    p = Prospect.query.get_or_404(pid)
+    link = _link_relatorio(p)
+    return jsonify({**p.to_dict(completo=True), "link_relatorio": link, "roteiro": pr.roteiro(p, link)})
+
+
+@bp.patch("/prospeccao/<int:pid>")
+@admin_requerido
+def prospeccao_editar(pid):
+    from models import Prospect
+    from services import prospeccao as pr
+    p = Prospect.query.get_or_404(pid)
+    d = dados()
+    if d.get("status") in pr.STATUS:
+        if d["status"] == "contatado" and not p.contatado_em:
+            p.contatado_em = datetime.utcnow()
+        p.status = d["status"]
+    for k, lim in (("responsavel", 120), ("notas", 4000)):
+        if k in d:
+            setattr(p, k, (d.get(k) or "").strip()[:lim] or None)
+    p.atualizado_em = datetime.utcnow()
+    db.session.commit()
+    return jsonify(p.to_dict(completo=True))
+
+
+@bp.post("/prospeccao/<int:pid>/crm")
+@admin_requerido
+def prospeccao_crm(pid):
+    from models import Prospect
+    from services import prospeccao as pr
+    p = Prospect.query.get_or_404(pid)
+    if p.status == "nao_contatar":
+        raise ErroAPI("Esta empresa pediu para não ser contatada.")
+    lead = pr.enviar_ao_crm(p, g.usuario.nome)
+    return jsonify({"lead_id": lead.id, "prospect": p.to_dict()})
+
+
+@bp.post("/prospeccao/<int:pid>/reavaliar")
+@admin_requerido
+def prospeccao_reavaliar(pid):
+    from models import Prospect
+    from services import prospeccao as pr
+    p = Prospect.query.get_or_404(pid)
+    p.enriquecido_em = None
+    pr.enriquecer([p])
+    pr.repontuar([p])
+    return jsonify(p.to_dict(completo=True))
+
+
+@bp.get("/prospeccao.csv")
+@admin_requerido
+def prospeccao_csv():
+    from models import Prospect
+    buf = io.StringIO()
+    w = csv.writer(buf, delimiter=";")
+    w.writerow(["score", "faixa", "cnpj", "razao_social", "nome_fantasia", "uf", "municipio", "porte", "cnae", "vitorias",
+                "orgaos", "valor_total", "ultima_vitoria", "plano_sugerido", "telefone", "email_empresa", "status", "link_relatorio"])
+    for p in Prospect.query.filter(Prospect.status.notin_(("nao_contatar", "descartado"))).order_by(Prospect.score.desc()).limit(5000):
+        w.writerow([p.score, p.faixa, p.cnpj, p.razao_social, p.nome_fantasia, p.uf, p.municipio, p.porte, p.cnae,
+                    (p.contratos or 0) + (p.atas or 0), len(p.orgaos or {}), f"{p.valor_total or 0:.2f}".replace(".", ","),
+                    p.ultima_vitoria.isoformat() if p.ultima_vitoria else "", p.plano_sugerido, p.telefone, p.email_empresa,
+                    p.status, _link_relatorio(p)])
+    return Response("﻿" + buf.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=kasiski-prospeccao.csv"})

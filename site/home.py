@@ -67,11 +67,11 @@ PASSOS = [("01", "Detectar", "Todo dia útil, o radar consulta o PNCP e separa o
           ("03", "Agir", "Você recebe a recomendação de participar ou não, os prazos na agenda e a minuta da peça pronta para revisão — esclarecimento, impugnação ou recurso.")]
 RECURSOS = [("Radar de editais", "Busca diária no PNCP com nota de aderência de 0 a 100 para cada edital encontrado.", "/radar-licitacoes/"),
             ("Análise do edital", "Resumo, checklist de habilitação, riscos e recomendação de participar, com a página de cada ponto.", "/analisar-edital/"),
-            ("Verificação cruzada", "Um modelo de IA analisa, outro de fornecedor diferente confere. O que não se confirma, você vê como não confirmado.", None),
+            ("Verificação cruzada", "Um modelo de IA analisa, outro de fornecedor diferente confere. O que não se confirma, você vê como não confirmado.", "/verificacao-cruzada/"),
             ("Pipeline Go / No-Go", "Kanban da oportunidade, do edital identificado ao contrato ativo, com fit, risco e movimentação automática pelo PNCP.", "/go-no-go/"),
             ("Cofre de habilitação", "Certidões e atestados com controle de validade. Alerta antes de vencer, não depois.", "/habilitacao/"),
             ("Inteligência de concorrentes", "Possíveis concorrentes, dossiê do CNPJ, sanções no TCU e na CGU e análise da habilitação e da proposta do adversário.", "/concorrentes/"),
-            ("Gerador de peças", "Minutas de esclarecimento, impugnação, recurso, contrarrazões, reequilíbrio e defesa prévia.", None),
+            ("Gerador de peças", "Minutas de esclarecimento, impugnação, recurso, contrarrazões, reequilíbrio e defesa prévia.", "/gerador-de-pecas/"),
             ("Preços e proposta comercial", "Preços praticados, tabelas oficiais (SINAPI, CMED, convenções coletivas) e a minuta da proposta com BDI e checagem de exequibilidade.", "/propostas/"),
             ("Gestão de contratos", "Envie o PDF: a IA preenche vigência, garantia, reajuste, medição e faturamento e avisa antes de cada prazo.", "/gestao-contratos/")]
 SETORES = ["Obras e engenharia", "Serviços continuados", "Fornecimento e registro de preços", "Saúde", "Educação", "Tecnologia da informação",

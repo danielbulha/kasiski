@@ -27,6 +27,7 @@ ferramentas gratuitas e na plataforma, conforme a Lei 13.709/2018 (Lei Geral de 
 <li><b>Conteúdo que você envia à plataforma:</b> editais, documentos do cofre, propostas, contratos e documentos de concorrentes. Esses arquivos podem conter dados pessoais de terceiros (por exemplo, sócios e responsáveis técnicos), tratados por você como controlador e por nós como operador para prestar o serviço.</li>
 <li><b>Navegação e origem:</b> identificador aleatório do navegador, páginas visitadas, origem da visita (parâmetros UTM, site de origem, código de parceiro), eventos de uso da plataforma e endereço IP (guardado apenas de forma cifrada, para limitar abusos).</li>
 <li><b>Pagamento:</b> dados de cobrança processados pelo Mercado Pago. Não recebemos nem guardamos o número do cartão.</li>
+<li><b>Nota fiscal:</b> CPF ou CNPJ, nome ou razão social, e-mail e endereço do tomador, informados por você antes do primeiro pagamento, para a emissão da nota fiscal de serviço.</li>
 </ul>
 <h2>3. Para que usamos e com qual base legal</h2>
 <ul>
@@ -37,11 +38,12 @@ ferramentas gratuitas e na plataforma, conforme a Lei 13.709/2018 (Lei Geral de 
 <li><b>Medição própria de uso do site</b> (sem compartilhar com terceiros) — legítimo interesse (art. 7º, IX); você pode desativá-la em <a href="#" data-preferencias-cookies>Preferências de cookies</a>.</li>
 <li><b>Cookies de medição de terceiros e de marketing</b> (Google Analytics, Google Ads, LinkedIn, Meta) — consentimento (art. 7º, I), só depois da sua escolha no banner.</li>
 <li><b>Prospecção comercial B2B</b> — a partir de dados públicos de empresas que vendem à Administração (contratos e atas publicados no PNCP e cadastro de CNPJ da Receita Federal, inclusive o quadro de sócios), identificamos empresas que podem se beneficiar do Kasiski e fazemos contato comercial por telefone ou LinkedIn — legítimo interesse (art. 7º, IX, e §§ 3º e 4º), limitado a dados de pessoa jurídica e dados tornados públicos por lei. Você pode se opor a qualquer momento pelo link "Não quero receber contatos do Kasiski" no relatório enviado ou pelo e-mail do encarregado; a empresa sai de todas as listas.</li>
+<li><b>Emissão de nota fiscal e escrituração fiscal e contábil dos pagamentos</b> — cumprimento de obrigação legal e regulatória (art. 7º, II).</li>
 <li><b>Segurança, prevenção a fraudes e abusos e cumprimento de obrigações legais</b> (inclusive guarda de registros de acesso por 6 meses, Lei 12.965/2014, art. 15) — obrigação legal (art. 7º, II) e legítimo interesse.</li>
 </ul>
 <h2>4. Com quem compartilhamos</h2>
 <p>Com prestadores que operam dados em nosso nome, na medida necessária: hospedagem e banco de dados (Render e Netlify),
-inteligência artificial (Anthropic, OpenAI e Google, para gerar análises e textos), envio de e-mails (Resend), pagamentos (Mercado Pago)
+inteligência artificial (Anthropic, OpenAI e Google, para gerar análises e textos), envio de e-mails (Resend), pagamentos (Mercado Pago), emissão de nota fiscal (Prefeitura de São Paulo e, se adotado, o emissor contratado) e contabilidade
 e, se você consentir, ferramentas de medição e anúncios (Google, LinkedIn, Meta). Consultamos bases públicas (Receita Federal via BrasilAPI,
 PNCP, TCU, Portal da Transparência) para montar dossiês. Não vendemos dados pessoais.</p>
 <h2>5. Transferência internacional</h2>
@@ -49,6 +51,7 @@ PNCP, TCU, Portal da Transparência) para montar dossiês. Não vendemos dados p
 como cláusulas contratuais e garantias de proteção oferecidas pelos prestadores.</p>
 <h2>6. Por quanto tempo guardamos</h2>
 <ul>
+<li><b>Dados fiscais e de pagamento:</b> pelo prazo da legislação tributária (em regra, 5 anos contados do exercício seguinte).</li>
 <li><b>Conta e conteúdo:</b> enquanto a conta estiver ativa; depois do encerramento, pelo prazo necessário a obrigações legais e ao exercício de direitos (em regra, até 5 anos).</li>
 <li><b>PDF enviado à análise gratuita:</b> apagado em 7 dias, salvo se você criar conta com o mesmo e-mail e o edital for importado para ela.</li>
 <li><b>Prospecção:</b> enquanto a empresa aparecer em contratações públicas recentes (até 24 meses sem atividade); pedidos de oposição ficam guardados para impedir novo contato.</li>

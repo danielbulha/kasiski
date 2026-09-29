@@ -251,14 +251,39 @@ def pg_consultorias():
 def pg_solucao(s):
     cab, ld = migalhas([("Início", "/"), ("Soluções", None), (s["nome"], None)])
     pontos = "".join(f'<div class="s-item"><b>{esc(t)}</b><p>{esc(d)}</p></div>' for t, d in s["pontos"])
+    extras_html, jl = "", [ld, SOFT]
+    if s.get("como"):
+        passos = "".join(f'<div class="s-sol-passo"><span>{i + 1:02d}</span><b>{esc(t)}</b><p>{esc(d)}</p></div>' for i, (t, d) in enumerate(s["como"]))
+        extras_html += f'<section class="s-secao"><h2>Como funciona</h2><div class="s-sol-passos">{passos}</div></section>'
+    if s.get("tabela"):
+        cols = "".join(f"<th>{esc(c)}</th>" for c in s["tabela_colunas"])
+        def nome_peca(r):
+            return f'<a href="/glossario/{r[3]}/">{esc(r[0])}</a>' if len(r) > 3 else esc(r[0])
+        linhas = "".join(f"<tr><td><b>{nome_peca(r)}</b></td>" + "".join(f"<td>{esc(x)}</td>" for x in r[1:3]) + "</tr>"
+                         for r in s["tabela"])
+        extras_html += (f'<section class="s-secao"><h2>{esc(s.get("tabela_titulo", ""))}</h2><div class="s-tabela-rolagem">'
+                        f'<table class="s-comparativo s-tabela-sol"><thead><tr>{cols}</tr></thead><tbody>{linhas}</tbody></table></div></section>')
+    if s.get("detalhes"):
+        det = "".join(f'<div class="s-item"><b>{esc(t)}</b><p>{esc(d)}</p></div>' for t, d in s["detalhes"])
+        extras_html += f'<section class="s-secao"><h2>{esc(s.get("detalhes_titulo", "Em detalhe"))}</h2><div class="s-grade2">{det}</div></section>'
+    if s.get("faq"):
+        perg = "".join(f"<details class=\"s-duvida\"><summary>{esc(q)}</summary><p>{esc(a)}</p></details>" for q, a in s["faq"])
+        extras_html += f'<section class="s-secao s-faq-sol"><h2>Perguntas frequentes</h2>{perg}</section>'
+        jl.append({"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [
+            {"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": a}} for q, a in s["faq"]]})
+    if s.get("glossario"):
+        import glossario
+        nomes = {t["slug"]: t["termo"] for t in glossario.termos()}
+        links = " · ".join(f'<a href="/glossario/{g_}/">{esc(nomes[g_])}</a>' for g_ in s["glossario"] if g_ in nomes)
+        extras_html += f'<section class="s-secao"><p class="s-nota">Termos relacionados no glossário: {links}</p></section>'
     corpo = f'''{cab}<section class="s-heroi"><div class="s-heroi-texto"><p class="s-sobre">{esc(s["nome"])}</p><h1>{esc(s["titulo"])}</h1>
   <p class="s-lead">{esc(s["descricao"])}</p>
   <div class="s-acoes"><a class="s-botao s-botao-grande" href="{C.APP_CADASTRO}" data-cta="solucao_{s["slug"]}">{esc(s["cta"]) if s["cta"] == "Criar conta grátis" else "Criar conta grátis"}</a>
   <a class="s-botao s-botao-sec" href="{s["lp"]}">{esc(s["cta"]) if s["cta"] != "Criar conta grátis" else "Ver na prática"}</a></div></div></section>
-  <section class="s-secao"><div class="s-grade3">{pontos}</div></section>
+  <section class="s-secao"><div class="s-grade3">{pontos}</div></section>{extras_html}
   <section class="s-secao s-faixa"><h2>Comece grátis. Evolua quando fizer sentido.</h2><p>Conta Free para sempre, sem cartão. Quando quiser, experimente o Profissional por 7 dias.</p>
     <a class="s-botao s-botao-grande" href="{C.APP_CADASTRO}" data-cta="solucao_rodape_{s["slug"]}">Começar agora</a></section>'''
-    pagina(f"/{s['slug']}/", f"{s['nome']} | Kasiski", s["descricao"], corpo, prioridade="0.8", jsonld=[ld, SOFT])
+    pagina(f"/{s['slug']}/", f"{s['nome']} | Kasiski", s["descricao"][:158], corpo, prioridade="0.8", jsonld=jl)
 
 
 def pg_lp(lp):
@@ -279,24 +304,8 @@ def pg_lp(lp):
 
 
 def pg_glossario():
-    cab, ld = migalhas([("Início", "/"), ("Glossário", None)])
-    itens = "".join(f'<a class="s-termo" href="/glossario/{g["slug"]}/"><b>{esc(g["termo"])}</b><span>{esc(g["definicao"][:140])}…</span></a>' for g in C.GLOSSARIO)
-    pagina("/glossario/", "Glossário de licitações e contratos públicos | Kasiski",
-           "Termos de licitação explicados: PNCP, pregão eletrônico, Go/No-Go, atestado de capacidade técnica, inexequibilidade, impugnação, recurso, SICAF, BDI e SINAPI.",
-           f'{cab}<section class="s-secao"><h1>Glossário Kasiski</h1><p class="s-lead">Os termos do mercado público explicados com definição, exemplo, legislação e aplicação prática.</p><div class="s-termos">{itens}</div></section>',
-           prioridade="0.7", jsonld=[ld])
-    for g in C.GLOSSARIO:
-        cab, ld = migalhas([("Início", "/"), ("Glossário", "/glossario/"), (g["termo"], None)])
-        termo_ld = {"@context": "https://schema.org", "@type": "DefinedTerm", "name": g["termo"], "description": g["definicao"],
-                    "inDefinedTermSet": C.SITE_URL + "/glossario/"}
-        nome_f, url_f = g["ferramenta"]
-        corpo = f'''{cab}<article class="s-artigo"><h1>{esc(g["termo"])}</h1>
-  <h2>Definição</h2><p>{esc(g["definicao"])}</p><h2>Exemplo</h2><p>{esc(g["exemplo"])}</p>
-  <h2>Legislação</h2><p>{esc(g["legislacao"])}</p><h2>Aplicação na prática</h2><p>{esc(g["aplicacao"])}</p>
-  <aside class="s-caixa-ferramenta"><b>No Kasiski</b><p>Veja como isso funciona na prática em <a href="{url_f}">{esc(nome_f)}</a>.</p>
-    <a class="s-botao" href="{C.APP_CADASTRO}" data-cta="glossario_{g["slug"]}">Criar conta grátis</a></aside>
-  <p class="s-nota">Conteúdo informativo, não substitui a análise jurídica do caso concreto.</p></article>'''
-        pagina(f"/glossario/{g['slug']}/", f"{g['termo']}: o que é | Glossário Kasiski", g["definicao"][:155], corpo, prioridade="0.6", jsonld=[ld, termo_ld])
+    import glossario
+    glossario.gerar(pagina, migalhas, C.APP_CADASTRO, C.SITE_URL, ler_artigos())
 
 
 def ler_artigos():

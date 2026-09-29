@@ -395,3 +395,38 @@ section[id] { scroll-margin-top: 76px; }
 .s-comparativo { width: 100%; border-collapse: collapse; font-size: .9rem; background: #fff; }
 .s-comparativo th, .s-comparativo td { padding: 8px 10px; border-bottom: 1px solid #E3E1DA; text-align: center; }
 .s-comparativo td:first-child, .s-comparativo th:first-child { text-align: left; }
+
+/* ---------- glossário */
+.s-glossario .s-termos { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.s-termo small { color: var(--grafite); font-size: .74rem; text-transform: uppercase; letter-spacing: .04em; }
+.s-gloss-busca { display: grid; gap: 6px; max-width: 520px; margin-top: 22px; }
+.s-gloss-busca label { font-weight: 600; font-size: .92rem; }
+.s-gloss-busca input { font: inherit; padding: 11px 14px; border: 1px solid var(--linha-forte); border-radius: var(--raio); background: #fff; width: 100%; box-sizing: border-box; }
+.s-letras { display: flex; flex-wrap: wrap; gap: 4px; margin: 18px 0 4px; }
+.s-letras a { min-width: 34px; text-align: center; padding: 6px 0; border: 1px solid var(--linha); border-radius: 6px; background: #fff; color: var(--tinta); text-decoration: none; font-weight: 700; font-size: .9rem; }
+.s-letras a:hover { border-color: var(--ciano); }
+.s-letra { scroll-margin-top: 90px; margin-top: 26px; }
+.s-letra h2 { font-size: 1.4rem; margin: 0; padding-bottom: 6px; border-bottom: 2px solid var(--ciano); display: inline-block; }
+.s-verbete .s-sobre a { color: inherit; }
+.s-sinonimos { color: var(--grafite); font-size: .95rem; margin-top: -4px; }
+.s-definicao { font-size: 1.08rem; background: #fff; border: 1px solid var(--linha); border-left: 4px solid var(--ciano); border-radius: var(--raio); padding: 14px 18px; }
+.s-verbete h3 { font-size: 1.02rem; margin: 18px 0 4px; }
+.s-termos-rel { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.s-gloss-nav { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; margin-top: 32px; padding-top: 18px; border-top: 1px solid var(--linha); font-size: .92rem; }
+.s-gloss-nav a:last-child { text-align: right; }
+@media (max-width: 900px) { .s-glossario .s-termos { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) {
+  .s-glossario .s-termos, .s-termos-rel { grid-template-columns: 1fr; }
+  .s-gloss-nav { grid-template-columns: 1fr; text-align: center; } .s-gloss-nav a:last-child { text-align: center; }
+}
+
+/* ---------- páginas de solução detalhadas */
+.s-sol-passos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
+.s-sol-passo { background: #fff; border: 1px solid var(--linha); border-radius: var(--raio); padding: 20px; display: grid; gap: 6px; align-content: start; }
+.s-sol-passo span { font-weight: 800; color: var(--ciano-escuro); font-size: .9rem; letter-spacing: .06em; }
+.s-sol-passo p, .s-grade2 .s-item p { color: var(--grafite); margin: 0; }
+.s-grade2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
+.s-tabela-sol td, .s-tabela-sol th { text-align: left; vertical-align: top; }
+.s-tabela-sol td:first-child { min-width: 180px; }
+.s-faq-sol { max-width: 820px; }
+@media (max-width: 760px) { .s-sol-passos, .s-grade2 { grid-template-columns: 1fr; } }

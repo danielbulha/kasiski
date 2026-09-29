@@ -25,6 +25,7 @@ class Conta(db.Model):
     empresas_extras_metodo = db.Column(db.String(20))
     empresas_extras_mp_id = db.Column(db.String(60), index=True)
     marca_relatorio = db.Column(db.String(200))  # plano Consultor: nome do escritório nos relatórios
+    dados_fiscais = db.Column(db.JSON)            # tomador da NFS-e: documento, nome, e-mail e endereço (services/fiscal.py)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     # Cobrança (Mercado Pago)
@@ -520,9 +521,16 @@ class Cobranca(db.Model):
     descricao = db.Column(db.String(300))
     pago_em = db.Column(db.DateTime, index=True)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    # nota fiscal de serviço (controle manual pelo admin; vazio = pendente quando o pagamento está aprovado)
+    nf_status = db.Column(db.String(20))     # emitida, nao_emitir
+    nf_numero = db.Column(db.String(40))
+    nf_emitida_em = db.Column(db.DateTime)
+    nf_tomador = db.Column(db.JSON)          # cópia dos dados fiscais no momento da emissão
+    nf_obs = db.Column(db.String(300))
 
     def to_dict(self):
         return {"id": self.id, "conta_id": self.conta_id, "origem": self.origem, "tipo": self.tipo,
+                "nf_status": self.nf_status, "nf_numero": self.nf_numero,
                 "mp_pagamento_id": self.mp_pagamento_id, "plano": self.plano, "ciclo": self.ciclo, "meio": self.meio,
                 "valor": self.valor, "valor_liquido": self.valor_liquido, "status": self.status,
                 "descricao": self.descricao, "pago_em": _iso(self.pago_em), "criado_em": _iso(self.criado_em)}

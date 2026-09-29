@@ -53,6 +53,13 @@ class Config:
         "contrarrazoes": 890, "reequilibrio": 1490, "cobranca_pagamento": 490, "defesa_previa": 1190,
     }
 
+    # ------------------------------------------------------------ nota fiscal (prestador) — confirme com o contador
+    NFSE_PRESTADOR_RAZAO = os.getenv("NFSE_PRESTADOR_RAZAO", "D.B.C. Consultoria e Serviços Ltda.")
+    NFSE_PRESTADOR_CNPJ = os.getenv("NFSE_PRESTADOR_CNPJ", "01.152.886/0001-51")
+    NFSE_PRESTADOR_MUNICIPIO = os.getenv("NFSE_PRESTADOR_MUNICIPIO", "São Paulo/SP")
+    NFSE_PRESTADOR_IM = os.getenv("NFSE_PRESTADOR_IM", "")          # inscrição municipal (CCM) em São Paulo
+    NFSE_CODIGO_SERVICO = os.getenv("NFSE_CODIGO_SERVICO", "")      # código do serviço definido pelo contador
+
     # ------------------------------------------------------------ cobrança (Mercado Pago)
     MP_ACCESS_TOKEN = os.getenv("MP_ACCESS_TOKEN", "")          # credencial de produção (APP_USR-...) ou de teste
     MP_WEBHOOK_SECRET = os.getenv("MP_WEBHOOK_SECRET", "")      # "assinatura secreta" do painel de webhooks

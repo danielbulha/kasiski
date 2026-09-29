@@ -384,3 +384,38 @@ def admin_atualizar_conta(cid):
 def admin_teste_email():
     from services import email
     return jsonify(email.diagnostico((dados().get("para") or g.usuario.email).strip()))
+
+
+# ---------------------------------------------------------------- dados para a nota fiscal (tomador)
+@bp.get("/conta/dados-fiscais")
+@login_requerido
+def ver_dados_fiscais():
+    from services import fiscal
+    r = fiscal.publico(g.conta)
+    r["posso_editar"] = g.usuario.papel in (None, "dono") or g.admin
+    return jsonify(r)
+
+
+@bp.put("/conta/dados-fiscais")
+@login_requerido
+def salvar_dados_fiscais():
+    from services import fiscal
+    if g.usuario.papel not in (None, "dono") and not g.admin:
+        raise ErroAPI("Só o responsável pela conta pode alterar os dados da nota fiscal.", 403)
+    g.conta.dados_fiscais = fiscal.normalizar(dados())
+    db.session.commit()
+    return jsonify(fiscal.publico(g.conta))
+
+
+@bp.get("/conta/dados-fiscais/cep/<cep>")
+@login_requerido
+def dados_fiscais_cep(cep):
+    from services import fiscal
+    return jsonify(fiscal.buscar_cep(cep))
+
+
+@bp.get("/conta/dados-fiscais/cnpj/<cnpj>")
+@login_requerido
+def dados_fiscais_cnpj(cnpj):
+    from services import fiscal
+    return jsonify(fiscal.buscar_cnpj(cnpj))

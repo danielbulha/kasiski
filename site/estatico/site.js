@@ -471,3 +471,34 @@
     }).catch(() => { rel.innerHTML = '<h1>Relatório indisponível</h1><p class="s-lead">Este link expirou ou não existe.</p>'; });
   }
 })();
+
+// ------------------------------------------------------------ glossário: busca e filtro por categoria
+(function () {
+  const q = document.querySelector("[data-gloss-busca]");
+  if (!q) return;
+  const norm = (t) => t.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  let cat = "";
+  const chips = document.querySelectorAll("[data-gcat]");
+  function filtrar() {
+    const termo = norm(q.value.trim());
+    let total = 0;
+    document.querySelectorAll("[data-letra]").forEach((sec) => {
+      let n = 0;
+      sec.querySelectorAll(".s-termo").forEach((c) => {
+        const ok = (!cat || c.dataset.cat === cat) && (!termo || c.dataset.busca.includes(termo));
+        c.hidden = !ok; if (ok) n++;
+      });
+      sec.hidden = n === 0; total += n;
+    });
+    const vazio = document.querySelector("[data-gloss-vazio]");
+    if (vazio) vazio.hidden = total > 0;
+  }
+  q.addEventListener("input", filtrar);
+  chips.forEach((b) => b.addEventListener("click", () => {
+    cat = b.dataset.gcat;
+    chips.forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    filtrar();
+  }));
+  const inicial = new URLSearchParams(location.search).get("q");
+  if (inicial) { q.value = inicial; filtrar(); }
+})();

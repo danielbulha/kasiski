@@ -146,6 +146,9 @@ def _criar_pedido(peca, servico, d):
     from services import mercadopago as mp
     valor = current_app.config["PRECO_REVISAO"].get(peca.tipo)
     online = mp.configurado() and bool(valor)
+    if online:
+        from services import fiscal
+        fiscal.exigir(g.conta)
     r = Revisao(peca_id=peca.id, conta_id=g.conta.id, servico=servico, valor=valor,
                 status="aguardando_pagamento" if online else "pendente",
                 prazo_desejado=para_data(d.get("prazo_desejado")), observacoes=(d.get("observacoes") or "").strip() or None)

@@ -483,3 +483,85 @@ def aplicar_transicao():
         feitos.append({"id": c.id, "nome": c.nome, "novo_valor": tabela})
     db.session.commit()
     return jsonify({"ajustados": feitos, "falhas": falhas})
+
+
+# ---------------------------------------------------------------- faturamento (notas fiscais)
+def _cobrancas_faturamento():
+    from services import fiscal
+    situacao = request.args.get("situacao", "pendente")
+    q = Cobranca.query.filter(Cobranca.status.in_(["aprovado", "estornado", "cancelado"]))
+    de, ate = para_data(request.args.get("de")), para_data(request.args.get("ate"))
+    if de:
+        q = q.filter(Cobranca.pago_em >= datetime(de.year, de.month, de.day))
+    if ate:
+        q = q.filter(Cobranca.pago_em < datetime(ate.year, ate.month, ate.day) + timedelta(days=1))
+    cobs = q.order_by(Cobranca.pago_em.asc().nullslast(), Cobranca.id.asc()).all()
+    contas = {c.id: c for c in Conta.query.filter(Conta.id.in_({x.conta_id for x in cobs if x.conta_id})).all()} if cobs else {}
+    linhas = [fiscal.linha(c, contas.get(c.conta_id)) for c in cobs]
+    linhas = [l for l in linhas if l["nf_status"]]  # estornos sem nota não aparecem
+    if situacao != "todas":
+        linhas = [l for l in linhas if l["nf_status"] == situacao]
+    return linhas
+
+
+@bp.get("/faturamento")
+@admin_requerido
+def faturamento():
+    from services import fiscal
+    linhas = _cobrancas_faturamento()
+    resumo = Counter()
+    for c in Cobranca.query.filter(Cobranca.status.in_(["aprovado", "estornado", "cancelado"])).all():
+        resumo[fiscal.situacao_nf(c) or "-"] += 1
+    return jsonify({"itens": linhas, "total": round(sum(l["valor"] or 0 for l in linhas), 2),
+                    "resumo": {k: v for k, v in resumo.items() if k != "-"}, "prestador": fiscal.prestador()})
+
+
+@bp.patch("/faturamento/<int:cid>")
+@admin_requerido
+def marcar_nota(cid):
+    from services import fiscal
+    c = Cobranca.query.get_or_404(cid)
+    d = dados()
+    st = d.get("nf_status")
+    if st not in ("emitida", "nao_emitir", "pendente", "cancelada"):
+        raise ErroAPI("Situação inválida.")
+    if st == "emitida":
+        numero = (d.get("nf_numero") or "").strip()
+        if not numero:
+            raise ErroAPI("Informe o número da nota emitida.")
+        conta = Conta.query.get(c.conta_id) if c.conta_id else None
+        c.nf_numero = numero[:40]
+        c.nf_emitida_em = c.nf_emitida_em or datetime.utcnow()
+        c.nf_tomador = c.nf_tomador or (conta.dados_fiscais if conta else None)
+    elif st == "pendente":
+        c.nf_numero, c.nf_emitida_em, c.nf_tomador = None, None, None
+    c.nf_status = None if st == "pendente" else st
+    if "nf_obs" in d:
+        c.nf_obs = (d.get("nf_obs") or "").strip()[:300] or None
+    db.session.commit()
+    return jsonify(fiscal.linha(c, Conta.query.get(c.conta_id) if c.conta_id else None))
+
+
+@bp.get("/faturamento.csv")
+@admin_requerido
+def faturamento_csv():
+    import csv
+    import io
+    from flask import Response
+    from services import fiscal
+    pr = fiscal.prestador()
+    buf = io.StringIO()
+    w = csv.writer(buf, delimiter=";")
+    w.writerow(["id_cobranca", "data_pagamento", "valor", "meio", "situacao_nf", "numero_nf", "tomador_tipo", "tomador_documento",
+                "tomador_nome", "tomador_email", "cep", "logradouro", "numero", "complemento", "bairro", "municipio", "uf",
+                "codigo_ibge", "inscricao_municipal", "codigo_servico", "discriminacao", "transacao_mercado_pago", "conta"])
+    for l in _cobrancas_faturamento():
+        t = l["tomador"] or {}
+        w.writerow([l["id"], (l["pago_em"] or "")[:10], f'{(l["valor"] or 0):.2f}'.replace(".", ","), l["meio"], l["nf_status"], l["nf_numero"] or "",
+                    t.get("tipo", ""), t.get("documento_formatado", ""), t.get("nome", ""), t.get("email", ""), t.get("cep", ""),
+                    t.get("logradouro", ""), t.get("numero", ""), t.get("complemento", ""), t.get("bairro", ""), t.get("municipio", ""),
+                    t.get("uf", ""), t.get("codigo_ibge", ""), t.get("inscricao_municipal", ""), pr.get("codigo_servico") or "",
+                    l["discriminacao"], l["mp_pagamento_id"] or "", l["conta"] or ""])
+    nome = f"kasiski-faturamento-{datetime.utcnow():%Y%m%d}.csv"
+    return Response("﻿" + buf.getvalue(), content_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{nome}"'})

@@ -10,6 +10,7 @@ from extensions import ErroAPI, db
 from models import Cobranca, Evento
 from routes import dados
 from services import cobranca as cob
+from services import fiscal
 from services import mercadopago as mp
 
 bp = Blueprint("billing", __name__, url_prefix="/api")
@@ -28,6 +29,7 @@ def checkout():
     if plano not in planos.VENDAVEIS or ciclo not in ("mensal", "anual") or metodo not in ("recorrente", "avulso"):
         raise ErroAPI("Escolha um plano, o ciclo e a forma de pagamento.")
     conta = g.conta
+    fiscal.exigir(conta)
     if metodo == "recorrente" and conta.assinatura_status == "ativa" and conta.metodo_pagamento == "recorrente" \
             and conta.mp_assinatura_id:
         raise ErroAPI("Você já tem uma assinatura automática ativa. Cancele a atual antes de trocar de plano, "
@@ -102,6 +104,7 @@ def comprar_pacotes():
     conta = g.conta
     if planos.codigo(conta) not in planos.PAGOS or not planos.dados_plano(conta).get("contratos"):
         raise ErroAPI("Pacotes extras de contratos estão disponíveis a partir do plano Profissional.", 402, "fora_do_plano")
+    fiscal.exigir(conta)
     try:
         qtd = max(1, min(int(d.get("quantidade") or 1), 20))
     except (TypeError, ValueError):
@@ -143,6 +146,7 @@ def comprar_creditos():
     conta = g.conta
     if planos.codigo(conta) not in planos.PAGOS:
         raise ErroAPI("O Pacote de inteligência é para assinantes. No Free, experimente o Profissional ou assine um plano.", 402)
+    fiscal.exigir(conta)
     try:
         qtd = max(1, min(int(d.get("quantidade") or 1), 10))
     except (TypeError, ValueError):
@@ -163,6 +167,7 @@ def comprar_empresas():
     conta = g.conta
     if planos.codigo(conta) not in planos.PAGOS or not planos.PLANOS[planos.codigo(conta)].get("empresa_extra"):
         raise ErroAPI("Empresas adicionais estão disponíveis nos planos Business e Consultor.", 402, "fora_do_plano")
+    fiscal.exigir(conta)
     try:
         qtd = max(1, min(int(d.get("quantidade") or 1), 50))
     except (TypeError, ValueError):

@@ -241,6 +241,11 @@ def _oferta(conta, recurso):
     return prox, txt
 
 
+def _fiscal_ok(conta):
+    from services import fiscal
+    return fiscal.completo(conta)
+
+
 def resumo(conta):
     p = dados_plano(conta)
     custo = db.session.query(db.func.coalesce(db.func.sum(UsoIA.custo_usd), 0)).filter(
@@ -248,6 +253,7 @@ def resumo(conta):
     ativos, pendentes = contar_usuarios(conta)
     return {
         "codigo": efetivo(conta), "codigo_base": codigo(conta), **p,
+        "dados_fiscais_ok": _fiscal_ok(conta),
         "em_teste": em_teste(conta), "teste_disponivel": codigo(conta) == "free" and not (conta.trial_usado or conta.trial_fim),
         "teste_encerrado": teste_encerrado(conta), "teste_expirado": False, "teste_dias": TRIAL_DIAS,
         "trial_fim": conta.trial_fim.isoformat() if conta.trial_fim else None,

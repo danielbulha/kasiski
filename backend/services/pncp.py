@@ -131,35 +131,62 @@ def baixar_texto_edital(numero_controle):
     return (d["texto"], d["nome"]) if d else (None, None)
 
 
-def baixar_edital(numero_controle):
-    """Baixa o primeiro PDF de edital publicado. Devolve {texto, nome, conteudo, url} ou None.
-    Zip e imagens são ignorados."""
+def _pdfs_do_arquivo(conteudo, nome):
+    """PDFs de um arquivo do PNCP: o próprio PDF ou os PDFs dentro de um ZIP (muitos órgãos publicam o edital zipado)."""
+    if conteudo[:4] == b"%PDF":
+        return [(nome, conteudo)]
+    if conteudo[:2] == b"PK":
+        import io
+        import zipfile
+        try:
+            with zipfile.ZipFile(io.BytesIO(conteudo)) as z:
+                itens = [n for n in z.namelist() if n.lower().endswith(".pdf") and not n.startswith("__MACOSX")]
+                itens.sort(key=lambda n: (0 if "edital" in n.lower() else 1, n))
+                return [(n.split("/")[-1], z.read(n)) for n in itens[:6]]
+        except Exception as e:
+            log.info("ZIP do PNCP ilegível: %s", e)
+    return []
+
+
+def arquivos_da_compra(numero_controle):
+    """Lista pública de arquivos da contratação no PNCP: [{titulo, tipo, url}]."""
     partes = partes_controle(numero_controle)
     if not partes:
-        return None
+        return []
     cnpj, ano, seq = partes
     try:
-        arquivos = _get(f"{BASE_PNCP}/orgaos/{cnpj}/compras/{ano}/{seq}/arquivos") or []
+        lista = _get(f"{BASE_PNCP}/orgaos/{cnpj}/compras/{ano}/{seq}/arquivos") or []
     except Exception as e:
         log.warning("Lista de arquivos PNCP falhou: %s", e)
-        return None
-    arquivos = sorted(arquivos, key=lambda a: 0 if "edital" in str(a.get("tipoDocumentoNome", "")).lower() else 1)
-    for a in arquivos:
-        url = a.get("url") or a.get("uri")
-        if not url:
-            continue
+        return []
+    return [{"titulo": a.get("titulo") or a.get("tipoDocumentoNome") or "Arquivo", "tipo": a.get("tipoDocumentoNome"),
+             "url": a.get("url") or a.get("uri")} for a in lista if (a.get("url") or a.get("uri"))]
+
+
+def baixar_edital(numero_controle):
+    """Baixa o edital publicado no PNCP (PDF solto ou dentro de ZIP). Devolve {texto, nome, conteudo, url} ou None.
+    Prefere o PDF com texto (para a análise); sem nenhum, devolve o primeiro PDF para consulta (texto vazio)."""
+    arquivos = arquivos_da_compra(numero_controle)
+    arquivos.sort(key=lambda a: 0 if "edital" in str(a.get("tipo") or a.get("titulo") or "").lower() else 1)
+    reserva = None
+    for a in arquivos[:8]:
         try:
-            r = requests.get(url, headers={"User-Agent": CAB["User-Agent"]}, timeout=90)
-            if r.content[:4] != b"%PDF":
+            r = requests.get(a["url"], headers={"User-Agent": CAB["User-Agent"]}, timeout=90)
+            if r.status_code != 200:
                 continue
-            texto = texto_de_pdf_bytes(r.content)
-            if len(texto) > 500:
-                nome = a.get("titulo") or "edital"
-                return {"texto": texto, "nome": nome if nome.lower().endswith(".pdf") else f"{nome}.pdf",
-                        "conteudo": r.content, "url": url}
+            for nome, pdf in _pdfs_do_arquivo(r.content, a.get("titulo") or "edital"):
+                nome = nome if nome.lower().endswith(".pdf") else f"{nome}.pdf"
+                try:
+                    texto = texto_de_pdf_bytes(pdf)
+                except Exception:
+                    texto = ""
+                if len(texto) > 500:
+                    return {"texto": texto, "nome": nome, "conteudo": pdf, "url": a["url"]}
+                if reserva is None:
+                    reserva = {"texto": "", "nome": nome, "conteudo": pdf, "url": a["url"]}  # escaneado: serve para ler, não para a IA
         except Exception as e:
             log.warning("Download de arquivo PNCP falhou: %s", e)
-    return None
+    return reserva
 
 
 def historico_fornecedor(cnpj, limite=20):

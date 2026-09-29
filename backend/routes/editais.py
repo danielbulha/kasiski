@@ -6,7 +6,7 @@ from flask import Blueprint, current_app, g, jsonify, request
 import planos
 from auth import login_requerido
 from extensions import ErroAPI, db
-from models import Analise, AnaliseConcorrente, Edital, Peca, Prazo, RadarItem
+from models import Analise, AnaliseConcorrente, DocumentoLicitacao, Edital, Peca, Prazo, RadarItem
 from routes import dados, edital_da_conta, empresa_da_conta, para_data, para_datahora, para_float
 from services import arquivos, fluxos, pncp
 
@@ -87,7 +87,12 @@ def _importar_pncp(empresa_id, numero_controle, base=None, como="Importada do PN
         raise ErroAPI("Não encontrei esta contratação no PNCP. Confira o número de controle.", 404)
     doc = pncp.baixar_edital(numero_controle) or {}
     texto, nome = doc.get("texto"), doc.get("nome")
-    caminho = arquivos.salvar_bytes(doc["conteudo"], f"editais/{empresa_id}") if doc.get("conteudo") else None
+    caminho = None
+    if doc.get("conteudo"):
+        try:
+            caminho = arquivos.salvar_bytes(doc["conteudo"], f"editais/{empresa_id}")
+        except ErroAPI:  # armazenamento do plano cheio: guarda o texto e abre o PDF direto do PNCP quando pedir
+            caminho = None
     ed = Edital(empresa_id=empresa_id, origem="pncp", numero_controle=numero_controle, numero=info.get("numero"),
                 arquivo=caminho, arquivo_url=doc.get("url"),
                 orgao=info.get("orgao"), objeto=info.get("objeto"), modalidade=info.get("modalidade"),
@@ -178,7 +183,8 @@ def ver(edid):
                     "prazos": [p.to_dict() for p in Prazo.query.filter_by(edital_id=edid).order_by(Prazo.data)],
                     "pecas": [p.to_dict(False) for p in Peca.query.filter_by(edital_id=edid).order_by(Peca.id.desc())],
                     "concorrentes": [a.to_dict() for a in AnaliseConcorrente.query.filter_by(edital_id=edid)
-                                     .order_by(AnaliseConcorrente.id.desc())]})
+                                     .order_by(AnaliseConcorrente.id.desc())],
+                    "qtd_documentos": DocumentoLicitacao.query.filter_by(edital_id=edid).count()})
 
 
 @bp.patch("/editais/<int:edid>")
@@ -202,7 +208,11 @@ def editar(edid):
         fluxos.gerar_prazos_edital(ed)
     if "arquivo" in request.files and request.files["arquivo"].filename:
         ed.arquivo, ed.nome_arquivo = arquivos.salvar(request.files["arquivo"], f"editais/{ed.empresa_id}")
-        ed.texto = arquivos.extrair_texto(ed.arquivo)
+        try:
+            ed.texto = arquivos.extrair_texto(ed.arquivo)
+        except ErroAPI as e:  # PDF escaneado: guarda para consulta; a análise pede a versão pesquisável
+            db.session.commit()
+            return jsonify({**ed.to_dict(), "aviso": e.mensagem})
     db.session.commit()
     return jsonify(ed.to_dict())
 
@@ -219,13 +229,21 @@ def documento(edid):
     if not ed.arquivo and ed.numero_controle:
         doc = pncp.baixar_edital(ed.numero_controle)
         if doc and doc.get("conteudo"):
-            ed.arquivo = arquivos.salvar_bytes(doc["conteudo"], f"editais/{ed.empresa_id}")
+            try:
+                ed.arquivo = arquivos.salvar_bytes(doc["conteudo"], f"editais/{ed.empresa_id}")
+            except ErroAPI:  # sem espaço no plano: entrega o PDF sem guardar cópia
+                from flask import Response
+                return Response(doc["conteudo"], mimetype="application/pdf",
+                                headers={"Content-Disposition": f'inline; filename="{ed.nome_arquivo or "edital.pdf"}"'})
             ed.arquivo_url, ed.nome_arquivo = doc.get("url"), ed.nome_arquivo or doc.get("nome")
             if not ed.texto:
                 ed.texto = doc.get("texto")
             db.session.commit()
     if not ed.arquivo:
-        raise ErroAPI("O documento deste edital não está disponível. Envie o PDF pela opção Editar ou consulte no PNCP.", 404)
+        # sem PDF legível: devolve os arquivos públicos do PNCP para abrir direto no portal, e o app oferece o envio do PDF
+        lista = pncp.arquivos_da_compra(ed.numero_controle) if ed.numero_controle else []
+        return jsonify({"erro": "Não consegui abrir o edital por aqui. Abra os arquivos direto no PNCP ou envie o PDF do edital.",
+                        "codigo": "sem_documento", "arquivos_pncp": lista[:10], "link": ed.link}), 404
     nome = ed.nome_arquivo or "edital.pdf"
     ext = os.path.splitext(ed.arquivo)[1].lower()
     tipos = {".pdf": "application/pdf", ".txt": "text/plain; charset=utf-8",
@@ -237,20 +255,10 @@ def documento(edid):
 @bp.delete("/editais/<int:edid>")
 @login_requerido
 def excluir(edid):
-    ed = edital_da_conta(edid)
-    Analise.query.filter_by(edital_id=edid).delete()
-    AnaliseConcorrente.query.filter_by(edital_id=edid).delete()
-    Prazo.query.filter_by(edital_id=edid).delete()
-    from models import Movimento
-    Movimento.query.filter_by(edital_id=edid).delete()
-    Peca.query.filter_by(edital_id=edid).update({"edital_id": None})
-    from models import Proposta
-    Proposta.query.filter_by(edital_id=edid).update({"edital_id": None})
-    from models import Contrato
-    Contrato.query.filter_by(edital_id=edid).update({"edital_id": None})
-    db.session.delete(ed)
+    from services import lixeira
+    r = lixeira.enviar("edital", edital_da_conta(edid), g.usuario.nome)
     db.session.commit()
-    return jsonify({"ok": True})
+    return jsonify(r)
 
 
 ANALISE_LIMITE_MIN = 20  # sem conclusão depois disso, a análise é dada como perdida (ex.: servidor reiniciou)

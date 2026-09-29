@@ -326,3 +326,39 @@ EDITAL:
         "prazo_minimo_ok": True,
     }
     return sistema, usuario, demo
+
+
+# ---------------------------------------------------------------- ata / decisão da licitação
+def analise_ata(texto, empresa, edital):
+    sistema = BASE + (" Você assessora uma empresa licitante e lê a ATA (ou decisão) de uma sessão de licitação. Identifique o que "
+                      "aconteceu com a empresa e com os concorrentes e aponte, com base na Lei 14.133/2021, as peças que a empresa "
+                      "pode apresentar. Só sugira peças com fundamento demonstrável no documento; cite a página.")
+    usuario = f"""EMPRESA QUE VOCÊ ASSESSORA: {_j(empresa)}
+LICITAÇÃO: {_j(edital)}
+
+Devolva JSON:
+{{
+ "resumo": "3 a 5 frases sobre o que a ata registra",
+ "data_ata": "AAAA-MM-DD ou null",
+ "fase": "abertura|julgamento|habilitacao|resultado|recurso|homologacao|outra",
+ "vencedor": {{"nome": "", "cnpj": "", "valor": null}},
+ "nossa_empresa": {{"mencionada": false, "situacao": "vencedora|classificada|desclassificada|inabilitada|nao_participou|nao_identificada", "posicao": null, "motivo": ""}},
+ "eventos": [{{"descricao": "", "pagina": ""}}],
+ "intencoes_recurso": [{{"empresa": "", "contra": "", "motivo": ""}}],
+ "prazos": [{{"descricao": "", "data": "AAAA-MM-DD ou null", "fundamento": ""}}],
+ "sugestoes_peca": [{{"peca": "intencao_recurso|recurso|contrarrazoes", "tema": "título curto", "descricao": "o que sustentar e por quê",
+                      "fundamento": "artigo(s) da Lei 14.133 e cláusula do edital", "forca": "forte|medio|fraco", "pagina": "", "prazo": "quando apresentar"}}]
+}}
+Regras: recurso quando a empresa foi prejudicada (desclassificação, inabilitação, erro no julgamento, vencedor com falha na habilitação ou proposta);
+contrarrazões quando outra empresa manifestou intenção de recorrer contra resultado favorável à empresa; intenção de recorrer se a sessão ainda estiver aberta.
+Sem fundamento, devolva sugestoes_peca vazio.
+
+ATA:
+{texto}"""
+    demo = {"resumo": "Sessão realizada; a empresa X foi declarada vencedora com o menor lance. A empresa assessorada ficou em 2º lugar.",
+            "data_ata": None, "fase": "resultado", "vencedor": {"nome": "Empresa X Ltda", "cnpj": "", "valor": None},
+            "nossa_empresa": {"mencionada": True, "situacao": "classificada", "posicao": 2, "motivo": ""},
+            "eventos": [{"descricao": "Encerramento da fase de lances", "pagina": "pág. 1"}], "intencoes_recurso": [], "prazos": [],
+            "sugestoes_peca": [{"peca": "recurso", "tema": "Atestado do vencedor incompatível", "descricao": "Modo demonstração: configure as chaves de IA.",
+                                "fundamento": "Lei 14.133, art. 67 e art. 165", "forca": "medio", "pagina": "pág. 2", "prazo": "3 dias úteis"}]}
+    return sistema, usuario, demo

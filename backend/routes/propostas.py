@@ -157,10 +157,10 @@ def editar(pid):
 @bp.delete("/propostas/<int:pid>")
 @login_requerido
 def excluir(pid):
-    p = _proposta(pid)
-    db.session.delete(p)
+    from services import lixeira
+    r = lixeira.enviar("proposta", _proposta(pid), g.usuario.nome)
     db.session.commit()
-    return jsonify({"ok": True})
+    return jsonify(r)
 
 
 @bp.post("/propostas/<int:pid>/reler-edital")

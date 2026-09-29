@@ -78,9 +78,10 @@ def editar(pid):
 def excluir(pid):
     p = Prazo.query.get_or_404(pid)
     empresa_da_conta(p.empresa_id)
-    db.session.delete(p)
+    from services import lixeira
+    r = lixeira.enviar("prazo", p, g.usuario.nome)
     db.session.commit()
-    return jsonify({"ok": True})
+    return jsonify(r)
 
 
 @bp.get("/painel")

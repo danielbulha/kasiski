@@ -41,6 +41,18 @@ def executar():
                     log.warning("Falha no radar de %s: %s", emp.razao_social, e)
         fluxos.limpar_radar_antigo()
         db.session.commit()
+        try:  # lixeira: o que passou de 30 dias é apagado de vez (com os arquivos)
+            from services import lixeira
+            log.info("Lixeira: %d item(ns) apagado(s) de vez", lixeira.purgar())
+        except Exception:
+            db.session.rollback()
+            log.exception("Falha ao esvaziar a lixeira")
+        try:  # licitações encerradas vão para o Arquivo
+            from services import arquivo_licitacao
+            log.info("Arquivo: %d licitação(ões) arquivada(s)", arquivo_licitacao.arquivar_encerradas())
+        except Exception:
+            db.session.rollback()
+            log.exception("Falha ao arquivar licitações")
         log.info("Radar concluído: %d novos editais no total", total)
 
 

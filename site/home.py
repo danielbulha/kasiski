@@ -6,6 +6,12 @@ import conteudo as C
 esc = html.escape
 
 
+def _armaz(mb):
+    if not mb:
+        return "—"
+    return f"{mb // 1024} GB" if mb >= 1024 else f"{mb} MB"
+
+
 def _qtd(n, s, p):
     return f"{n} {s if n == 1 else p}"
 
@@ -23,6 +29,7 @@ def cartao_plano(codigo, v):
         item(True, f'{_qtd(v["analises"], "análise", "análises")} de edital com IA por mês', "analises"),
         item(bool(v["concorrentes"]), f'{_qtd(v["concorrentes"], "análise", "análises")} de concorrente por mês', "concorrentes"),
         item(True, f"Radar: 1 busca por dia, {v['radar_max']} melhores editais" if v.get("radar_max") else "Radar diário automático no PNCP"),
+        item(True, _armaz(v.get("armazenamento_mb")) + " para documentos e atas" if v.get("armazenamento_mb") else "Armazenamento de documentos"),
         item(True, "Diagnóstico B2G, checklist e cofre básico" if v.get("cofre_max") else "Cofre, checklist, agenda e pipeline"),
         item(v["precos"], "Inteligência de preços e propostas com IA"),
         item(bool(v["pecas"]), f'{v["pecas"]} peças com IA por mês' if v["pecas"] else "Peças com IA"),
@@ -51,7 +58,7 @@ def tabela_comparativa():
         return "✓" if x is True else "—" if x in (False, 0, None) else esc(str(x))
     linhas = [("Preço/mês", lambda p: "R$ 0" if not p["preco"] else f'R$ {p["preco"]:,.0f}'.replace(",", ".")),
               ("Empresas", lambda p: p["empresas"]), ("Usuários", lambda p: p["usuarios"]),
-              ("Diagnóstico B2G e checklist", lambda p: True), ("Radar", lambda p: "1 busca/dia" if p["radar_max"] else "Diário automático"),
+              ("Diagnóstico B2G e checklist", lambda p: True), ("Radar", lambda p: "1 busca/dia" if p["radar_max"] else "Diário automático"), ("Armazenamento", lambda p: _armaz(p.get("armazenamento_mb"))),
               ("Cofre", lambda p: "Básico" if p["cofre_max"] else True), ("Editais com IA/mês", lambda p: p["analises"]),
               ("Go/No-Go", lambda p: "Básico" if p["analises"] <= 5 else True),
               ("Concorrentes/mês", lambda p: p["concorrentes"]), ("Preços", lambda p: p["precos"]), ("Propostas", lambda p: p["propostas"]),

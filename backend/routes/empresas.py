@@ -219,14 +219,10 @@ def importar_checklist(eid):
 def excluir_documento(did):
     doc = Documento.query.get_or_404(did)
     empresa_da_conta(doc.empresa_id)
-    if doc.arquivo:
-        try:
-            os.remove(arquivos.caminho_absoluto(doc.arquivo))
-        except OSError:
-            pass
-    db.session.delete(doc)
+    from services import lixeira
+    r = lixeira.enviar("documento", doc, g.usuario.nome)
     db.session.commit()
-    return jsonify({"ok": True})
+    return jsonify(r)
 
 
 @bp.get("/documentos/<int:did>/arquivo")

@@ -155,3 +155,65 @@ def avisar_se_preciso():
     db.session.add(Evento(tipo="alerta_armazenamento", dados={"alertas": m["alertas"]}))
     db.session.commit()
     return m
+
+
+# ---------------------------------------------------------------- espaço de arquivos por conta (limite do plano)
+def _pastas_da_conta(conta):
+    from models import Empresa
+    raiz = current_app.config["UPLOAD_DIR"]
+    ids = [e.id for e in Empresa.query.filter_by(conta_id=conta.id)]
+    pastas = [os.path.join(raiz, sub, str(i)) for i in ids for sub in ("editais", "cofre", "contratos", "licitacoes")]
+    pastas.append(os.path.join(raiz, "concorrentes", str(conta.id)))
+    return pastas
+
+
+_CACHE_USO = {}
+
+
+def esquecer_uso(conta_id):
+    _CACHE_USO.pop(conta_id, None)
+
+
+def uso_conta(conta, cache_s=60):
+    """Bytes ocupados pelos arquivos da conta (inclui itens na lixeira, que ainda podem ser restaurados)."""
+    import time
+    c = _CACHE_USO.get(conta.id)
+    if c and time.time() - c[0] < cache_s:
+        return c[1]
+    total = 0
+    for p in _pastas_da_conta(conta):
+        if os.path.isdir(p):
+            for base, _, nomes in os.walk(p):
+                for n in nomes:
+                    try:
+                        total += os.path.getsize(os.path.join(base, n))
+                    except OSError:
+                        pass
+    _CACHE_USO[conta.id] = (time.time(), total)
+    return total
+
+
+def resumo_conta(conta):
+    import planos
+    mb = planos.dados_plano(conta).get("armazenamento_mb") or 0
+    usado = uso_conta(conta)
+    return {"usado": usado, "limite": mb * 1024 * 1024, "limite_mb": mb,
+            "pct": round(100 * usado / (mb * 1024 * 1024), 1) if mb else 0}
+
+
+def exigir_espaco(conta, novos_bytes):
+    import planos
+    from extensions import ErroAPI
+    if conta is None:
+        return
+    mb = planos.dados_plano(conta).get("armazenamento_mb")
+    if not mb:
+        return
+    limite = mb * 1024 * 1024
+    usado = uso_conta(conta, cache_s=0)
+    esquecer_uso(conta.id)  # o upload que vem a seguir muda o total
+    if usado + (novos_bytes or 0) > limite:
+        def fmt(b):
+            return f"{b / 1024 ** 3:.1f} GB".replace(".", ",") if b >= 1024 ** 3 else f"{b / 1024 ** 2:.0f} MB"
+        raise ErroAPI(f"O armazenamento do seu plano está cheio ({fmt(usado)} de {fmt(limite)}). Esvazie a Lixeira, exclua "
+                      "arquivos que não usa mais ou faça upgrade do plano para ganhar mais espaço.", 402, "armazenamento_cheio")

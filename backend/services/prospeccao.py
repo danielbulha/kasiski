@@ -253,6 +253,18 @@ def enriquecer(prospects, etapa=lambda t: None, limite_tempo=None):
         db.session.commit()
 
 
+def buscar_contatos(p, rapido=False):
+    """E-mails e site da empresa em bases públicas além do PNCP (services/contatos.py)."""
+    from services import contatos
+    r = contatos.buscar(p, rapido=rapido)
+    p.contatos, p.site, p.email_sugerido = r["contatos"], r["site"], r["email_principal"]
+    if r["telefones"] and not p.telefone:
+        p.telefone = r["telefones"][0]
+    p.contatos_em = datetime.utcnow()
+    db.session.commit()
+    return r
+
+
 def repontuar(prospects):
     for p in prospects:
         p.score, p.faixa, p.motivos, p.plano_sugerido = pontuar(p)
@@ -280,6 +292,19 @@ def executar(busca_id):
         b.status = "enriquecendo"
         enriquecer(alvo, etapa, limite + timedelta(seconds=300))
         repontuar(salvos)
+        # contatos (e-mails e site) dos melhores A/B, dentro do tempo que sobrar
+        fim_contatos = datetime.utcnow() + timedelta(seconds=240)
+        melhores = [p for p in sorted(salvos, key=lambda p: -(p.score or 0)) if p.faixa in ("A", "B")
+                    and p.status not in ("cliente", "nao_contatar") and not p.contatos_em][:20]
+        for i, p in enumerate(melhores):
+            if datetime.utcnow() > fim_contatos:
+                break
+            etapa(f"Buscando e-mails de contato: {i + 1} de {len(melhores)}")
+            try:
+                buscar_contatos(p)
+            except Exception:
+                log.exception("Falha ao buscar contatos de %s", p.cnpj)
+                db.session.rollback()
         b.empresas = len(salvos)
         b.status, b.etapa, b.concluido_em = "concluida", None, datetime.utcnow()
         db.session.commit()

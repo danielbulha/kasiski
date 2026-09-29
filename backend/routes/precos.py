@@ -61,6 +61,7 @@ def adicionar_amostra(pid):
 def excluir(pid):
     p = PesquisaPreco.query.get_or_404(pid)
     empresa_da_conta(p.empresa_id)
-    db.session.delete(p)
+    from services import lixeira
+    r = lixeira.enviar("pesquisa_preco", p, g.usuario.nome)
     db.session.commit()
-    return jsonify({"ok": True})
+    return jsonify(r)

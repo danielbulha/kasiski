@@ -636,7 +636,24 @@ def prospeccao_ver(pid):
     from services import prospeccao as pr
     p = Prospect.query.get_or_404(pid)
     link = _link_relatorio(p)
-    return jsonify({**p.to_dict(completo=True), "link_relatorio": link, "roteiro": pr.roteiro(p, link)})
+    if not p.contatos_em:  # primeira abertura: pelo menos o que já se sabe (Receita + sugestões), sem consultas lentas
+        pr.buscar_contatos(p, rapido=True)
+        p.contatos_em = None  # a busca completa continua disponível
+        db.session.commit()
+    from services import contatos
+    return jsonify({**p.to_dict(completo=True), "link_relatorio": link, "roteiro": pr.roteiro(p, link),
+                    "email_rascunho": contatos.rascunho_email(p, link, (g.usuario.nome or "Daniel").split()[0])})
+
+
+@bp.post("/prospeccao/<int:pid>/contatos")
+@admin_requerido
+def prospeccao_contatos(pid):
+    """Busca completa de contatos: Receita, Minha Receita, CNPJ.ws e site da empresa."""
+    from models import Prospect
+    from services import prospeccao as pr
+    p = Prospect.query.get_or_404(pid)
+    r = pr.buscar_contatos(p)
+    return jsonify({**r, "prospect": p.to_dict(completo=True)})
 
 
 @bp.patch("/prospeccao/<int:pid>")
@@ -689,11 +706,11 @@ def prospeccao_csv():
     buf = io.StringIO()
     w = csv.writer(buf, delimiter=";")
     w.writerow(["score", "faixa", "cnpj", "razao_social", "nome_fantasia", "uf", "municipio", "porte", "cnae", "vitorias",
-                "orgaos", "valor_total", "ultima_vitoria", "plano_sugerido", "telefone", "email_empresa", "status", "link_relatorio"])
+                "orgaos", "valor_total", "ultima_vitoria", "plano_sugerido", "telefone", "email_empresa", "email_sugerido", "site", "status", "link_relatorio"])
     for p in Prospect.query.filter(Prospect.status.notin_(("nao_contatar", "descartado"))).order_by(Prospect.score.desc()).limit(5000):
         w.writerow([p.score, p.faixa, p.cnpj, p.razao_social, p.nome_fantasia, p.uf, p.municipio, p.porte, p.cnae,
                     (p.contratos or 0) + (p.atas or 0), len(p.orgaos or {}), f"{p.valor_total or 0:.2f}".replace(".", ","),
                     p.ultima_vitoria.isoformat() if p.ultima_vitoria else "", p.plano_sugerido, p.telefone, p.email_empresa,
-                    p.status, _link_relatorio(p)])
+                    p.email_sugerido or "", p.site or "", p.status, _link_relatorio(p)])
     return Response("﻿" + buf.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition": "attachment; filename=kasiski-prospeccao.csv"})

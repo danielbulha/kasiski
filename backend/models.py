@@ -9,6 +9,15 @@ def _iso(v):
     return v.isoformat()
 
 
+
+class NaLixeira:
+    """Exclusão com lixeira: o item some das telas, pode ser restaurado por 30 dias e depois é apagado de vez
+    (services/lixeira.py). excluido_grupo liga os itens que foram para a lixeira junto com o principal."""
+    excluido_em = db.Column(db.DateTime)
+    excluido_por = db.Column(db.String(120))
+    excluido_grupo = db.Column(db.String(40))
+
+
 class Conta(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(200), nullable=False)
@@ -127,7 +136,7 @@ class Empresa(db.Model):
         return cnae.termos_radar(self.segmentos, self.palavras_chave)
 
 
-class Documento(db.Model):
+class Documento(NaLixeira, db.Model):
     """Cofre de habilitação."""
     id = db.Column(db.Integer, primary_key=True)
     empresa_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=False, index=True)
@@ -189,7 +198,7 @@ class RadarItem(db.Model):
                 "nota": self.nota, "motivo": self.motivo, "status": self.status, "criado_em": _iso(self.criado_em)}
 
 
-class Edital(db.Model):
+class Edital(NaLixeira, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     empresa_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=False, index=True)
     origem = db.Column(db.String(20), default="upload")  # pncp, upload
@@ -226,6 +235,7 @@ class Edital(db.Model):
     unidade_nome = db.Column(db.String(300))
     pncp_situacao = db.Column(db.String(80))
     pncp_sincronizado_em = db.Column(db.DateTime)
+    arquivado_em = db.Column(db.DateTime)        # licitação encerrada: dossiê no Arquivo (services/arquivo_licitacao.py)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     def to_dict(self, completo=False):
@@ -240,11 +250,37 @@ class Edital(db.Model):
         d.update({"etapa": self.etapa, "etapa_em": _iso(self.etapa_em), "responsavel": self.responsavel,
                   "responsavel_id": self.responsavel_id, "decisao": self.decisao, "decisao_motivo": self.decisao_motivo,
                   "motivo_saida": self.motivo_saida, "unidade_codigo": self.unidade_codigo, "unidade_nome": self.unidade_nome,
-                  "pncp_situacao": self.pncp_situacao, "pncp_sincronizado_em": _iso(self.pncp_sincronizado_em)})
+                  "pncp_situacao": self.pncp_situacao, "pncp_sincronizado_em": _iso(self.pncp_sincronizado_em),
+                  "arquivado_em": _iso(self.arquivado_em)})
         if completo:
             d["caracteres_texto"] = len(self.texto or "")
             d["possiveis_concorrentes"] = self.possiveis_concorrentes
         return d
+
+
+class DocumentoLicitacao(NaLixeira, db.Model):
+    """Documentos da licitação enviados pelo usuário (atas, anexos, propostas, recursos, decisões...).
+    Atas podem ser analisadas pela IA, que sugere peças (recurso, contrarrazões etc.)."""
+    id = db.Column(db.Integer, primary_key=True)
+    edital_id = db.Column(db.Integer, db.ForeignKey("edital.id"), nullable=False, index=True)
+    empresa_id = db.Column(db.Integer, nullable=False, index=True)
+    tipo = db.Column(db.String(30), default="outro")
+    titulo = db.Column(db.String(300))
+    arquivo = db.Column(db.String(300))
+    nome_arquivo = db.Column(db.String(250))
+    tamanho = db.Column(db.Integer, default=0)
+    texto = db.Column(db.Text)
+    analise = db.Column(db.JSON)        # resultado da análise da ata
+    analise_status = db.Column(db.String(20))   # processando, concluida, erro
+    analise_erro = db.Column(db.String(300))
+    enviado_por = db.Column(db.String(120))
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {"id": self.id, "edital_id": self.edital_id, "tipo": self.tipo, "titulo": self.titulo,
+                "nome_arquivo": self.nome_arquivo, "tamanho": self.tamanho or 0, "tem_arquivo": bool(self.arquivo),
+                "tem_texto": bool(self.texto), "analise": self.analise, "analise_status": self.analise_status,
+                "analise_erro": self.analise_erro, "enviado_por": self.enviado_por, "criado_em": _iso(self.criado_em)}
 
 
 class Movimento(db.Model):
@@ -282,7 +318,7 @@ class Analise(db.Model):
                 "concluido_em": _iso(self.concluido_em)}
 
 
-class Peca(db.Model):
+class Peca(NaLixeira, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     empresa_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=False, index=True)
     edital_id = db.Column(db.Integer, db.ForeignKey("edital.id"))
@@ -328,7 +364,7 @@ class Revisao(db.Model):
                 "peca_tipo": self.peca.tipo if self.peca else None}
 
 
-class Prazo(db.Model):
+class Prazo(NaLixeira, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     empresa_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=False, index=True)
     edital_id = db.Column(db.Integer, db.ForeignKey("edital.id"))
@@ -367,7 +403,7 @@ class Concorrente(db.Model):
                 "perfil_status": self.perfil_status, "perfil_etapa": self.perfil_etapa, "perfil_erro": self.perfil_erro}
 
 
-class DocumentoConcorrente(db.Model):
+class DocumentoConcorrente(NaLixeira, db.Model):
     """Acervo do concorrente: atas, decisões, habilitações, balanços, atestados de outros certames."""
     id = db.Column(db.Integer, primary_key=True)
     concorrente_id = db.Column(db.Integer, db.ForeignKey("concorrente.id"), nullable=False, index=True)
@@ -394,7 +430,7 @@ class DocumentoConcorrente(db.Model):
                 "status": self.status, "criado_em": _iso(self.criado_em)}
 
 
-class AnaliseConcorrente(db.Model):
+class AnaliseConcorrente(NaLixeira, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     edital_id = db.Column(db.Integer, db.ForeignKey("edital.id"), nullable=False, index=True)
     concorrente_id = db.Column(db.Integer, db.ForeignKey("concorrente.id"), nullable=False)
@@ -414,7 +450,7 @@ class AnaliseConcorrente(db.Model):
                 if self.concorrente else None}
 
 
-class PesquisaPreco(db.Model):
+class PesquisaPreco(NaLixeira, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     empresa_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=False, index=True)
     descricao = db.Column(db.String(300), nullable=False)
@@ -431,7 +467,7 @@ class PesquisaPreco(db.Model):
                 "criado_em": _iso(self.criado_em)}
 
 
-class Contrato(db.Model):
+class Contrato(NaLixeira, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     empresa_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=False, index=True)
     edital_id = db.Column(db.Integer, db.ForeignKey("edital.id"))
@@ -750,7 +786,7 @@ class ItemReferencia(db.Model):
         return d
 
 
-class Proposta(db.Model):
+class Proposta(NaLixeira, db.Model):
     """Minuta de proposta comercial: itens com formação de preço + texto gerado pela IA."""
     id = db.Column(db.Integer, primary_key=True)
     empresa_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=False, index=True)
@@ -967,6 +1003,10 @@ class Prospect(db.Model):
     editais_cache_em = db.Column(db.DateTime)
     contatado_em = db.Column(db.DateTime)
     enriquecido_em = db.Column(db.DateTime)
+    contatos = db.Column(db.JSON)               # [{tipo, valor, fonte, verificado, obs}] — services/contatos.py
+    site = db.Column(db.String(300))
+    email_sugerido = db.Column(db.String(200))  # melhor e-mail para a abordagem
+    contatos_em = db.Column(db.DateTime)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
     atualizado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -978,11 +1018,12 @@ class Prospect(db.Model):
         d.update({"segmentos": self.segmentos or [], "n_orgaos": len(self.orgaos or {}), "ufs_atuacao": self.ufs_atuacao or [],
                   "ultima_vitoria": _iso(self.ultima_vitoria), "primeira_vitoria": _iso(self.primeira_vitoria),
                   "relatorio_visto_em": _iso(self.relatorio_visto_em), "contatado_em": _iso(self.contatado_em),
-                  "motivos": self.motivos or [], "criado_em": _iso(self.criado_em)})
+                  "motivos": self.motivos or [], "criado_em": _iso(self.criado_em), "email_sugerido": self.email_sugerido})
         if completo:
             d.update({"orgaos": self.orgaos or {}, "exemplos": self.exemplos or [], "socios": self.socios or [],
                       "notas": self.notas, "abertura": self.abertura, "capital_social": self.capital_social,
-                      "simples": self.simples, "buscas": self.buscas or []})
+                      "simples": self.simples, "buscas": self.buscas or [], "contatos": self.contatos or [],
+                      "site": self.site, "contatos_em": _iso(self.contatos_em)})
         return d
 
 
@@ -1020,3 +1061,20 @@ def _cortar_textos(mapper, connection, alvo):
 
 event.listen(db.Model, "before_insert", _cortar_textos, propagate=True)
 event.listen(db.Model, "before_update", _cortar_textos, propagate=True)
+
+
+
+# ---------------------------------------------------------------- lixeira: itens excluídos somem de todas as consultas
+from sqlalchemy.orm import Session as _Sessao, with_loader_criteria  # noqa: E402
+
+MODELOS_LIXEIRA = (Edital, Contrato, Peca, Proposta, Documento, DocumentoLicitacao, DocumentoConcorrente,
+                   AnaliseConcorrente, PesquisaPreco, Prazo)
+
+
+@event.listens_for(_Sessao, "do_orm_execute")
+def _sem_itens_da_lixeira(ctx):
+    if (ctx.is_select and not ctx.is_column_load and not ctx.is_relationship_load
+            and not ctx.execution_options.get("incluir_excluidos", False)):
+        ctx.statement = ctx.statement.options(*[
+            with_loader_criteria(m, lambda cls: cls.excluido_em.is_(None), include_aliases=True, track_closure_variables=False)
+            for m in MODELOS_LIXEIRA])

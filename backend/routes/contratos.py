@@ -157,9 +157,11 @@ def painel_gestao(eid):
     ids = [c.id for c in Contrato.query.filter_by(empresa_id=eid)]
     prazos = Prazo.query.filter(Prazo.contrato_id.in_(ids), Prazo.concluido.is_(False),
                                 Prazo.data <= hoje + timedelta(days=45)).order_by(Prazo.data).limit(40).all() if ids else []
+    from services import relatorios
     return jsonify({"uso": planos.contar_contratos(g.conta), "limite": planos.limite_contratos(g.conta),
                     "prazos": [p.to_dict() for p in prazos], "pacote": planos.PACOTE_CONTRATOS,
-                    "plano_permite": bool(planos.dados_plano(g.conta).get("contratos"))})
+                    "plano_permite": bool(planos.dados_plano(g.conta).get("contratos")),
+                    "painel": relatorios.carteira([eid])})
 
 
 @bp.get("/contratos/<int:cid>")
@@ -183,7 +185,12 @@ def baixar_arquivo(cid):
     c = contrato_da_conta(cid)
     if not c.arquivo:
         raise ErroAPI("Este contrato não tem arquivo.", 404)
-    return send_file(arquivos.caminho_absoluto(c.arquivo), download_name=c.nome_arquivo, as_attachment=True)
+    import os
+    if not os.path.exists(arquivos.caminho_absoluto(c.arquivo)):
+        raise ErroAPI("O arquivo deste contrato não está mais no servidor. Envie o PDF de novo em Ler de novo.", 404)
+    # ?ver=1 abre no navegador (visualizar); sem o parâmetro, baixa
+    return send_file(arquivos.caminho_absoluto(c.arquivo), download_name=c.nome_arquivo or "contrato.pdf",
+                     as_attachment=request.args.get("ver") != "1")
 
 
 @bp.patch("/contratos/<int:cid>")
@@ -199,12 +206,10 @@ def editar(cid):
 @bp.delete("/contratos/<int:cid>")
 @login_requerido
 def excluir(cid):
-    c = contrato_da_conta(cid)
-    Prazo.query.filter_by(contrato_id=cid).delete()
-    Peca.query.filter_by(contrato_id=cid).update({"contrato_id": None})
-    db.session.delete(c)
+    from services import lixeira
+    r = lixeira.enviar("contrato", contrato_da_conta(cid), g.usuario.nome)
     db.session.commit()
-    return jsonify({"ok": True})
+    return jsonify(r)
 
 
 @bp.post("/contratos/<int:cid>/pagamentos")

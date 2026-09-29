@@ -12,11 +12,42 @@ from extensions import ErroAPI
 EXTENSOES = {".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx", ".txt"}
 
 
-def salvar(arquivo, subpasta):
+def _conta_atual(conta):
+    if conta is not None:
+        return conta
+    try:
+        from flask import g, has_request_context
+        return getattr(g, "conta", None) if has_request_context() else None
+    except Exception:
+        return None
+
+
+def _conferir_espaco(conta, n):
+    conta = _conta_atual(conta)
+    if conta is not None:
+        from services import armazenamento
+        armazenamento.exigir_espaco(conta, n)
+
+
+def tamanho_upload(arquivo):
+    try:
+        pos = arquivo.stream.tell()
+        arquivo.stream.seek(0, os.SEEK_END)
+        n = arquivo.stream.tell()
+        arquivo.stream.seek(pos)
+        return n
+    except Exception:
+        return 0
+
+
+def salvar(arquivo, subpasta, conta=None):
+    """Grava o upload. Confere o limite de armazenamento do plano da conta (a do usuário logado, se não informada)."""
     nome = secure_filename(arquivo.filename or "arquivo")
     ext = os.path.splitext(nome)[1].lower()
     if ext not in EXTENSOES:
         raise ErroAPI("Formato não aceito. Envie PDF, imagem, DOC/DOCX ou TXT.")
+    if not subpasta.startswith("publico"):
+        _conferir_espaco(conta, tamanho_upload(arquivo))
     pasta = os.path.join(current_app.config["UPLOAD_DIR"], subpasta)
     os.makedirs(pasta, exist_ok=True)
     caminho_rel = os.path.join(subpasta, f"{uuid.uuid4().hex}{ext}")
@@ -24,7 +55,8 @@ def salvar(arquivo, subpasta):
     return caminho_rel, nome
 
 
-def salvar_bytes(conteudo, subpasta, ext=".pdf"):
+def salvar_bytes(conteudo, subpasta, ext=".pdf", conta=None):
+    _conferir_espaco(conta, len(conteudo or b""))
     pasta = os.path.join(current_app.config["UPLOAD_DIR"], subpasta)
     os.makedirs(pasta, exist_ok=True)
     caminho_rel = os.path.join(subpasta, f"{uuid.uuid4().hex}{ext}")

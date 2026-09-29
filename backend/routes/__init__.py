@@ -8,8 +8,8 @@ from models import Contrato, Edital, Empresa
 
 
 def registrar(app):
-    from routes import conta, empresas, editais, pecas, concorrentes, precos, contratos, agenda, billing, admin, propostas, chat, oportunidades, publico, marketing
-    for m in (conta, empresas, editais, pecas, concorrentes, precos, contratos, agenda, billing, admin, propostas, chat, oportunidades, publico, marketing):
+    from routes import conta, empresas, editais, pecas, concorrentes, precos, contratos, agenda, billing, admin, propostas, chat, oportunidades, publico, marketing, lixeira, licitacao, relatorios
+    for m in (conta, empresas, editais, pecas, concorrentes, precos, contratos, agenda, billing, admin, propostas, chat, oportunidades, publico, marketing, lixeira, licitacao, relatorios):
         app.register_blueprint(m.bp)
 
 
@@ -31,7 +31,7 @@ def empresa_da_conta(empresa_id):
 
 def edital_da_conta(edital_id):
     ed = Edital.query.get(edital_id)
-    if not ed:
+    if not ed or ed.excluido_em:
         raise ErroAPI("Edital não encontrado.", 404)
     empresa_da_conta(ed.empresa_id)
     return ed
@@ -39,7 +39,7 @@ def edital_da_conta(edital_id):
 
 def contrato_da_conta(contrato_id):
     c = Contrato.query.get(contrato_id)
-    if not c:
+    if not c or c.excluido_em:
         raise ErroAPI("Contrato não encontrado.", 404)
     empresa_da_conta(c.empresa_id)
     return c

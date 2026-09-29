@@ -125,11 +125,10 @@ def editar(pid):
 @bp.delete("/pecas/<int:pid>")
 @login_requerido
 def excluir(pid):
-    p = _peca(pid)
-    Revisao.query.filter_by(peca_id=pid).delete()
-    db.session.delete(p)
+    from services import lixeira
+    r = lixeira.enviar("peca", _peca(pid), g.usuario.nome)
     db.session.commit()
-    return jsonify({"ok": True})
+    return jsonify(r)
 
 
 def _link_pagamento(r, peca):

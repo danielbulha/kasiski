@@ -69,6 +69,12 @@ def mover(ed, para, origem="usuario", autor=None, motivo=None):
         return False
     ed.etapa, ed.etapa_em = para, datetime.utcnow()
     ed.status = STATUS_DA_ETAPA[para]
+    # licitação encerrada vai para o Arquivo (o cartão continua no quadro por alguns dias); reaberta, sai do Arquivo
+    from services import arquivo_licitacao
+    if para in arquivo_licitacao.FINAIS:
+        ed.arquivado_em = ed.arquivado_em or datetime.utcnow()
+    else:
+        ed.arquivado_em = None
     if para in ("perdida", "desistencia") and motivo:
         ed.motivo_saida = motivo[:2000]
     db.session.add(Movimento(edital_id=ed.id, de=atual, para=para, origem=origem, autor=autor, motivo=(motivo or "")[:2000] or None))

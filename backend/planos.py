@@ -20,33 +20,33 @@ PLANOS = {
     "free": {"nome": "Free", "preco": 0, "slogan": "Conheça o seu mercado", "publico": "Para conhecer o Kasiski",
              "empresas": 1, "usuarios": 1, "analises": 1, "concorrentes": 1, "possiveis": 1, "pecas": 0,
              "precos": False, "propostas": False, "contratos": 0, "marca": False, "prioridade": False,
-             "radar_max": 10, "cofre_max": 15, "oportunidades_max": 5, "empresa_extra": None},
+             "radar_max": 10, "cofre_max": 15, "oportunidades_max": 5, "empresa_extra": None, "armazenamento_mb": 100},
     "essencial": {"nome": "Essencial", "preco": 97, "slogan": "Comece sua operação B2G", "publico": "Para quem está começando a licitar",
                   "empresas": 1, "usuarios": 1, "analises": 5, "concorrentes": 3, "possiveis": 3, "pecas": 0,
                   "precos": False, "propostas": False, "contratos": 0, "marca": False, "prioridade": False,
-                  "radar_max": None, "cofre_max": None, "oportunidades_max": None, "empresa_extra": None},
+                  "radar_max": None, "cofre_max": None, "oportunidades_max": None, "empresa_extra": None, "armazenamento_mb": 1024},
     "profissional": {"nome": "Profissional", "preco": 247, "slogan": "Transforme oportunidades em decisões",
                      "publico": "Para empresas que disputam todo mês", "destaque": True,
                      "empresas": 1, "usuarios": 3, "analises": 20, "concorrentes": 15, "possiveis": 10, "pecas": 20,
                      "precos": True, "propostas": True, "contratos": 10, "marca": False, "prioridade": False,
-                     "radar_max": None, "cofre_max": None, "oportunidades_max": None, "empresa_extra": None},
+                     "radar_max": None, "cofre_max": None, "oportunidades_max": None, "empresa_extra": None, "armazenamento_mb": 5120},
     "business": {"nome": "Business", "preco": 497, "slogan": "Gerencie sua operação B2G", "publico": "Para operações B2G estruturadas",
                  "empresas": 3, "usuarios": 7, "analises": 50, "concorrentes": 40, "possiveis": 25, "pecas": 50,
                  "precos": True, "propostas": True, "contratos": 30, "marca": False, "prioridade": True,
-                 "radar_max": None, "cofre_max": None, "oportunidades_max": None, "empresa_extra": 49},
+                 "radar_max": None, "cofre_max": None, "oportunidades_max": None, "empresa_extra": 49, "armazenamento_mb": 15360},
     "consultor": {"nome": "Consultor", "preco": 797, "slogan": "Atenda seus clientes em escala",
                   "publico": "Para consultorias e escritórios de licitação",
                   "empresas": 10, "usuarios": 10, "analises": 80, "concorrentes": 60, "possiveis": 40, "pecas": 80,
                   "precos": True, "propostas": True, "contratos": 50, "marca": True, "prioridade": True,
-                  "radar_max": None, "cofre_max": None, "oportunidades_max": None, "empresa_extra": 49},
+                  "radar_max": None, "cofre_max": None, "oportunidades_max": None, "empresa_extra": 49, "armazenamento_mb": 30720},
     "enterprise": {"nome": "Enterprise", "preco": None, "slogan": "Para grandes operações", "publico": "Sob consulta",
                    "empresas": 50, "usuarios": 50, "analises": 300, "concorrentes": 200, "possiveis": 150, "pecas": 300,
                    "precos": True, "propostas": True, "contratos": 300, "marca": True, "prioridade": True,
-                   "radar_max": None, "cofre_max": None, "oportunidades_max": None, "empresa_extra": 49},
+                   "radar_max": None, "cofre_max": None, "oportunidades_max": None, "empresa_extra": 49, "armazenamento_mb": 102400},
     "suspenso": {"nome": "Suspenso", "preco": 0, "slogan": "", "publico": "",
                  "empresas": 0, "usuarios": 1, "analises": 0, "concorrentes": 0, "possiveis": 0, "pecas": 0,
                  "precos": False, "propostas": False, "contratos": 0, "marca": False, "prioridade": False,
-                 "radar_max": 0, "cofre_max": None, "oportunidades_max": None, "empresa_extra": None},
+                 "radar_max": 0, "cofre_max": None, "oportunidades_max": None, "empresa_extra": None, "armazenamento_mb": 100},
 }
 ORDEM = ("free", "essencial", "profissional", "business", "consultor", "enterprise")
 VENDAVEIS = ("essencial", "profissional", "business", "consultor")      # checkout online
@@ -241,6 +241,14 @@ def _oferta(conta, recurso):
     return prox, txt
 
 
+def _armazenamento(conta):
+    try:
+        from services import armazenamento
+        return armazenamento.resumo_conta(conta)
+    except Exception:
+        return None
+
+
 def _fiscal_ok(conta):
     from services import fiscal
     return fiscal.completo(conta)
@@ -258,6 +266,7 @@ def resumo(conta):
         "teste_encerrado": teste_encerrado(conta), "teste_expirado": False, "teste_dias": TRIAL_DIAS,
         "trial_fim": conta.trial_fim.isoformat() if conta.trial_fim else None,
         "preco_contratado": conta.preco_contratado,
+        "armazenamento": _armazenamento(conta),
         "uso": {"analises": uso_mes(conta, "analises"), "concorrentes": uso_mes(conta, "concorrentes"),
                 "possiveis": uso_mes(conta, "possiveis"), "pecas": uso_mes(conta, "pecas"),
                 "empresas": Empresa.query.filter_by(conta_id=conta.id).count(), "contratos": contar_contratos(conta),

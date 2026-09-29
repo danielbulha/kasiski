@@ -32,7 +32,9 @@ def _ultimas_analises(ids):
 @login_requerido
 def quadro(eid):
     emp = empresa_da_conta(eid)
-    eds = Edital.query.filter_by(empresa_id=eid).order_by(Edital.data_abertura.asc().nullslast(), Edital.id.desc()).all()
+    from services import arquivo_licitacao
+    todos = Edital.query.filter_by(empresa_id=eid).order_by(Edital.data_abertura.asc().nullslast(), Edital.id.desc()).all()
+    eds = [e for e in todos if not arquivo_licitacao.fora_do_quadro(e)]  # encerradas há mais de 15 dias ficam só no Arquivo
     mudou = False
     for ed in eds:  # eventos que não dependem do PNCP (data da sessão) andam na hora
         if ed.etapa is None:
@@ -51,6 +53,7 @@ def quadro(eid):
         "cartoes": cartoes, "usuarios": usuarios,
         "radar_novos": RadarItem.query.filter_by(empresa_id=eid, status="novo").count(),
         "sincronizacao": emp.oportunidades_sync,
+        "arquivadas": sum(1 for e in todos if e.arquivado_em),
     })
 
 

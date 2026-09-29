@@ -179,11 +179,12 @@ def baixar_documento(did):
 def excluir_documento(did):
     doc = DocumentoConcorrente.query.filter_by(id=did, conta_id=g.conta.id).first_or_404()
     c = Concorrente.query.get(doc.concorrente_id)
-    db.session.delete(doc)
+    from services import lixeira
+    r = lixeira.enviar("doc_concorrente", doc, g.usuario.nome)
     if c and c.perfil:
         c.perfil_status = "desatualizado"
     db.session.commit()
-    return jsonify({"ok": True})
+    return jsonify(r)
 
 
 @bp.post("/editais/<int:edid>/concorrentes")
@@ -222,6 +223,7 @@ def analisar(edid):
 def excluir_analise(aid):
     ac = AnaliseConcorrente.query.get_or_404(aid)
     edital_da_conta(ac.edital_id)
-    db.session.delete(ac)
+    from services import lixeira
+    r = lixeira.enviar("analise_concorrente", ac, g.usuario.nome)
     db.session.commit()
-    return jsonify({"ok": True})
+    return jsonify(r)

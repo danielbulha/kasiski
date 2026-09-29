@@ -81,7 +81,7 @@ async function abaPesquisas(el) {
       compras públicas recentes. Sem o código, cadastre a pesquisa e some orçamentos manuais para calcular a faixa competitiva.</p>`)}
     <section class="bloco">${lista.length ? lista.map(linhaPreco).join("") : vazio("Nenhuma pesquisa ainda", "Cadastre a primeira pesquisa de preço.")}</section>`;
   $$("[data-abrir-preco]", el).forEach((b) => b.onclick = () => abrirPesquisa(lista.find((p) => p.id == b.dataset.abrirPreco)));
-  $$("[data-excluir-preco]", el).forEach((b) => b.onclick = async () => { if (await confirmar("Excluir esta pesquisa?", "Excluir")) { await api("DELETE", `/api/precos/${b.dataset.excluirPreco}`); abaPesquisas(el); } });
+  $$("[data-excluir-preco]", el).forEach((b) => b.onclick = () => excluirParaLixeira({ url: `/api/precos/${b.dataset.excluirPreco}`, nome: "esta pesquisa de preços", tipo: "pesquisa_preco", depois: () => abaPesquisas(el) }));
 }
 
 async function abaTabelasRef(el) {
@@ -265,10 +265,7 @@ V.proposta = async (el, id) => {
     };
     const st = $("#salvar-texto", el);
     if (st) st.onclick = async () => { await salvar({ texto: $("#texto-minuta", el).value }); toast("Texto salvo.", "ok"); };
-    $("#excluir-prop", el).onclick = async () => {
-      if (!(await confirmar("Excluir esta proposta?", "Excluir"))) return;
-      await api("DELETE", `/api/propostas/${id}`); location.hash = "#/precos";
-    };
+    $("#excluir-prop", el).onclick = () => excluirParaLixeira({ url: `/api/propostas/${id}`, nome: "esta proposta", tipo: "proposta", depois: () => { location.hash = "#/precos"; } });
   };
   desenhar();
 };

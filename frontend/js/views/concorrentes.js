@@ -149,8 +149,7 @@ V.concorrente = async (el, id) => {
     catch (e) { avisarErro(e); }
   });
   $$("[data-excluir-doc]", el).forEach((b) => b.onclick = async () => {
-    if (!(await confirmar("Excluir este documento do acervo?", "Excluir"))) return;
-    await api("DELETE", `/api/documentos-concorrente/${b.dataset.excluirDoc}`); V.concorrente(el, id);
+    await excluirParaLixeira({ url: `/api/documentos-concorrente/${b.dataset.excluirDoc}`, nome: "este documento do acervo", tipo: "doc_concorrente", depois: () => V.concorrente(el, id) });
   });
   $$("[data-ver]", el).forEach((b) => b.onclick = () => abrirParecerConcorrente(c.analises.find((a) => a.id == b.dataset.ver)));
   if (atualizando) setTimeout(() => { if (location.hash === `#/concorrentes/${id}`) V.concorrente(el, id); }, 5000);

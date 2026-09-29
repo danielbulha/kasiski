@@ -932,14 +932,14 @@ async function mkProspeccao(el) {
         <select id="pr-ordem" aria-label="Ordenar">${[["score", "Maior score"], ["recentes", "Vitória mais recente"], ["valor", "Maior valor"], ["relatorio", "Abriram o relatório"]].map(([v, t]) => `<option value="${v}" ${f.ordem === v ? "selected" : ""}>${t}</option>`).join("")}</select>
         <input id="pr-busca-txt" placeholder="Buscar empresa ou CNPJ" value="${esc(f.q)}" style="max-width:220px"><input id="pr-uf" placeholder="UF" maxlength="2" value="${esc(f.uf)}" style="max-width:70px">
         <button class="botao pequeno secundario" id="pr-csv">Exportar CSV</button>${f.busca ? ` <button class="botao pequeno texto" id="pr-limpa-busca">× busca #${esc(f.busca)}</button>` : ""}</div>
-      <div class="tabela-rolagem">${d.prospects.length ? `<table class="tabela-prosp"><thead><tr><th>Score</th><th>Empresa</th><th>Atividade</th><th>Valor contratado</th><th>Plano sugerido</th><th>Contato (Receita)</th><th>Situação</th><th></th></tr></thead>
+      <div class="tabela-rolagem">${d.prospects.length ? `<table class="tabela-prosp"><thead><tr><th>Score</th><th>Empresa</th><th>Atividade</th><th>Valor contratado</th><th>Plano sugerido</th><th>Contato</th><th>Situação</th><th></th></tr></thead>
         <tbody>${d.prospects.map((p) => `<tr>
           <td><div class="score-prosp"><b>${p.score}</b>${carimboStatus(FAIXA_PROSP, p.faixa)}</div><div class="barra-score"><i style="width:${p.score}%"></i></div></td>
           <td><b>${esc(p.nome_fantasia || p.razao_social || "—")}</b><br><small class="fraco">${fmt.cnpj(p.cnpj)} · ${esc(p.porte || "porte ?")}${p.municipio ? " · " + esc(p.municipio) + "/" + esc(p.uf) : ""}</small>
             ${p.relatorio_visto_em ? `<br><small class="etiqueta-conc">abriu o relatório ${fmt.dataHora(p.relatorio_visto_em)}</small>` : ""}</td>
           <td>${(p.contratos || 0) + (p.atas || 0)} vitória(s) · ${p.n_orgaos} órgão(s)<br><small class="fraco">última ${fmt.data(p.ultima_vitoria)}${p.ufs_atuacao.length > 1 ? " · " + esc(p.ufs_atuacao.join(", ")) : ""}</small></td>
           <td>${fmt.moeda(p.valor_total)}</td><td>${esc(PLANO_PROSP[p.plano_sugerido] || "—")}</td>
-          <td><small>${esc(p.telefone || "—")}${p.email_empresa ? `<br>${esc(p.email_empresa)}` : ""}</small></td>
+          <td><small>${esc(p.telefone || "—")}${p.email_sugerido || p.email_empresa ? `<br>${esc(p.email_sugerido || p.email_empresa)}` : ""}</small></td>
           <td>${carimboStatus(STATUS_PROSP, p.status)}</td>
           <td class="acoes-celula"><button class="botao pequeno secundario" data-pr-abrir="${p.id}">Abordar</button></td></tr>`).join("")}</tbody></table>`
         : vazio("Nenhuma empresa na lista", "Faça uma busca por segmento para mapear quem vence licitações.")}</div></section>`;
@@ -962,6 +962,14 @@ async function mkProspeccao(el) {
   if (andamento) V.admin.prTimer = setTimeout(() => { if (el.isConnected && (V.admin.mk === "prospeccao")) recarregar(); }, 6000);
 }
 
+function tabelaContatosProsp(p) {
+  const cs = p.contatos || [];
+  if (!cs.length) return `<p class="fraco">${p.email_empresa ? esc(p.email_empresa) : "Nenhum e-mail conhecido ainda."}</p>`;
+  return `<div class="tabela-rolagem"><table class="tabela-contatos"><thead><tr><th>E-mail</th><th>Fonte</th><th>Situação</th></tr></thead><tbody>
+    ${cs.map((c) => `<tr><td><b>${esc(c.valor)}</b>${c.valor === p.email_sugerido ? ` ${carimbo("Sugerido para a abordagem", "ok")}` : ""}</td><td><small>${esc(c.fonte)}</small></td>
+      <td><small>${c.verificado ? "Publicado" : "Não verificado"}${c.obs ? ` — ${esc(c.obs)}` : ""}</small></td></tr>`).join("")}</tbody></table></div>`;
+}
+
 async function modalProspect(id, aoMudar) {
   let p = await api("GET", `/api/admin/marketing/prospeccao/${id}`);
   const r = p.roteiro;
@@ -972,13 +980,22 @@ async function modalProspect(id, aoMudar) {
       ${indicador(p.n_orgaos, "órgãos atendidos")}${indicador(esc(PLANO_PROSP[p.plano_sugerido] || "—"), "plano sugerido")}</div>
     <h3>Por que é um bom cliente</h3><ul>${(p.motivos || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
     <h3>Contato</h3>
-    <p>${p.telefone ? `Telefone: <b>${esc(p.telefone)}</b>` : "Sem telefone na Receita"}${p.email_empresa ? ` · E-mail: ${esc(p.email_empresa)}` : ""}
-      <br><small class="fraco">Contato do cadastro na Receita: muitas vezes é do escritório de contabilidade. Use para achar o responsável por licitações.</small></p>
+    <p>${p.telefone ? `Telefone: <b>${esc(p.telefone)}</b>` : "Sem telefone público"}${p.site ? ` · Site: <a href="${esc(p.site)}" target="_blank" rel="noopener">${esc(p.site.replace(/^https?:\/\//, ""))}</a>` : ""}</p>
+    <div id="pr-contatos">${tabelaContatosProsp(p)}</div>
+    <div class="acoes"><button class="botao pequeno secundario" id="pe-buscar-contatos">${icone("buscar", 14)} ${p.contatos_em ? "Buscar e-mails de novo" : "Buscar e-mails em outras bases"}</button>
+      <small class="fraco">Receita (BrasilAPI), Minha Receita, CNPJ.ws e o site da própria empresa. Sem e-mail público, sugerimos endereços do domínio (contato@, comercial@, licitacao@…).</small></div>
     ${(p.socios || []).length ? `<p><small>Sócios/administradores (QSA público): ${p.socios.map((s) => `${esc(s.nome)}${s.qualificacao ? ` (${esc(s.qualificacao)})` : ""}`).join(" · ")}</small></p>` : ""}
     <div class="acoes"><a class="botao pequeno secundario" href="https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(p.nome_fantasia || p.razao_social || "")}" target="_blank" rel="noopener">Procurar a empresa no LinkedIn</a>
       <a class="botao pequeno secundario" href="${esc(p.link_relatorio)}&previa=1" target="_blank" rel="noopener">Ver o relatório gratuito</a>
       <button class="botao pequeno secundario" data-copiar="link">Copiar link do relatório</button></div>
     <h3>Mensagens prontas</h3>
+    <div class="roteiro"><div class="bloco-titulo"><b>E-mail de abordagem</b><span>
+        <button class="botao pequeno texto" data-copiar="email">Copiar</button>
+        <a class="botao pequeno" id="pe-mailto" target="_blank" rel="noopener">Abrir no meu e-mail</a></span></div>
+      <div class="campo"><label for="pe-para">Para</label><select id="pe-para">${(p.contatos || []).map((c) => `<option value="${esc(c.valor)}" ${c.valor === p.email_sugerido ? "selected" : ""}>${esc(c.valor)}${c.verificado ? "" : " (sugerido)"}</option>`).join("") || `<option value="">sem e-mail — busque em outras bases</option>`}</select></div>
+      <div class="campo"><label for="pe-assunto">Assunto</label><input id="pe-assunto" value="${esc(p.email_rascunho?.assunto || "")}"></div>
+      <div class="campo"><label for="pe-corpo">Mensagem</label><textarea id="pe-corpo" rows="10">${esc(p.email_rascunho?.corpo || "")}</textarea></div>
+      <small class="fraco">O e-mail sai da sua própria caixa. Depois de enviar, marque a situação como "Contatado".</small></div>
     <div class="roteiro"><div class="bloco-titulo"><b>LinkedIn: pedido de conexão</b><button class="botao pequeno texto" data-copiar="conexao">Copiar</button></div><p>${esc(r.linkedin_conexao)}</p></div>
     <div class="roteiro"><div class="bloco-titulo"><b>LinkedIn: mensagem após aceitar</b><button class="botao pequeno texto" data-copiar="mensagem">Copiar</button></div><p style="white-space:pre-line">${esc(r.linkedin_mensagem)}</p></div>
     <div class="roteiro"><b>Roteiro de telefone</b><ol>${r.telefone.map((x) => `<li>${esc(x)}</li>`).join("")}</ol></div>
@@ -992,7 +1009,19 @@ async function modalProspect(id, aoMudar) {
       ${p.lead_id ? `<span class="fraco">Lead #${p.lead_id} no CRM</span>` : `<button class="botao secundario" id="pe-crm" ${p.status === "nao_contatar" ? "disabled" : ""}>Enviar ao CRM de leads</button>`}
       <button class="botao" id="pe-salvar">Salvar</button>` });
   const textos = { link: p.link_relatorio, conexao: r.linkedin_conexao, mensagem: r.linkedin_mensagem };
-  $$("[data-copiar]", m).forEach((b) => b.onclick = () => copiar(textos[b.dataset.copiar]));
+  $$("[data-copiar]", m).forEach((b) => b.onclick = () => copiar(b.dataset.copiar === "email"
+    ? `Para: ${$("#pe-para", m).value}\nAssunto: ${$("#pe-assunto", m).value}\n\n${$("#pe-corpo", m).value}` : textos[b.dataset.copiar]));
+  const mailto = () => { $("#pe-mailto", m).href = `mailto:${encodeURIComponent($("#pe-para", m).value || "")}?subject=${encodeURIComponent($("#pe-assunto", m).value)}&body=${encodeURIComponent($("#pe-corpo", m).value)}`; };
+  ["#pe-para", "#pe-assunto", "#pe-corpo"].forEach((q) => $(q, m).addEventListener("input", mailto));
+  $("#pe-para", m).addEventListener("change", mailto); mailto();
+  $("#pe-mailto", m).addEventListener("click", () => { if ($("#pe-st", m).value === "novo") $("#pe-st", m).value = "contatado"; });
+  $("#pe-buscar-contatos", m).onclick = (ev) => ocupado(ev.currentTarget, "Consultando bases e o site da empresa…", async () => {
+    try {
+      const x = await api("POST", `/api/admin/marketing/prospeccao/${id}/contatos`);
+      toast(x.email_principal ? `E-mail encontrado: ${x.email_principal}` : "Nenhum e-mail público encontrado.", x.email_principal ? "ok" : "info");
+      m.fechar(); modalProspect(id, aoMudar); aoMudar();
+    } catch (e) { avisarErro(e); }
+  });
   $("#pe-salvar", m).onclick = async () => { try { await api("PATCH", `/api/admin/marketing/prospeccao/${id}`, dadosForm($("#pr-edit", m))); m.fechar(); toast("Salvo.", "ok"); aoMudar(); } catch (e) { avisarErro(e); } };
   const crm = $("#pe-crm", m);
   if (crm) crm.onclick = () => ocupado(crm, "Enviando…", async () => { try { const x = await api("POST", `/api/admin/marketing/prospeccao/${id}/crm`); toast(`Lead #${x.lead_id} criado no CRM (canal Prospecção ativa).`, "ok"); m.fechar(); aoMudar(); } catch (e) { avisarErro(e); } });

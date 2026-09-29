@@ -56,13 +56,35 @@ function vazio(titulo, texto, botaoHtml = "") {
   return `<div class="vazio"><h3>${esc(titulo)}</h3><p>${esc(texto)}</p>${botaoHtml}</div>`;
 }
 
-function toast(msg, tipo = "info") {
+function toast(msg, tipo = "info", acao = null) {
   const t = document.createElement("div");
   t.className = `toast ${tipo}`;
   t.setAttribute("role", "status");
-  t.textContent = msg;
+  const txt = document.createElement("span");
+  txt.textContent = msg;
+  t.appendChild(txt);
+  if (acao) {  // ex.: { rotulo: "Desfazer", fn: () => ... }
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "toast-acao"; b.textContent = acao.rotulo;
+    b.onclick = () => { t.remove(); acao.fn(); };
+    t.appendChild(b);
+  }
   document.body.appendChild(t);
-  setTimeout(() => t.remove(), tipo === "erro" ? 7000 : 3500);
+  setTimeout(() => t.remove(), acao ? 8000 : tipo === "erro" ? 7000 : 3500);
+}
+
+// Excluir = mandar para a Lixeira (restaurável por 30 dias), sempre com confirmação e opção de desfazer.
+async function excluirParaLixeira({ url, nome, tipo, depois, aviso = "" }) {
+  if (!(await confirmar(`Excluir ${nome}? ${aviso}Ele vai para a Lixeira e pode ser restaurado por 30 dias.`, "Excluir"))) return false;
+  try {
+    await api("DELETE", url);
+    const id = url.split("/").filter(Boolean).pop();
+    toast("Enviado para a Lixeira.", "ok", tipo ? { rotulo: "Desfazer", fn: async () => {
+      try { await api("POST", `/api/lixeira/${tipo}/${id}/restaurar`); toast("Restaurado.", "ok"); if (depois) depois(); } catch (e) { avisarErro(e); }
+    } } : null);
+    if (depois) depois();
+    return true;
+  } catch (e) { avisarErro(e); return false; }
 }
 
 function erroTela(e) {
@@ -73,6 +95,11 @@ function erroTela(e) {
 
 function avisarErro(e) {
   if (e.codigo === "dados_fiscais") { modalDadosFiscais(); return; }
+  if (e.codigo === "armazenamento_cheio") {
+    modal({ titulo: "Armazenamento do plano cheio", corpo: `<p>${esc(e.message)}</p>`,
+      acoes: `<a class="botao secundario" href="#/lixeira" data-fechar>Abrir a Lixeira</a><a class="botao" href="#/conta" data-fechar>Ver planos</a>` });
+    return;
+  }
   if (e.status === 402) {
     const [msg, oferta] = String(e.message).split(/ (?=(?:Essencial|Profissional|Business|Consultor) — R\$)/);
     const teste = S.plano?.teste_disponivel;
@@ -145,7 +172,7 @@ async function api(metodo, caminho, corpo) {
   const ct = r.headers.get("content-type") || "";
   if (!ct.includes("json")) { if (!r.ok) throw new Error(`Erro ${r.status} no servidor.`); return r; }
   const d = await r.json();
-  if (!r.ok) { const e = new Error(d.erro || "Não foi possível concluir a operação."); e.status = r.status; e.codigo = d.codigo; throw e; }
+  if (!r.ok) { const e = new Error(d.erro || "Não foi possível concluir a operação."); e.status = r.status; e.codigo = d.codigo; e.dados = d; throw e; }
   return d;
 }
 

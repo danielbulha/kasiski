@@ -53,6 +53,7 @@ V.oportunidades = async (el, abrirId) => {
         ${d.radar_novos ? `<a class="botao secundario" href="#/radar">${icone("radar")} ${d.radar_novos} nova(s) no radar</a>` : ""}
         <button class="botao secundario" id="op-sinc" ${sincronizando ? "disabled" : ""}>${sincronizando ? "Sincronizando…" : "Sincronizar com o PNCP"}</button>
         <button class="botao" id="op-novo">Novo edital</button></div></div>
+    ${d.arquivadas ? `<p class="fraco op-arquivadas">${d.arquivadas} licitação(ões) encerrada(s) no <a href="#/arquivo">Arquivo</a>. Cartões encerrados saem do quadro 15 dias depois.</p>` : ""}
     ${guia(`<p>Cada cartão é uma licitação acompanhada. Arraste entre as colunas ou abra o cartão para ver o dossiê completo.
       O Kasiski move os cartões sozinho quando detecta um evento: edital capturado → <b>Identificada</b>; análise → <b>Em análise</b> e <b>Decisão</b>;
       Go → <b>Preparação</b>; sessão iniciada → <b>Em disputa</b>; resultado, homologação e contrato no PNCP → etapas finais. A sincronização com o PNCP roda todo dia.</p>`)}
@@ -251,7 +252,9 @@ async function abrirOportunidade(id, aoMudar) {
         .map(([k, t]) => `<button role="tab" data-g-aba="${k}" class="${abaAtual === k ? "ativa" : ""}" aria-selected="${abaAtual === k}">${t}</button>`).join("")}</div>
       <div id="g-corpo"></div>
       <footer class="op-g-rodape"><a class="botao secundario" href="#/editais/${ed.id}">Abrir edital completo</a>
-        ${ed.numero_controle ? `<button class="botao texto" data-sinc-um>Sincronizar com o PNCP</button>` : ""}</footer>`;
+        ${ed.numero_controle ? `<button class="botao texto" data-sinc-um>Sincronizar com o PNCP</button>` : ""}
+        <span class="op-g-rodape-dir">${["perdida", "desistencia", "contrato_ativo"].includes(c.etapa) ? `<button class="botao texto" data-arquivar>${icone("arquivo", 14)} Mandar para o Arquivo</button>` : ""}
+        <button class="botao texto" data-excluir-op>${icone("excluir", 14)} Excluir</button></span></footer>`;
     $("[data-fechar-gaveta]", gaveta).onclick = fechar;
     const an = $("[data-analisar-agora]", gaveta);
     if (an) an.onclick = () => { sessionStorage.setItem("analisar_auto", String(ed.id)); location.hash = `#/editais/${ed.id}`; };
@@ -280,6 +283,14 @@ async function abrirOportunidade(id, aoMudar) {
       const motivo = await pedirMotivo("Motivo do No-Go", "Ex.: margem baixa; exigência de atestado que não temos; prazo de entrega inviável.");
       if (motivo === null) return;
       try { await api("POST", `/api/oportunidades/${c.id}/decisao`, { decisao: "no_go", motivo }); toast("No-Go registrado.", "ok"); await recarregar(); } catch (e) { avisarErro(e); }
+    };
+    const ex = $("[data-excluir-op]", gaveta);
+    if (ex) ex.onclick = () => excluirParaLixeira({ url: `/api/editais/${ed.id}`, nome: "esta licitação", tipo: "edital",
+      aviso: "Prazos, peças, propostas e documentos dela vão junto. ", depois: () => { fechar(); if (aoMudar) aoMudar(); } });
+    const arq = $("[data-arquivar]", gaveta);
+    if (arq) arq.onclick = async () => {
+      try { await api("POST", `/api/editais/${ed.id}/arquivar`); toast("Licitação enviada ao Arquivo.", "ok", { rotulo: "Abrir o Arquivo", fn: () => { location.hash = "#/arquivo"; } }); fechar(); if (aoMudar) aoMudar(); }
+      catch (e) { avisarErro(e); }
     };
     const s1 = $("[data-sinc-um]", gaveta);
     if (s1) s1.onclick = () => ocupado(s1, "Consultando o PNCP…", async () => {
@@ -331,12 +342,16 @@ async function abrirOportunidade(id, aoMudar) {
       const grupos = { esclarecimento: "Esclarecimentos", impugnacao: "Impugnações", intencao_recurso: "Intenções de recurso", recurso: "Recursos", contrarrazoes: "Contrarrazões" };
       el.innerHTML = `<section class="op-g-sec"><h3>Edital</h3>
           ${ed.tem_documento ? `<button class="botao pequeno secundario" data-doc>${icone("olho", 14)} Abrir edital</button> ` : ""}${ed.nome_arquivo ? `<small class="fraco">${esc(ed.nome_arquivo)}</small>` : ""}${!ed.tem_documento ? `<p class="fraco">Sem documento. Envie o PDF na tela do edital.</p>` : ""}</section>
+        <section class="op-g-sec"><h3>Documentos e atas da licitação</h3>
+          <p class="fraco">Guarde atas, decisões, anexos e propostas. A IA lê as atas e sugere recurso ou contrarrazões.</p>
+          <a class="botao pequeno secundario" href="#/editais/${ed.id}" data-ir-docs>Abrir documentos e atas</a></section>
         <section class="op-g-sec"><h3>Impugnações, esclarecimentos e recursos</h3>
           ${o.pecas.length ? `<ul class="op-g-lista">${o.pecas.map((p) => `<li><b>${esc(grupos[p.tipo] || p.tipo)}</b> — <a href="#/pecas/${p.id}">${esc(p.titulo)}</a> <small class="fraco">${fmt.data(p.criado_em)}</small></li>`).join("")}</ul>`
             : `<p class="fraco">Nenhuma peça para este edital.</p>`}
           <a class="botao pequeno secundario" href="#/pecas">Gerar peça</a></section>
         ${o.contratos.length ? `<section class="op-g-sec"><h3>Contrato</h3><ul class="op-g-lista">${o.contratos.map((k) => `<li><a href="#/contratos/${k.id}">Contrato ${esc(k.numero || k.id)}</a>${k.valor ? " · " + fmt.moeda(k.valor) : ""}</li>`).join("")}</ul></section>` : ""}`;
       const bd = $("[data-doc]", el); if (bd) bd.onclick = () => abrirDocumentoEdital(ed.id, bd);
+      const idocs = $("[data-ir-docs]", el); if (idocs) idocs.onclick = () => sessionStorage.setItem("edital_aba_" + ed.id, "documentos");
     } else if (abaAtual === "concorrentes") {
       const pc = ed.possiveis_concorrentes;
       el.innerHTML = `<section class="op-g-sec"><h3>Possíveis concorrentes</h3>

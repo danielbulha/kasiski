@@ -19,6 +19,8 @@ V.editais = async (el) => {
   $("#filtro", el).onchange = (ev) => { sessionStorage.setItem("editais_status", ev.target.value); V.editais(el); };
   $$("tr.clicavel", el).forEach((tr) => tr.onclick = (ev) => { if (ev.target.closest("[data-documento],[data-sem-linha]")) return; location.hash = `#/editais/${tr.dataset.id}`; });
   $$("[data-documento]", el).forEach((b) => b.onclick = (ev) => { ev.stopPropagation(); abrirDocumentoEdital(b.dataset.documento, b); });
+  $$("[data-excluir-edital]", el).forEach((b) => b.onclick = (ev) => { ev.stopPropagation();
+    excluirParaLixeira({ url: `/api/editais/${b.dataset.excluirEdital}`, nome: "esta licitação", tipo: "edital", aviso: "Prazos, peças, propostas e documentos dela vão junto. ", depois: () => V.editais(el) }); });
   $("#novo", el).onclick = () => modalNovoEdital();
 };
 
@@ -39,7 +41,8 @@ function linhaEdital(e) {
     <td>${carimbo(ROTULOS.statusEdital[e.status] || e.status, e.status === "ganho" ? "ok" : e.status === "perdido" ? "erro" : "neutro")}</td>
     <td>${decisao || "<span class='fraco'>Não analisado</span>"}</td>
     <td class="acoes-celula">${e.tem_documento ? `<button class="botao-icone" data-documento="${e.id}" title="Abrir o edital" aria-label="Abrir o documento do edital">${icone("olho", 17)}</button>` : ""}
-      ${e.link ? `<a class="botao-icone" href="${esc(e.link)}" target="_blank" rel="noopener" data-sem-linha title="Ver no PNCP" aria-label="Ver no PNCP">${icone("chevronDireita", 17)}</a>` : ""}</td></tr>`;
+      ${e.link ? `<a class="botao-icone" href="${esc(e.link)}" target="_blank" rel="noopener" data-sem-linha title="Ver no PNCP" aria-label="Ver no PNCP">${icone("chevronDireita", 17)}</a>` : ""}
+      <button class="botao-icone" data-excluir-edital="${e.id}" data-sem-linha title="Excluir" aria-label="Excluir licitação">${icone("excluir", 17)}</button></td></tr>`;
 }
 
 function modalNovoEdital() {
@@ -92,6 +95,7 @@ V.edital = async (el, id) => {
   const ed = d.edital;
   const aba = sessionStorage.getItem("edital_aba_" + id) || "analise";
   const abas = [["analise", "Análise"], ["prazos", `Prazos${d.prazos.filter((p) => !p.concluido).length ? ` (${d.prazos.filter((p) => !p.concluido).length})` : ""}`],
+    ["documentos", `Documentos e atas${d.qtd_documentos ? ` (${d.qtd_documentos})` : ""}`],
     ["concorrentes", `Concorrentes (${d.concorrentes.length})`], ["pecas", `Peças (${d.pecas.length})`]];
   el.innerHTML = `
     <div class="capa">
@@ -99,7 +103,8 @@ V.edital = async (el, id) => {
           <h1>${esc(ed.objeto || "Edital ainda sem objeto — clique em Analisar para extrair")}</h1></div>
         <div class="acoes"><a class="botao pequeno secundario" href="#/oportunidades/${ed.id}" title="Abrir no quadro de oportunidades">${icone("kanban", 14)} ${esc(ETAPA_NOMES_OP[ed.etapa] || "Ver no quadro")}</a>
           ${carimbo(ROTULOS.statusEdital[ed.status] || ed.status, ed.status === "ganho" ? "ok" : ed.status === "perdido" ? "erro" : "neutro")}
-          <select id="status" aria-label="Alterar status">${Object.entries(ROTULOS.statusEdital).map(([k, v]) => `<option value="${k}" ${ed.status === k ? "selected" : ""}>${v}</option>`).join("")}</select></div></div>
+          <select id="status" aria-label="Alterar status">${Object.entries(ROTULOS.statusEdital).map(([k, v]) => `<option value="${k}" ${ed.status === k ? "selected" : ""}>${v}</option>`).join("")}</select>
+          <button class="botao pequeno texto" id="excluir-edital" title="Excluir licitação">${icone("excluir", 14)} Excluir</button></div></div>
       <dl class="capa-campos">
         <div><dt>Órgão</dt><dd>${esc(ed.orgao || "—")}</dd></div>
         <div><dt>${/dispensa|inexigib/i.test(ed.modalidade || "") ? "Publicação do aviso" : "Sessão pública"}</dt><dd>${fmt.dataHora(ed.data_abertura)}</dd></div>
@@ -115,12 +120,16 @@ V.edital = async (el, id) => {
         <div><dt>Portal da disputa</dt><dd>${esc(ed.portal_disputa || "—")}</dd></div>
         <div><dt>Local</dt><dd>${esc(ed.municipio || "—")}${ed.uf ? "/" + esc(ed.uf) : ""}</dd></div>
         <div><dt>Documento</dt><dd>${ed.tem_documento ? `<button class="botao pequeno secundario" id="abrir-doc">${icone("olho", 14)} Abrir edital</button>` : ""}
+          <button class="botao pequeno texto" id="enviar-pdf-ed">${icone("upload", 14)} ${ed.nome_arquivo ? "Trocar PDF" : "Enviar PDF"}</button>
           ${ed.link ? ` <a href="${esc(ed.link)}" target="_blank" rel="noopener">Ver no PNCP</a>` : ""}${!ed.tem_documento && !ed.link ? "—" : ""}
           ${ed.nome_arquivo ? `<br><small class="fraco">${esc(ed.nome_arquivo)}</small>` : ""}</dd></div>
       </dl></div>
     <div class="abas" role="tablist">${abas.map(([k, t]) => `<button data-aba="${k}" class="${aba === k ? "ativa" : ""}">${t}</button>`).join("")}</div>
     <div id="painel-aba"></div>`;
   const ad = $("#abrir-doc", el); if (ad) ad.onclick = () => abrirDocumentoEdital(id, ad);
+  $("#enviar-pdf-ed", el).onclick = () => modalEditalSemDocumento(id, { erro: "Envie o edital em PDF (de preferência com texto selecionável) para guardar e analisar.", link: ed.link });
+  $("#excluir-edital", el).onclick = () => excluirParaLixeira({ url: `/api/editais/${id}`, nome: "esta licitação", tipo: "edital",
+    aviso: "Prazos, peças, propostas e documentos dela vão junto. ", depois: () => { if (location.hash === `#/editais/${id}`) location.hash = "#/editais"; else V.edital(el, id); } });
   $("#status", el).onchange = async (ev) => { await api("PATCH", `/api/editais/${id}`, { status: ev.target.value }); toast("Status atualizado.", "ok"); };
   $("#tipo_objeto_ed", el).onchange = async (ev) => { await api("PATCH", `/api/editais/${id}`, { tipo_objeto: ev.target.value }); toast("Tipo de objeto atualizado.", "ok"); };
   $("#segmento_ed", el).onchange = async (ev) => { await api("PATCH", `/api/editais/${id}`, { segmento: ev.target.value }); toast("Segmento atualizado.", "ok"); };
@@ -128,6 +137,7 @@ V.edital = async (el, id) => {
   const painel = $("#painel-aba", el);
   if (aba === "analise") painelAnalise(painel, ed, d.analises, d.analise_andamento);
   if (aba === "prazos") painelPrazosEdital(painel, ed, d.prazos);
+  if (aba === "documentos") painelDocumentosEdital(painel, ed);
   if (aba === "concorrentes") painelConcorrentesEdital(painel, ed, d.concorrentes);
   if (aba === "pecas") painelPecasEdital(painel, ed, d.pecas);
 };
@@ -280,7 +290,8 @@ function painelConcorrentesEdital(el, ed, analises) {
     <section class="bloco">${analises.length ? analises.map((a) => `<div class="lista-item"><div class="corpo">
         <b>${esc(a.concorrente?.razao_social || fmt.cnpj(a.concorrente?.cnpj))} — ${a.tipo === "habilitacao" ? "Habilitação" : "Proposta"}</b>
         <p>${fmt.cnpj(a.concorrente?.cnpj)} · ${fmt.dataHora(a.criado_em)} · ${(a.resultado.apontamentos || []).length} apontamento(s) confirmado(s)</p></div>
-        <a class="botao pequeno secundario" data-abrir-conc="${a.id}">${icone("olho",14)} Ver parecer</a></div>`).join("")
+        <div class="acoes"><a class="botao pequeno secundario" data-abrir-conc="${a.id}">${icone("olho",14)} Ver parecer</a>
+        <button class="botao pequeno texto" data-excluir-conc="${a.id}" aria-label="Excluir análise">${icone("excluir",14)}</button></div></div>`).join("")
       : vazio("Nenhuma análise ainda", "Envie o primeiro documento de um concorrente acima.")}</section>`;
   const pre = sessionStorage.getItem("cnpj_concorrente_" + ed.id);
   if (pre) { $("#cnpj_c", el).value = fmt.cnpj(pre); sessionStorage.removeItem("cnpj_concorrente_" + ed.id); $("#arquivo_c", el).focus(); }
@@ -298,6 +309,8 @@ function painelConcorrentesEdital(el, ed, analises) {
       } catch (e) { $("#erro-concorrente", el).innerHTML = erroTela(e); }
     });
   };
+  $$("[data-excluir-conc]", el).forEach((b) => b.onclick = () => excluirParaLixeira({ url: `/api/analises-concorrente/${b.dataset.excluirConc}`,
+    nome: "esta análise de concorrente", tipo: "analise_concorrente", depois: () => V.edital($("#conteudo"), ed.id) }));
   $$("[data-abrir-conc]", el).forEach((b) => b.onclick = async () => {
     const c = await api("GET", `/api/concorrentes/${(analises.find((a) => a.id == b.dataset.abrirConc)).concorrente_id}`);
     abrirParecerConcorrente(c.analises.find((a) => a.id == b.dataset.abrirConc));
@@ -405,8 +418,33 @@ async function abrirDocumentoEdital(id, botao) {
       const a = document.createElement("a"); a.href = url; a.download = nomeArq; a.click();
     }
     setTimeout(() => URL.revokeObjectURL(url), 30 * 60000);
-  } catch (e) { if (janela) janela.close(); avisarErro(e); }
+  } catch (e) {
+    if (janela) janela.close();
+    if (e.codigo === "sem_documento") modalEditalSemDocumento(id, e.dados || {});
+    else avisarErro(e);
+  }
   finally { if (botao) { botao.disabled = false; botao.innerHTML = original; } }
+}
+
+// O PDF não veio do PNCP (arquivo zipado de outro jeito, escaneado ou fora do ar): abrir no portal ou enviar o PDF
+function modalEditalSemDocumento(id, d) {
+  const lista = d.arquivos_pncp || [];
+  const m = modal({ titulo: "Abrir o edital", corpo: `
+    <p>${esc(d.erro || "Não consegui abrir o edital por aqui.")}</p>
+    ${lista.length ? `<h3>Arquivos publicados no PNCP</h3><ul class="rel-lista">${lista.map((a) => `<li><a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.titulo)}</a>${a.tipo && a.tipo !== a.titulo ? ` <small class="fraco">(${esc(a.tipo)})</small>` : ""}</li>`).join("")}</ul>`
+      : d.link ? `<p><a class="botao secundario" href="${esc(d.link)}" target="_blank" rel="noopener">Ver a contratação no PNCP</a></p>` : ""}
+    <h3>Enviar o PDF do edital</h3>
+    <p class="fraco">Baixou o edital no portal? Envie aqui: ele fica guardado e a IA passa a poder analisá-lo.</p>
+    <form id="form-pdf-edital"><div class="campo"><label for="pdf-ed">Arquivo (PDF, DOCX ou TXT)</label><input id="pdf-ed" name="arquivo" type="file" accept=".pdf,.docx,.txt" required></div>
+      <button class="botao" type="submit">${icone("upload", 15)} Enviar edital</button></form>` });
+  $("#form-pdf-edital", m).onsubmit = async (ev) => {
+    ev.preventDefault();
+    const b = ev.target.querySelector("button");
+    await ocupado(b, "Enviando…", async () => {
+      try { const r = await api("PATCH", `/api/editais/${id}`, new FormData(ev.target)); m.fechar(); toast(r.aviso || "Edital enviado.", r.aviso ? "erro" : "ok"); if (location.hash.startsWith(`#/editais/${id}`)) V.edital($("#conteudo"), id); }
+      catch (e2) { avisarErro(e2); }
+    });
+  };
 }
 
 // ---------------------------------------------------------------- possíveis concorrentes (histórico do PNCP)

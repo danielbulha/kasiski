@@ -21,7 +21,7 @@ V.cofre = async (el) => {
   $$("[data-editar-doc]", el).forEach((b) => b.onclick = () => modalDocumento(docs.find((d) => d.id == b.dataset.editarDoc)));
   $$("[data-baixar-doc]", el).forEach((b) => b.onclick = () => baixar(`/api/documentos/${b.dataset.baixarDoc}/arquivo`, b.dataset.nome));
   $$("[data-excluir-doc]", el).forEach((b) => b.onclick = async () => {
-    if (await confirmar("Excluir este documento do cofre?", "Excluir")) { await api("DELETE", `/api/documentos/${b.dataset.excluirDoc}`); V.cofre(el); }
+    await excluirParaLixeira({ url: `/api/documentos/${b.dataset.excluirDoc}`, nome: "este documento do cofre", tipo: "documento", depois: () => V.cofre(el) });
   });
 };
 

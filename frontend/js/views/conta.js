@@ -39,6 +39,7 @@ V.conta = async (el) => {
         ${barraUso("Empresas cadastradas", p.uso.empresas, p.empresas)}
         ${barraUso("Usuários", (p.uso.usuarios ?? 1) + (p.uso.convites ?? 0), p.usuarios)}
         ${barraUso("Contratos em gestão", p.uso.contratos ?? 0, p.limite_contratos)}
+        ${p.armazenamento ? barraArmazenamento(p.armazenamento) : ""}
       </div></section>
       ${p.creditos?.saldo ? `<p class="fraco" style="margin-top:10px">Créditos do Pacote de inteligência: <b>${p.creditos.saldo}</b>, válidos até ${fmt.data(p.creditos.validade)}. Eles cobrem o uso acima do limite do plano.</p>` : ""}
     ${creditosHtml(p)}
@@ -183,6 +184,19 @@ function modalCheckout(plano, ciclo) {
   }));
 }
 
+function tamanhoArquivo(b) {
+  if (b >= 1024 ** 3) return `${(b / 1024 ** 3).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} GB`;
+  if (b >= 1024 ** 2) return `${(b / 1024 ** 2).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB`;
+  return `${Math.max(0, Math.round(b / 1024))} KB`;
+}
+
+function barraArmazenamento(a) {
+  const pct = Math.min(100, a.pct || 0);
+  return `<div><div class="meta" style="justify-content:space-between"><span>Armazenamento de arquivos</span><span>${tamanhoArquivo(a.usado)} / ${tamanhoArquivo(a.limite)}</span></div>
+    <div class="barra"><i style="width:${Math.max(pct, a.usado ? 1 : 0)}%;${pct >= 90 ? "background:var(--carimbo)" : ""}"></i></div>
+    ${pct >= 80 ? `<small class="fraco">Quase cheio: esvazie a <a href="#/lixeira">Lixeira</a> ou faça upgrade.</small>` : ""}</div>`;
+}
+
 function barraUso(rotulo, usado, limite) {
   const ilimitado = limite === true || limite === undefined;
   const pct = ilimitado || !limite ? 0 : Math.min(100, Math.round((usado / limite) * 100));
@@ -205,7 +219,7 @@ function planoHtml(codigo, v, atual, ciclo = "mensal", resumo = {}) {
   if (codigo === "profissional" && resumo.teste_disponivel) botao += `<button class="botao texto pequeno" data-iniciar-teste>ou experimente por ${resumo.teste_dias || 7} dias</button>`;
   const itens = [QTD(v.empresas, "empresa", "empresas") + " · " + QTD(v.usuarios, "usuário", "usuários"),
     `${QTD(v.analises, "análise", "análises")} de edital com IA/mês`, QTD(v.concorrentes, "análise de concorrente/mês", "análises de concorrentes/mês"),
-    v.radar_max ? `Radar: 1 busca por dia (${v.radar_max} melhores editais)` : "Radar diário automático", v.cofre_max ? `Cofre básico (${v.cofre_max} arquivos)` : "Cofre com controle de validade",
+    v.radar_max ? `Radar: 1 busca por dia (${v.radar_max} melhores editais)` : "Radar diário automático", v.cofre_max ? `Cofre básico (${v.cofre_max} arquivos)` : "Cofre com controle de validade", v.armazenamento_mb ? `${v.armazenamento_mb >= 1024 ? (v.armazenamento_mb / 1024).toLocaleString("pt-BR") + " GB" : v.armazenamento_mb + " MB"} de arquivos` : "",
     v.oportunidades_max ? `Até ${v.oportunidades_max} oportunidades acompanhadas` : "Pipeline de oportunidades e agenda",
     v.precos ? "Inteligência de preços e propostas" : null, v.pecas ? `${v.pecas} peças com IA/mês` : null,
     v.contratos ? `Gestão de até ${v.contratos} contratos` : null, v.prioridade ? "Prioridade de processamento e suporte" : null,
@@ -219,7 +233,7 @@ function tabelaComparativa() {
   const P = S.planos, ks = ORDEM_PLANOS.filter((k) => P[k]);
   const sim = (v) => (v === true ? "✓" : v === false || v === 0 || v === null || v === undefined ? "—" : esc(String(v)));
   const linhas = [["Preço/mês", (v) => (v.preco ? fmt.moeda(v.preco) : "R$ 0")], ["Empresas (CNPJs)", (v) => v.empresas], ["Usuários", (v) => v.usuarios],
-    ["Diagnóstico B2G e checklist de habilitação", () => true], ["Radar", (v) => (v.radar_max ? "1 busca/dia" : "Diário automático")], ["Cofre", (v) => (v.cofre_max ? "Básico" : true)],
+    ["Diagnóstico B2G e checklist de habilitação", () => true], ["Radar", (v) => (v.radar_max ? "1 busca/dia" : "Diário automático")], ["Cofre", (v) => (v.cofre_max ? "Básico" : true)], ["Armazenamento", (v) => (v.armazenamento_mb >= 1024 ? `${(v.armazenamento_mb / 1024).toLocaleString("pt-BR")} GB` : `${v.armazenamento_mb} MB`)],
     ["Agenda e pipeline", (v) => (v.oportunidades_max ? `Até ${v.oportunidades_max}` : true)], ["Análises de edital com IA/mês", (v) => v.analises],
     ["Análises de concorrentes/mês", (v) => v.concorrentes], ["Possíveis concorrentes/mês", (v) => v.possiveis],
     ["Inteligência de preços", (v) => v.precos], ["Propostas com IA", (v) => v.propostas], ["Peças com IA/mês", (v) => v.pecas || false],

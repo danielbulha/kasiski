@@ -5,12 +5,13 @@ const ROTAS = [
   [/^#\/pecas$/, "pecas"], [/^#\/pecas\/advogado$/, "advogado"], [/^#\/pecas\/(\d+)$/, "peca"], [/^#\/agenda$/, "agenda"],
   [/^#\/contratos$/, "contratos"], [/^#\/contratos\/(\d+)$/, "contrato"], [/^#\/precos$/, "precos"], [/^#\/propostas\/(\d+)$/, "proposta"],
   [/^#\/empresas$/, "empresas"], [/^#\/conta$/, "conta"], [/^#\/glossario$/, "glossario"], [/^#\/admin$/, "admin"],
+  [/^#\/relatorios$/, "relatorios"], [/^#\/arquivo$/, "arquivo"], [/^#\/lixeira$/, "lixeira"],
 ];
 
 const NAV = [
   ["Antes da disputa", [["#/radar", "Radar de editais", "radar"], ["#/editais", "Editais", "editais"], ["#/cofre", "Cofre de documentos", "cofre"]]],
   ["Na disputa", [["#/precos", "Preços e propostas", "precos"], ["#/concorrentes", "Concorrentes", "concorrentes"], ["#/pecas", "Peças", "pecas"], ["#/agenda", "Agenda de prazos", "agenda"]]],
-  ["Depois da disputa", [["#/contratos", "Gestão de contratos", "contratos"]]],
+  ["Depois da disputa", [["#/contratos", "Gestão de contratos", "contratos"], ["#/arquivo", "Arquivo de licitações", "arquivo"]]],
 ];
 
 function layout() {
@@ -37,11 +38,11 @@ function layout() {
       <a class="marca" href="#/painel">${simboloMarca(34)}<span class="texto"><strong>${esc(CERTAME.NOME)}</strong><span>public market intelligence</span></span></a>
       ${S.empresas.length ? `<div class="seletor-empresa"><label for="sel-empresa">Empresa</label>
         <select id="sel-empresa">${opcoes}</select></div>` : ""}
-      <nav class="nav-grupo">${link(["#/painel", "Painel", "painel"])}${link(["#/oportunidades", "Oportunidades", "kanban"])}</nav>
+      <nav class="nav-grupo">${link(["#/painel", "Painel", "painel"])}${link(["#/oportunidades", "Oportunidades", "kanban"])}${link(["#/relatorios", "Relatórios", "relatorio"])}</nav>
       ${NAV.map(([g, itens]) => `<nav class="nav-grupo"><span>${g}</span>${itens.map((it) => link(it, it[0] === "#/radar" ? S.resumoNav?.radar_novos : 0)).join("")}</nav>`).join("")}
       <nav class="nav-grupo"><span>Conta</span>
         ${link(["#/empresas", S.plano?.empresas > 1 ? "Empresas atendidas" : "Minha empresa", "empresa"])}
-        ${link(["#/conta", "Plano e conta", "conta"])}${link(["#/glossario", "Glossário", "glossario"])}
+        ${link(["#/conta", "Plano e conta", "conta"])}${link(["#/glossario", "Glossário", "glossario"])}${link(["#/lixeira", "Lixeira", "lixeira"])}
         ${S.usuario?.admin ? link(["#/admin", "Administração", "admin"]) : ""}
       </nav>
       <div class="lateral-rodape">${esc(S.usuario?.nome || "")}<br><button id="sair">${icone("sair", 14)} Sair</button></div>

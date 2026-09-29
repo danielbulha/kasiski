@@ -15,9 +15,11 @@ V.pecas = async (el) => {
       Se preferir, use <a href="#/pecas/advogado">Elaboração com advogado</a> para contratar a peça feita ou revisada por um advogado.</p>`)}
     <section class="bloco">${lista.length ? lista.map((p) => `<div class="lista-item"><div class="corpo"><b>${esc(p.titulo)}</b>
         <p>${fmt.dataHora(p.criado_em)}</p></div><div class="acoes">${carimboStatus(STATUS_PECA, p.status)}
-        <a class="botao pequeno secundario" href="#/pecas/${p.id}">${icone("chevronDireita",14)} Abrir</a></div></div>`).join("")
+        <a class="botao pequeno secundario" href="#/pecas/${p.id}">${icone("chevronDireita",14)} Abrir</a>
+        <button class="botao pequeno texto" data-excluir-peca="${p.id}" aria-label="Excluir peça">${icone("excluir",14)}</button></div></div>`).join("")
       : vazio("Nenhuma peça gerada ainda", "Clique em Nova peça para redigir a primeira minuta.")}</section>`;
   $("#nova", el).onclick = () => modalNovaPeca(tipos, pre ? JSON.parse(pre) : null);
+  $$("[data-excluir-peca]", el).forEach((b) => b.onclick = () => excluirParaLixeira({ url: `/api/pecas/${b.dataset.excluirPeca}`, nome: "esta peça", tipo: "peca", depois: () => V.pecas(el) }));
   if (pre) sessionStorage.removeItem("nova_peca");
 };
 
@@ -63,7 +65,8 @@ V.peca = async (el, id) => {
     <div class="cabecalho"><div><p class="fraco" style="margin:0"><a href="#/pecas">← Peças</a></p><h1>${esc(p.titulo)}</h1><p>${fmt.dataHora(p.criado_em)}</p></div>
       <div class="acoes">${carimboStatus(STATUS_PECA, p.status)}
       ${!emElaboracao ? `<button class="botao secundario" id="baixar-peca">${icone("baixar")} Baixar .txt</button>` : ""}
-      ${!ativo && !emElaboracao ? `<button class="botao" id="pedir-revisao">Revisão por advogado</button>` : ""}</div></div>
+      ${!ativo && !emElaboracao ? `<button class="botao" id="pedir-revisao">Revisão por advogado</button>` : ""}
+      ${!ativo ? `<button class="botao texto" id="excluir-peca">${icone("excluir", 15)} Excluir</button>` : ""}</div></div>
     ${p.demonstracao ? `<div class="aviso info">Minuta de demonstração — configure as chaves de IA para gerar o texto completo.</div>` : ""}
     ${ativo ? `<div class="aviso ${ativo.status === "aguardando_pagamento" ? "" : "info"}" style="${ativo.status === "aguardando_pagamento" ? "background:var(--ambar-claro);color:var(--ambar)" : ""}">
       <b>${ativo.servico === "elaboracao" ? "Elaboração" : "Revisão"} por advogado:</b> ${carimboStatus(STATUS_PEDIDO, ativo.status)}
@@ -79,6 +82,8 @@ V.peca = async (el, id) => {
   if (sv) sv.onclick = (ev) => ocupado(ev.target, "Salvando…", async () => {
     await api("PATCH", `/api/pecas/${id}`, { conteudo: $("#conteudo-peca", el).value }); toast("Peça salva.", "ok");
   });
+  const xp = $("#excluir-peca", el);
+  if (xp) xp.onclick = () => excluirParaLixeira({ url: `/api/pecas/${id}`, nome: "esta peça", tipo: "peca", depois: () => { location.hash = "#/pecas"; } });
   const pr = $("#pedir-revisao", el);
   if (pr) pr.onclick = () => modalRevisao(p, tipos.find((t) => t.codigo === p.tipo));
 };

@@ -18,6 +18,7 @@ V.agenda = async (el) => {
   $("#novo-prazo", el).onclick = () => modalNovoPrazo();
   $$("[data-concluir-prazo]", el).forEach((c) => c.onchange = async () => { await api("PATCH", `/api/agenda/${c.dataset.concluirPrazo}`, { concluido: c.checked }); V.agenda(el); });
   $$("[data-abrir-edital]", el).forEach((a) => a.onclick = () => { location.hash = `#/editais/${a.dataset.abrirEdital}`; });
+  $$("[data-excluir-prazo]", el).forEach((b) => b.onclick = () => excluirParaLixeira({ url: `/api/agenda/${b.dataset.excluirPrazo}`, nome: "este prazo", tipo: "prazo", depois: () => V.agenda(el) }));
 };
 
 function linhaAgenda(p) {
@@ -26,7 +27,8 @@ function linhaAgenda(p) {
     <p>${esc(p.empresa || "")}${p.fundamento ? " · " + esc(p.fundamento) : ""}</p></div>
     <div class="acoes">${carimboPrazo(p.data)}<span class="fraco">${fmt.dataHora(p.data)}</span>
       ${p.edital_id ? `<button class="botao texto pequeno" data-abrir-edital="${p.edital_id}">Abrir edital</button>` : ""}
-      ${manual ? `<label class="check"><input type="checkbox" data-concluir-prazo="${p.id}"> Feito</label>` : ""}</div></div>`;
+      ${manual ? `<label class="check"><input type="checkbox" data-concluir-prazo="${p.id}"> Feito</label>` : ""}
+      <button class="botao texto pequeno" data-excluir-prazo="${p.id}" aria-label="Excluir prazo">${icone("excluir", 14)}</button></div></div>`;
 }
 
 function modalNovoPrazo() {

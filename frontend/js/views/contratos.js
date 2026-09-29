@@ -19,6 +19,7 @@ V.contratos = async (el) => {
     <div class="cabecalho"><div><h1>Gestão de contratos</h1><p>Contratos de ${esc(empresaAtual().razao_social)} · ${g.uso} de ${g.limite} contrato(s) do plano
       ${cheio && S.plano?.codigo !== "free" ? ` · <a href="#/conta">contratar +10 por ${fmt.moeda(g.pacote.preco)}/mês</a>` : ""}</p></div>
       <button class="botao" id="novo-contrato" ${cheio ? "disabled title=\"Limite do plano atingido\"" : ""}>${icone("adicionar")} Novo contrato</button></div>
+    ${painelCarteira(g.painel)}
     ${guia(`<p>Envie o PDF do contrato: a IA lê vigência, garantia, reajuste, medição, faturamento e as obrigações periódicas da contratada,
       e o Kasiski monta a agenda de gestão com avisos antecipados (prorrogação 120 e 60 dias antes, garantia 30 dias antes, reajuste no aniversário).
       Você recebe um e-mail diário quando algum prazo está a 7 dias ou menos.</p>`)}
@@ -29,6 +30,10 @@ V.contratos = async (el) => {
     <section class="bloco"><h2>Contratos</h2>${lista.length ? lista.map(linhaContrato).join("") : vazio("Nenhum contrato cadastrado", "Envie o PDF de um contrato para começar.")}</section>`;
   const nv = $("#novo-contrato", el); if (nv) nv.onclick = () => modalNovoContrato();
   $$("[data-abrir-contrato]", el).forEach((a) => a.onclick = () => { location.hash = `#/contratos/${a.dataset.abrirContrato}`; });
+  $$("[data-ver-contrato]", el).forEach((b) => b.onclick = () => abrirArquivoApi(`/api/contratos/${b.dataset.verContrato}/arquivo?ver=1`, b));
+  $$("[data-excluir-contrato]", el).forEach((b) => b.onclick = () => excluirParaLixeira({ url: `/api/contratos/${b.dataset.excluirContrato}`,
+    nome: "este contrato", tipo: "contrato", aviso: "Os prazos de gestão dele vão junto. ", depois: () => V.contratos(el) }));
+  ligarDicas(el);
   ligarConcluirPrazo(el, () => V.contratos(el));
 };
 
@@ -52,7 +57,9 @@ function linhaContrato(c) {
     <p>${esc((c.objeto || "").slice(0, 140))}</p><div class="meta"><span>${fmt.data(c.inicio)} a ${fmt.data(c.fim)}</span><span>${fmt.moeda(c.valor)}</span>
       ${c.fim ? `<span>${carimboPrazo(c.fim)}</span>` : ""}</div></div>
     <div class="acoes">${lendo ? carimbo("Lendo o PDF…", "aviso") : c.qtd_atrasados ? carimbo(`${c.qtd_atrasados} pagamento(s) em atraso`, "erro") : carimbo("Pagamentos em dia", "ok")}
-      <button class="botao pequeno secundario" data-abrir-contrato="${c.id}">${icone("chevronDireita",14)} Abrir</button></div></div>`;
+      ${c.tem_arquivo ? `<button class="botao pequeno texto" data-ver-contrato="${c.id}" title="Visualizar o contrato">${icone("olho",14)} Ver contrato</button>` : ""}
+      <button class="botao pequeno secundario" data-abrir-contrato="${c.id}">${icone("chevronDireita",14)} Abrir</button>
+      <button class="botao pequeno texto" data-excluir-contrato="${c.id}" aria-label="Excluir contrato">${icone("excluir",14)}</button></div></div>`;
 }
 
 async function modalNovoContrato() {
@@ -117,9 +124,10 @@ V.contrato = async (el, id) => {
     ${c.leitura_status === "concluida" ? `<div class="aviso ok">Dados preenchidos a partir do PDF. Confira as datas e os valores: eles alimentam os avisos.</div>` : ""}
     <div class="capa"><div class="capa-topo"><div><div class="processo">${esc(c.numero || "Contrato " + c.id)}${d.processo ? ` · ${esc(d.processo)}` : ""}</div>
         <h1>${esc(c.objeto)}</h1></div>
-        <div class="acoes">${c.tem_arquivo ? `<button class="botao secundario" id="baixar-ct">${icone("baixar", 15)} PDF</button>` : ""}
+        <div class="acoes">${c.tem_arquivo ? `<button class="botao" id="ver-ct">${icone("olho", 15)} Visualizar contrato</button><button class="botao secundario" id="baixar-ct">${icone("baixar", 15)} Baixar</button>` : ""}
           <button class="botao secundario" id="reler-ct" ${lendo ? "disabled" : ""}>${c.tem_arquivo ? "Ler de novo" : "Enviar PDF"}</button>
-          <button class="botao secundario" id="editar-contrato">${icone("editar",15)} Editar</button></div></div>
+          <button class="botao secundario" id="editar-contrato">${icone("editar",15)} Editar</button>
+          <button class="botao texto" id="excluir-contrato">${icone("excluir",15)} Excluir</button></div></div>
       <dl class="capa-campos">
         <div><dt>Órgão</dt><dd>${esc(c.orgao)}</dd></div><div><dt>Valor</dt><dd>${fmt.moeda(c.valor)}${d.valor_mensal ? `<br><small>${fmt.moeda(d.valor_mensal)}/mês</small>` : ""}</dd></div>
         <div><dt>Vigência</dt><dd>${fmt.data(c.inicio)} a ${fmt.data(c.fim)} ${c.fim ? carimboPrazo(c.fim) : ""}</dd></div>
@@ -154,6 +162,9 @@ V.contrato = async (el, id) => {
   $("#editar-contrato", el).onclick = () => modalContrato(c);
   $("#novo-pagamento", el).onclick = () => modalPagamento(c.id);
   const bx = $("#baixar-ct", el); if (bx) bx.onclick = () => baixar(`/api/contratos/${id}/arquivo`, c.nome_arquivo || "contrato.pdf");
+  const vc = $("#ver-ct", el); if (vc) vc.onclick = () => abrirArquivoApi(`/api/contratos/${id}/arquivo?ver=1`, vc);
+  $("#excluir-contrato", el).onclick = () => excluirParaLixeira({ url: `/api/contratos/${id}`, nome: "este contrato", tipo: "contrato",
+    aviso: "Os prazos de gestão dele vão junto. ", depois: () => { location.hash = "#/contratos"; } });
   $("#reler-ct", el).onclick = () => {
     if (c.tem_arquivo) { api("POST", `/api/contratos/${id}/arquivo`).then(() => V.contrato(el, id)).catch(avisarErro); return; }
     const inp = document.createElement("input"); inp.type = "file"; inp.accept = ".pdf,.docx";

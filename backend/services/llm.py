@@ -1,7 +1,7 @@
 """Roteador de IAs.
 
 Regra do produto (a mesma do Cournot):
-- tarefas de busca/extração vão para a IA mais barata;
+- tarefas de busca/extração vão para o sistema de inteligência artificial de extração;
 - a análise jurídica fica com a Claude;
 - a verificação cruzada usa um modelo de OUTRO fornecedor sempre que houver chave.
 

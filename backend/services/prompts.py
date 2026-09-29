@@ -14,7 +14,7 @@ def _j(obj):
     return json.dumps(obj, ensure_ascii=False, default=str)
 
 
-# ---------------------------------------------------------------- extração do edital (IA barata)
+# ---------------------------------------------------------------- extração do edital (sistema de inteligência artificial)
 def extracao_edital(texto):
     sistema = BASE + " Sua tarefa agora é apenas EXTRAIR dados, sem opinar."
     usuario = f"""Extraia do edital abaixo os dados no formato JSON:
@@ -277,7 +277,7 @@ DOCUMENTO DO CONCORRENTE:
     return sistema, usuario, demo
 
 
-# ---------------------------------------------------------------- radar (IA barata)
+# ---------------------------------------------------------------- radar (sistema de inteligência artificial)
 def pontuar_radar(empresa, editais):
     sistema = BASE + (" Avalie rapidamente a aderência de editais ao perfil de uma empresa. Os SEGMENTOS escolhidos pela empresa "
                       "e as palavras-chave de atuação definem o que ela quer disputar e têm prioridade; os CNAEs só servem de apoio "

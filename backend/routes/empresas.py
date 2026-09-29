@@ -103,8 +103,12 @@ def editar(eid):
     _preencher(e, dados())
     if (e.segmentos, e.palavras_chave, e.ufs, e.valor_min, e.valor_max) != escopo_antes:
         # o radar passa a buscar outra coisa: some com as sugestões antigas ainda não avaliadas
+        # (no Free, só quando ainda há busca disponível hoje; a mudança libera uma busca extra, uma vez por dia)
         from models import RadarItem
-        RadarItem.query.filter_by(empresa_id=e.id, status="novo").delete(synchronize_session=False)
+        from services import fluxos
+        fluxos.liberar_busca_extra(e)
+        if fluxos.radar_cota(g.conta, e).get("pode_buscar", True):
+            RadarItem.query.filter_by(empresa_id=e.id, status="novo").delete(synchronize_session=False)
     if not antes and (e.palavras_chave or "").strip():
         from services import marketing
         marketing.evento_conta(g.conta, "radar_configured", {"empresa_id": e.id})

@@ -24,7 +24,8 @@ def prompt_leitura(texto):
  "data_assinatura": "AAAA-MM-DD ou null", "inicio_vigencia": "AAAA-MM-DD ou null", "fim_vigencia": "AAAA-MM-DD ou null",
  "prazo_vigencia": "", "servico_continuo": false, "prorrogavel": false, "regras_prorrogacao": "",
  "regime_execucao": "", "data_base_reajuste": "AAAA-MM-DD ou null (data do orçamento estimado ou da proposta, conforme o contrato)",
- "indice_reajuste": "", "repactuacao": false,
+ "indice_reajuste": "nome curto do índice, até 50 caracteres (ex.: IPCA, IGP-M, INPC, CCT da categoria); detalhes vão em regras_reajuste",
+ "regras_reajuste": "", "repactuacao": false,
  "garantia": {{"exigida": false, "modalidade": "", "percentual": null, "valor": null, "validade": "AAAA-MM-DD ou null", "prazo_apresentacao": ""}},
  "pagamento": {{"prazo_dias": null, "condicoes": "", "documentos_para_pagamento": [""]}},
  "medicao": {{"periodicidade": "mensal|quinzenal|por etapa|outra|nao se aplica", "dia_ou_prazo": "", "prazo_ateste_dias": null, "como": ""}},
@@ -92,9 +93,14 @@ def ler_contrato(contrato):
     # só preenche o que o usuário ainda não informou
     campos = {"numero": d.get("numero"), "orgao": d.get("orgao"), "objeto": d.get("objeto"),
               "indice_reajuste": d.get("indice_reajuste")}
+    vazios = {"nao consta", "não consta", "n/a", "na", "nao informado", "não informado", "sem numero", "sem número", "-", "—", "null", "none"}
+    limites = {"numero": 80, "orgao": 300, "indice_reajuste": 60}
     for k, v in campos.items():
-        if v and not getattr(contrato, k):
-            setattr(contrato, k, str(v)[:300] if k != "objeto" else str(v))
+        v = str(v or "").strip()
+        if not v or v.lower() in vazios or getattr(contrato, k):
+            continue
+        n = limites.get(k)
+        setattr(contrato, k, v if not n or len(v) <= n else v[: n - 1].rstrip() + "…")
     if not contrato.valor and _num(d.get("valor_total")):
         contrato.valor = _num(d["valor_total"])
     for k, chave in (("inicio", "inicio_vigencia"), ("fim", "fim_vigencia"), ("data_base_reajuste", "data_base_reajuste")):

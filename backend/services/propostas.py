@@ -126,7 +126,7 @@ def totais(proposta):
             "margem_bruta": round(total - custo, 2) if custo else None}
 
 
-# ---------------------------------------------------------------- leitura do edital (IA barata)
+# ---------------------------------------------------------------- leitura do edital (sistema de inteligência artificial)
 def prompt_condicoes(texto):
     sistema = BASE + " Sua tarefa agora é apenas EXTRAIR do edital o que se refere à PROPOSTA COMERCIAL, sem opinar."
     usuario = f"""Extraia do edital abaixo, em JSON:

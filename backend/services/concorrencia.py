@@ -75,7 +75,7 @@ def _data(v):
         return None
 
 
-# ---------------------------------------------------------------- leitura de cada documento (IA barata)
+# ---------------------------------------------------------------- leitura de cada documento (sistema de inteligência artificial)
 def prompt_documento(doc, conc):
     sistema = BASE + (" Você lê documentos de licitações e extrai APENAS o que diz respeito a uma empresa específica "
                       "(a concorrente), sem opinar.")

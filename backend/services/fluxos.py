@@ -90,7 +90,7 @@ def analisar_edital(edital, empresa, analise=None):
         raise ErroAPI("Este edital ainda não tem texto. Envie o PDF do edital para analisar.")
     texto = cortar(edital.texto)
 
-    # 1) Extração estruturada com a IA mais barata
+    # 1) Extração estruturada com o sistema de inteligência artificial de extração
     _etapa(analise, "Lendo o edital e extraindo os dados")
     s, u, demo = prompts.extracao_edital(texto)
     r_ext = llm.chamar("barata", s, u, max_tokens=4000, demo=demo)
@@ -307,18 +307,52 @@ def gerar_peca(tipo, empresa, referencia, pontos, instrucoes):
 
 
 # ---------------------------------------------------------------- radar
-def atualizar_radar(empresa, usar_ia=True):
+def _hoje_brasil():
+    return (datetime.utcnow() - timedelta(hours=3)).date().isoformat()
+
+
+def radar_cota(conta, empresa):
+    """Plano Free: 1 busca manual por dia (mais 1 se o perfil de busca mudar no dia), guardando só os
+    `radar_max` editais mais aderentes daquela busca. Planos pagos: sem limite."""
+    import planos
+    lim = planos.limite(conta, "radar_max")
+    if lim is None:
+        return {"limitado": False}
+    b = empresa.radar_buscas or {}
+    hoje = _hoje_brasil()
+    usadas = b.get("n", 0) if b.get("dia") == hoje else 0
+    permitidas = 1 + (1 if b.get("dia") == hoje and b.get("extra") == "liberado" else 0)
+    return {"limitado": True, "maximo": lim, "buscas_hoje": usadas, "pode_buscar": usadas < permitidas,
+            "desde": b.get("desde"), "dia": b.get("dia")}
+
+
+def liberar_busca_extra(empresa):
+    """Chamado quando o perfil de busca muda: no Free, libera uma nova busca no mesmo dia (uma vez)."""
+    b = dict(empresa.radar_buscas or {})
+    if b.get("dia") == _hoje_brasil() and b.get("extra") is None:
+        b["extra"] = "liberado"
+        empresa.radar_buscas = b
+
+
+def atualizar_radar(empresa, usar_ia=True, manual=True):
     from services import cnae
     termos = cnae.termos_radar(empresa.segmentos, empresa.palavras_chave)
     if not termos:
         raise ErroAPI("Marque os segmentos de atuação ou cadastre palavras-chave da empresa para usar o radar.")
     encontrados = pncp.buscar_editais_abertos(termos, empresa.ufs or None, max_termos=cnae.MAX_TERMOS_RADAR)
-    existentes = {r.numero_controle for r in RadarItem.query.filter_by(empresa_id=empresa.id)}
+    from models import Conta
+    cota = radar_cota(Conta.query.get(empresa.conta_id), empresa)
+    q_exist = RadarItem.query.filter_by(empresa_id=empresa.id)
+    if cota["limitado"]:  # no Free a lista é refeita a cada busca: só não repete o que já foi acompanhado ou descartado
+        q_exist = q_exist.filter(RadarItem.status != "novo")
+    existentes = {r.numero_controle for r in q_exist}
     novos = [e for e in encontrados if e["numero_controle"] not in existentes]
     if empresa.valor_max:
         novos = [e for e in novos if not e.get("valor_estimado") or e["valor_estimado"] <= empresa.valor_max]
     if empresa.valor_min:
         novos = [e for e in novos if not e.get("valor_estimado") or e["valor_estimado"] >= empresa.valor_min]
+    if cota["limitado"]:
+        novos = novos[:60]  # candidatos avaliados pelo sistema de inteligência artificial; ficam os melhores
     respostas = []
     notas = {}
     if usar_ia and novos:
@@ -333,6 +367,21 @@ def atualizar_radar(empresa, usar_ia=True):
                     notas[n.get("numero_controle")] = n
             except Exception as e:
                 log.warning("Pontuação do radar falhou: %s", e)
+    if cota["limitado"]:
+        # Free: guarda só os mais aderentes desta busca; o resto não fica escondido para "subir" depois
+        novos.sort(key=lambda e: -(notas.get(e["numero_controle"], {}).get("nota") or 0))
+        novos = novos[:cota["maximo"]]
+        b = dict(empresa.radar_buscas or {})
+        hoje = _hoje_brasil()
+        if b.get("dia") != hoje:
+            b = {"dia": hoje, "n": 0, "extra": None}
+        b["n"] = b.get("n", 0) + 1
+        if b["n"] > 1:
+            b["extra"] = "usado"
+        b["desde"] = datetime.utcnow().isoformat()
+        empresa.radar_buscas = b
+        # a lista do Free mostra só esta busca: as sugestões antigas não avaliadas saem
+        RadarItem.query.filter_by(empresa_id=empresa.id, status="novo").delete(synchronize_session=False)
     for e in novos:
         n = notas.get(e["numero_controle"], {})
         db.session.add(RadarItem(empresa_id=empresa.id, numero_controle=e["numero_controle"], dados=e,

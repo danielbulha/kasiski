@@ -89,7 +89,7 @@ def dias_ate_sessao(extracao):
 
 
 def rodar_triagem(ap_id):
-    """Em segundo plano: extração (IA barata) + triagem de riscos (IA barata)."""
+    """Em segundo plano: extração e triagem de riscos pelo sistema de inteligência artificial."""
     from services import llm, prompts
     ap = AnalisePublica.query.get(ap_id)
     try:

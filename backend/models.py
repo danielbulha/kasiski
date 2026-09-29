@@ -115,6 +115,7 @@ class Empresa(db.Model):
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     oportunidades_sync = db.Column(db.JSON)  # {status, iniciado_em, concluido_em, movidos}
+    radar_buscas = db.Column(db.JSON)  # plano Free: {"dia": "AAAA-MM-DD", "n": buscas no dia, "extra": bool, "desde": ISO da última busca}
 
     def to_dict(self):
         return {"id": self.id, "razao_social": self.razao_social, "cnpj": self.cnpj, "porte": self.porte,
@@ -999,3 +1000,23 @@ class Convite(db.Model):
     def to_dict(self):
         return {"id": self.id, "email": self.email, "criado_em": _iso(self.criado_em), "expira_em": _iso(self.expira_em),
                 "aceito_em": _iso(self.aceito_em)}
+
+
+# ---------------------------------------------------------------- rede de segurança: texto maior que a coluna
+# Textos vindos da IA ou de formulários às vezes passam do tamanho da coluna (ex.: String(60)). No Postgres isso
+# derruba a gravação inteira (StringDataRightTruncation); aqui o texto é cortado com reticências antes de gravar.
+from sqlalchemy import String, event  # noqa: E402
+
+
+def _cortar_textos(mapper, connection, alvo):
+    for col in mapper.columns:
+        n = getattr(col.type, "length", None)
+        if not n or not isinstance(col.type, String):
+            continue
+        v = getattr(alvo, col.key, None)
+        if isinstance(v, str) and len(v) > n:
+            setattr(alvo, col.key, v[: n - 1].rstrip() + "…")
+
+
+event.listen(db.Model, "before_insert", _cortar_textos, propagate=True)
+event.listen(db.Model, "before_update", _cortar_textos, propagate=True)

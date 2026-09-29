@@ -28,6 +28,8 @@ def executar():
             for emp in Empresa.query.filter_by(conta_id=conta.id):
                 if not emp._termos_radar():
                     continue
+                if planos.limite(conta, "radar_max") is not None:
+                    continue  # Free: a busca é manual, uma por dia (botão "Buscar agora")
                 try:
                     novos, respostas = fluxos.atualizar_radar(emp)
                     planos.registrar_uso(conta, "radar", respostas, cobravel=False)

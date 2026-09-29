@@ -739,6 +739,13 @@ NOVOS += [
       "Leia o RILC da estatal: prazos, recursos e habilitação podem ser diferentes dos da Lei 14.133.",
       RADAR, ["lei-14133", "pncp"], sin=["Lei 13.303", "RILC", "estatais"]),
 
+    T("portal-da-disputa", "Portal da disputa", "portal da disputa", "Sistemas e tabelas",
+      "Sistema eletrônico em que a sessão pública da licitação efetivamente acontece, com envio de propostas, lances, chat com o pregoeiro e envio de documentos. Pode ser diferente do PNCP, que apenas divulga o edital.",
+      "O edital de uma prefeitura está no PNCP, mas a disputa ocorre em uma plataforma privada credenciada; a empresa precisa de cadastro nessa plataforma para dar lances.",
+      "Lei 14.133/2021, art. 17, §2º (forma eletrônica) e art. 175, §1º (sistemas de terceiros integrados ao PNCP).",
+      "Confira no edital qual é o portal da disputa e faça o cadastro com antecedência: sem ele, não há como participar da sessão.",
+      RADAR, ["plataformas-de-licitacao", "compras-gov-br", "pncp"], sin=["sistema da disputa", "plataforma da sessão"]),
+
     # ------------------------------------------------------------ estratégia
     T("taxa-de-sucesso", "Taxa de sucesso em licitações", "taxa de sucesso", "Estratégia",
       "Indicador comercial que mede a proporção de licitações vencidas sobre as disputadas, idealmente separado por órgão, objeto e motivo de perda.",
@@ -789,10 +796,10 @@ def _padroes(lista):
     """Expressões usadas nos links automáticos (nome curto e sinônimos com 4+ letras), da mais longa para a mais curta."""
     pares = []
     for t in lista:
-        for nome in {t["curto"], *t["sin"]}:
+        for nome in dict.fromkeys([t["curto"], *t["sin"]]):  # ordem fixa: a página sai igual a cada geração
             if len(nome) >= 4:
                 pares.append((nome, t["slug"]))
-    pares.sort(key=lambda p: -len(p[0]))
+    pares.sort(key=lambda p: (-len(p[0]), p[0].lower(), p[1]))
     return [(_re.compile(r"(?<![\w-])" + _re.escape(esc(n)) + r"(?![\w-])", _re.I), s) for n, s in pares]
 
 
@@ -826,7 +833,7 @@ def _titulo_pergunta(t):
 
 
 def _artigos_relacionados(t, artigos):
-    chaves = [_norm(x) for x in {t["curto"], *t["sin"]} if len(x) >= 4]
+    chaves = [_norm(x) for x in dict.fromkeys([t["curto"], *t["sin"]]) if len(x) >= 4]
     achados = [a for a in artigos if any(k in _norm(_re.sub("<[^>]+>", " ", a["html"])) for k in chaves)]
     return achados[:3]
 
@@ -924,4 +931,16 @@ def gerar(pagina, migalhas, cta_cadastro, site_url, artigos=()):
         if len(titulo) > 70:
             titulo = f"{_titulo_pergunta(t)} | Glossário Kasiski"
         pagina(f"/glossario/{t['slug']}/", titulo, _descricao(t), corpo, prioridade="0.6", og_tipo="article", jsonld=jl)
+    return len(lista)
+
+
+def exportar_json(caminho):
+    """Mesmo conteúdo do glossário público, para a tela Glossário do aplicativo (frontend/data/glossario.json)."""
+    import json
+    import os
+    lista = [{k: t.get(k) for k in ("slug", "termo", "curto", "cat", "definicao", "exemplo", "legislacao", "aplicacao", "sin", "rel")}
+             | {"perguntas": [list(p) for p in t.get("perguntas", [])]} for t in termos()]
+    os.makedirs(os.path.dirname(caminho), exist_ok=True)
+    with open(caminho, "w", encoding="utf-8") as f:
+        json.dump({"categorias": CATEGORIAS, "termos": lista}, f, ensure_ascii=False, separators=(",", ":"))
     return len(lista)

@@ -306,6 +306,7 @@ def pg_lp(lp):
 def pg_glossario():
     import glossario
     glossario.gerar(pagina, migalhas, C.APP_CADASTRO, C.SITE_URL, ler_artigos())
+    glossario.exportar_json(os.path.join(APP_DIR, "data", "glossario.json"))  # a tela Glossário do app usa o mesmo conteúdo
 
 
 def ler_artigos():

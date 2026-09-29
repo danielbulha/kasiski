@@ -18,19 +18,17 @@ STATUS = {"acompanhando", "participando", "ganho", "perdido", "descartado"}
 @bp.get("/empresas/<int:eid>/radar")
 @login_requerido
 def radar(eid):
-    empresa_da_conta(eid)
+    e = empresa_da_conta(eid)
     status = request.args.get("status", "novo")
     q = RadarItem.query.filter_by(empresa_id=eid)
     if status != "todos":
         q = q.filter_by(status=status)
     itens = q.order_by(RadarItem.nota.desc().nullslast(), RadarItem.criado_em.desc()).limit(200).all()
-    lim = planos.limite(g.conta, "radar_max")
-    if lim is not None and len(itens) > lim:
-        from flask import make_response
-        resp = make_response(jsonify([i.to_dict() for i in itens[:lim]]))
-        resp.headers["X-Radar-Ocultos"] = str(len(itens) - lim)
-        resp.headers["Access-Control-Expose-Headers"] = "X-Radar-Ocultos, Content-Disposition"
-        return resp
+    cota = fluxos.radar_cota(g.conta, e)
+    if cota["limitado"] and status == "novo":
+        itens = itens[:cota["maximo"]]  # já são no máximo 10 por busca; descartar não traz outros
+    if request.args.get("meta"):
+        return jsonify({"itens": [i.to_dict() for i in itens], "cota": cota})
     return jsonify([i.to_dict() for i in itens])
 
 
@@ -38,6 +36,10 @@ def radar(eid):
 @login_requerido
 def radar_atualizar(eid):
     e = empresa_da_conta(eid)
+    cota = fluxos.radar_cota(g.conta, e)
+    if cota["limitado"] and not cota["pode_buscar"]:
+        raise ErroAPI(f"No plano Free, o radar faz 1 busca por dia e mostra os {cota['maximo']} editais mais aderentes. "
+                      "Volte amanhã ou assine o Essencial para buscas automáticas todos os dias e todos os editais.", 429, "radar_diario")
     novos, respostas = fluxos.atualizar_radar(e)
     planos.registrar_uso(g.conta, "radar", respostas, cobravel=False)
     db.session.commit()

@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /lp/
+
+Sitemap: https://kasiski.com.br/sitemap.xml

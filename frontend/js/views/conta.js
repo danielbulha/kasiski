@@ -205,7 +205,7 @@ function planoHtml(codigo, v, atual, ciclo = "mensal", resumo = {}) {
   if (codigo === "profissional" && resumo.teste_disponivel) botao += `<button class="botao texto pequeno" data-iniciar-teste>ou experimente por ${resumo.teste_dias || 7} dias</button>`;
   const itens = [QTD(v.empresas, "empresa", "empresas") + " · " + QTD(v.usuarios, "usuário", "usuários"),
     `${QTD(v.analises, "análise", "análises")} de edital com IA/mês`, QTD(v.concorrentes, "análise de concorrente/mês", "análises de concorrentes/mês"),
-    v.radar_max ? `Radar limitado (${v.radar_max} melhores editais)` : "Radar completo", v.cofre_max ? `Cofre básico (${v.cofre_max} arquivos)` : "Cofre com controle de validade",
+    v.radar_max ? `Radar: 1 busca por dia (${v.radar_max} melhores editais)` : "Radar diário automático", v.cofre_max ? `Cofre básico (${v.cofre_max} arquivos)` : "Cofre com controle de validade",
     v.oportunidades_max ? `Até ${v.oportunidades_max} oportunidades acompanhadas` : "Pipeline de oportunidades e agenda",
     v.precos ? "Inteligência de preços e propostas" : null, v.pecas ? `${v.pecas} peças com IA/mês` : null,
     v.contratos ? `Gestão de até ${v.contratos} contratos` : null, v.prioridade ? "Prioridade de processamento e suporte" : null,
@@ -219,7 +219,7 @@ function tabelaComparativa() {
   const P = S.planos, ks = ORDEM_PLANOS.filter((k) => P[k]);
   const sim = (v) => (v === true ? "✓" : v === false || v === 0 || v === null || v === undefined ? "—" : esc(String(v)));
   const linhas = [["Preço/mês", (v) => (v.preco ? fmt.moeda(v.preco) : "R$ 0")], ["Empresas (CNPJs)", (v) => v.empresas], ["Usuários", (v) => v.usuarios],
-    ["Diagnóstico B2G e checklist de habilitação", () => true], ["Radar", (v) => (v.radar_max ? "Limitado" : true)], ["Cofre", (v) => (v.cofre_max ? "Básico" : true)],
+    ["Diagnóstico B2G e checklist de habilitação", () => true], ["Radar", (v) => (v.radar_max ? "1 busca/dia" : "Diário automático")], ["Cofre", (v) => (v.cofre_max ? "Básico" : true)],
     ["Agenda e pipeline", (v) => (v.oportunidades_max ? `Até ${v.oportunidades_max}` : true)], ["Análises de edital com IA/mês", (v) => v.analises],
     ["Análises de concorrentes/mês", (v) => v.concorrentes], ["Possíveis concorrentes/mês", (v) => v.possiveis],
     ["Inteligência de preços", (v) => v.precos], ["Propostas com IA", (v) => v.propostas], ["Peças com IA/mês", (v) => v.pecas || false],
@@ -322,22 +322,48 @@ async function carregarEquipe(el) {
 }
 
 // ---------------------------------------------------------------- glossário
-const GLOSSARIO = [
-  ["Pregão eletrônico", "Modalidade mais comum para bens e serviços comuns, com disputa por lances em ambiente eletrônico."],
-  ["Habilitação", "Conjunto de documentos que comprovam que a empresa pode contratar com o poder público: jurídicos, fiscais, trabalhistas, econômico-financeiros e técnicos."],
-  ["Impugnação", "Pedido para corrigir uma ilegalidade do edital, feito até 3 dias úteis antes da sessão."],
-  ["Pedido de esclarecimento", "Pergunta formal sobre um ponto do edital que não está claro, no mesmo prazo da impugnação."],
-  ["Intenção de recorrer", "Manifestação, feita na própria sessão, de que a empresa vai recorrer do resultado — sem ela, perde-se o direito ao recurso."],
-  ["Recurso administrativo", "Peça com as razões do recurso, protocolada em até 3 dias úteis após a intenção de recorrer."],
-  ["Inexequibilidade", "Quando o preço da proposta é tão baixo que não cobre os custos mínimos de execução do contrato."],
-  ["CATMAT / CATSER", "Códigos do catálogo de materiais e serviços do governo federal, usados para pesquisar preços praticados."],
-  ["CEIS / CNEP", "Cadastros públicos de empresas impedidas ou declaradas inidôneas para contratar com o poder público."],
-  ["Reequilíbrio econômico-financeiro", "Ajuste do contrato para recompor um desequilíbrio causado por fato imprevisível, distinto do reajuste anual."],
-  ["Repactuação", "Forma de reajuste específica dos contratos de serviço contínuo com mão de obra, baseada na variação real dos custos."],
-  ["Portal da disputa", "Sistema onde a sessão pública efetivamente ocorre (pode ser diferente do PNCP, que apenas publica o edital)."],
-];
+// Mesmo conteúdo do glossário público (kasiski.com.br/glossario), gerado por site/gerar.py em data/glossario.json.
 V.glossario = async (el) => {
-  el.innerHTML = `<div class="cabecalho"><h1>Glossário</h1></div><section class="bloco">
-    ${GLOSSARIO.map(([t, d]) => `<div class="lista-item"><div class="corpo"><b>${esc(t)}</b><p>${esc(d)}</p></div></div>`).join("")}</section>`;
+  if (!V.glossario.dados) {
+    const r = await fetch("data/glossario.json", { cache: "no-cache" });
+    if (!r.ok) throw new Error("Não foi possível carregar o glossário.");
+    V.glossario.dados = await r.json();
+  }
+  const { categorias, termos } = V.glossario.dados;
+  const porSlug = Object.fromEntries(termos.map((t) => [t.slug, t]));
+  const norm = (t) => (t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const st = V.glossario.estado || (V.glossario.estado = { q: "", cat: "", aberto: null });
+  el.innerHTML = `<div class="cabecalho"><div><h1>Glossário</h1><p>${termos.length} termos de licitações e contratos públicos, com definição, exemplo, lei e aplicação prática.</p></div></div>
+    <div class="gl-filtros"><input type="search" id="gl-q" placeholder="Buscar termo (ex.: dispensa, atestado, reequilíbrio)" value="${esc(st.q)}" aria-label="Buscar no glossário">
+      <div class="chips" role="group" aria-label="Categorias"><button data-gl-cat="" aria-pressed="${!st.cat}">Todos</button>
+        ${categorias.map((c) => `<button data-gl-cat="${esc(c)}" aria-pressed="${st.cat === c}">${esc(c)}</button>`).join("")}</div></div>
+    <section class="bloco gl-lista" id="gl-lista"></section>`;
+  const lista = $("#gl-lista", el);
+  const detalhe = (t) => `<div class="gl-detalhe">
+      ${t.sin?.length ? `<p class="fraco">Também chamado de: ${esc(t.sin.join(", "))}</p>` : ""}
+      <h4>Exemplo prático</h4><p>${esc(t.exemplo)}</p>
+      <h4>O que diz a lei</h4><p>${esc(t.legislacao)}</p>
+      <h4>Como isso afeta a sua empresa</h4><p>${esc(t.aplicacao)}</p>
+      ${(t.perguntas || []).map(([q, a]) => `<h4>${esc(q)}</h4><p>${esc(a)}</p>`).join("")}
+      ${t.rel?.length ? `<p class="gl-rel"><b>Relacionados:</b> ${t.rel.filter((s) => porSlug[s]).map((s) => `<button class="botao texto pequeno" data-gl-ir="${s}">${esc(porSlug[s].termo)}</button>`).join(" ")}</p>` : ""}
+      <p><a href="${CERTAME.SITE_URL}/glossario/${t.slug}/" target="_blank" rel="noopener">Abrir página completa no site</a></p></div>`;
+  const desenhar = () => {
+    const q = norm(st.q);
+    const vis = termos.filter((t) => (!st.cat || t.cat === st.cat) &&
+      (!q || norm([t.termo, t.curto, ...(t.sin || [])].join(" ")).includes(q) || (q.length > 3 && norm(t.definicao).includes(q))));
+    lista.innerHTML = vis.length ? vis.map((t) => `<article class="gl-termo${st.aberto === t.slug ? " aberto" : ""}" id="gl-${t.slug}">
+        <button class="gl-cab" data-gl-abrir="${t.slug}" aria-expanded="${st.aberto === t.slug}"><span><b>${esc(t.termo)}</b><small>${esc(t.cat)}</small></span><span class="gl-seta" aria-hidden="true">${icone("chevronDireita", 16)}</span></button>
+        <p class="gl-def">${esc(t.definicao)}</p>${st.aberto === t.slug ? detalhe(t) : ""}</article>`).join("")
+      : vazio("Nenhum termo encontrado", "Tente outra palavra ou escolha outra categoria.");
+    $$("[data-gl-abrir]", lista).forEach((b) => b.onclick = () => { st.aberto = st.aberto === b.dataset.glAbrir ? null : b.dataset.glAbrir; desenhar(); });
+    $$("[data-gl-ir]", lista).forEach((b) => b.onclick = () => {
+      st.aberto = b.dataset.glIr; st.q = ""; st.cat = ""; $("#gl-q", el).value = "";
+      $$("[data-gl-cat]", el).forEach((x) => x.setAttribute("aria-pressed", String(!x.dataset.glCat)));
+      desenhar(); const alvo = $(`#gl-${st.aberto}`, el); if (alvo) alvo.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
+  let t0; $("#gl-q", el).oninput = (ev) => { clearTimeout(t0); t0 = setTimeout(() => { st.q = ev.target.value; desenhar(); }, 150); };
+  $$("[data-gl-cat]", el).forEach((b) => b.onclick = () => { st.cat = b.dataset.glCat; $$("[data-gl-cat]", el).forEach((x) => x.setAttribute("aria-pressed", String(x === b))); desenhar(); });
+  desenhar();
 };
 

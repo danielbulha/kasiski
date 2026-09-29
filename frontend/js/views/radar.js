@@ -2,7 +2,9 @@
 V.radar = async (el) => {
   if (!S.empresaId) { el.innerHTML = exigirEmpresa(); return; }
   const filtro = sessionStorage.getItem("radar_filtro") || "novo";
-  const itens = await api("GET", `/api/empresas/${S.empresaId}/radar?status=${filtro}`);
+  const resp = await api("GET", `/api/empresas/${S.empresaId}/radar?status=${filtro}&meta=1`);
+  const itens = resp.itens, cota = resp.cota || {};
+  const semBusca = cota.limitado && !cota.pode_buscar;
   const emp = empresaAtual();
   el.innerHTML = `
     <div class="cabecalho"><div><h1>Radar de editais</h1>
@@ -12,11 +14,14 @@ V.radar = async (el) => {
         <option value="novo" ${filtro === "novo" ? "selected" : ""}>Novos</option>
         <option value="acompanhando" ${filtro === "acompanhando" ? "selected" : ""}>Já acompanhados</option>
         <option value="descartado" ${filtro === "descartado" ? "selected" : ""}>Descartados</option></select>
-        <button class="botao" id="atualizar">${icone("radarPing")} Buscar agora</button></div></div>
-    ${guia(`<p>Todo dia útil, cedo, o Kasiski consulta o PNCP e traz os editais com propostas abertas que contêm suas palavras-chave.
-      Uma IA de baixo custo dá uma nota de 0 a 100 de aderência ao seu perfil. Clique em <b>Acompanhar</b> para baixar o edital,
-      calcular os prazos e liberar a análise completa. As palavras-chave e os estados ficam em <a href="#/empresas">Minha empresa</a>.</p>`)}
-    ${S.plano?.radar_max && itens.length >= S.plano.radar_max ? `<div class="aviso info">O Free mostra os ${S.plano.radar_max} editais mais aderentes. No <b>Essencial</b> (R$ 97/mês) você vê todos. <a href="#/conta">Ver planos</a></div>` : ""}
+        <button class="botao" id="atualizar" ${semBusca ? "disabled" : ""} title="${semBusca ? "No Free, 1 busca por dia" : ""}">${icone("radarPing")} ${semBusca ? "Próxima busca amanhã" : "Buscar agora"}</button></div></div>
+    ${guia(`<p>${cota.limitado ? `No plano Free, você faz <b>1 busca por dia</b> clicando em <b>Buscar agora</b>, e o Kasiski traz os <b>${cota.maximo} editais mais aderentes</b> com propostas abertas no PNCP.`
+      : "Todo dia útil, cedo, o Kasiski consulta o PNCP e traz os editais com propostas abertas que combinam com os segmentos e as palavras-chave da empresa."}
+      O sistema de inteligência artificial do Kasiski dá uma nota de 0 a 100 de aderência ao seu perfil. Clique em <b>Acompanhar</b> para baixar o edital,
+      calcular os prazos e liberar a análise completa. Os segmentos, as palavras-chave e os estados ficam em <a href="#/empresas">Minha empresa</a>.</p>`)}
+    ${cota.limitado ? `<div class="aviso info">${cota.buscas_hoje ? `Busca de hoje feita: aqui estão os editais mais aderentes (até ${cota.maximo}). Descartar um edital não traz outro no lugar; a próxima busca fica liberada amanhã.`
+      : `Você tem <b>1 busca disponível hoje</b>: clique em <b>Buscar agora</b> para receber os ${cota.maximo} editais mais aderentes.`}
+      No <b>Essencial</b> (R$ 97/mês), o radar busca sozinho todos os dias e mostra todos os editais. <a href="#/conta">Ver planos</a></div>` : ""}
     <section class="bloco lista-faixas">
       ${itens.length ? legendaFaixas({ alta: "Aderência alta (80+)", media: "Média (50 a 79)", baixa: "Baixa (até 49)" }, "faixa-") + itens.map(linhaRadar).join("") : vazio(filtro === "novo" ? "Nenhum edital novo" : "Nada por aqui",
         filtro === "novo" ? "Clique em Buscar agora ou ajuste as palavras-chave da empresa para ampliar a busca." : "")}

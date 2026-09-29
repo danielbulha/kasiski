@@ -720,3 +720,22 @@ body.op-gaveta-aberta { overflow: hidden; }
 .op-g-decisao .acoes { display: flex; gap: 8px; flex-wrap: wrap; }
 .previa-radar { margin-top: 8px; font-size: .86rem; line-height: 1.9; background: var(--ciano-claro); border-radius: var(--raio); padding: 8px 10px; }
 .chip-termo { display: inline-block; background: #fff; border: 1px solid var(--linha); border-radius: 999px; padding: 0 9px; line-height: 1.7; margin: 1px 0; }
+
+/* ---------- glossário do app */
+.gl-filtros { display: grid; gap: 10px; margin-bottom: 14px; }
+.gl-filtros input { max-width: 520px; }
+.gl-termo { border-bottom: 1px solid var(--linha); padding: 12px 0; }
+.gl-termo:last-child { border-bottom: 0; }
+.gl-cab { all: unset; box-sizing: border-box; width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 10px; cursor: pointer; }
+.gl-cab:focus-visible { outline: 2px solid var(--ciano); outline-offset: 3px; border-radius: 4px; }
+.gl-cab span { display: flex; flex-direction: column; gap: 2px; }
+.gl-cab small { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--grafite); }
+.gl-seta { transition: transform .15s; color: var(--grafite); }
+.gl-termo.aberto .gl-seta { transform: rotate(90deg); }
+.gl-def { margin: 6px 0 0; color: var(--grafite); }
+.gl-termo.aberto .gl-def { color: var(--tinta); }
+.gl-detalhe { margin-top: 10px; padding: 12px 14px; background: var(--papel); border-left: 3px solid var(--ciano); border-radius: 6px; }
+.gl-detalhe h4 { margin: 12px 0 4px; font-size: .88rem; }
+.gl-detalhe h4:first-of-type { margin-top: 4px; }
+.gl-detalhe p { margin: 0 0 6px; }
+.gl-rel .botao { margin: 2px 4px 2px 0; color: var(--ciano-escuro); text-decoration: underline; text-underline-offset: 2px; padding: 2px 4px; }

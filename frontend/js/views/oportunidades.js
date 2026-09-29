@@ -198,16 +198,27 @@ async function abrirOportunidade(id, aoMudar) {
   fundo.className = "op-gaveta-fundo";
   fundo.innerHTML = `<aside class="op-gaveta" role="dialog" aria-modal="true" aria-label="Dossiê da oportunidade"><p class="carregando">Carregando dossiê…</p></aside>`;
   document.body.appendChild(fundo);
+  document.body.classList.add("op-gaveta-aberta");
   const gaveta = $(".op-gaveta", fundo);
-  let mudou = false;
-  const fechar = () => { fundo.remove(); document.removeEventListener("keydown", tecla); if (mudou && aoMudar) aoMudar(); };
+  // Fecha o dossiê: pelo botão, pelo Esc, clicando fora ou ao navegar para outra tela (qualquer link ou troca de rota)
+  const sair = () => {
+    fundo.remove(); document.body.classList.remove("op-gaveta-aberta");
+    document.removeEventListener("keydown", tecla); window.removeEventListener("hashchange", sair);
+  };
+  const fechar = () => sair();
   const tecla = (ev) => { if (ev.key === "Escape" && !$(".fundo-modal")) fechar(); };
   document.addEventListener("keydown", tecla);
-  fundo.addEventListener("click", (ev) => { if (ev.target === fundo) fechar(); });
+  window.addEventListener("hashchange", sair);
+  fundo.addEventListener("click", (ev) => {
+    if (ev.target === fundo) { fechar(); return; }
+    const link = ev.target.closest("a[href^='#/']");
+    if (link && link.getAttribute("href") === location.hash) sair(); // mesmo endereço: o hashchange não dispara
+  });
   let o;
   try { o = await api("GET", `/api/oportunidades/${id}`); } catch (e) { gaveta.innerHTML = erroTela(e); return; }
   const aba = sessionStorage.getItem("op_aba") || "geral";
-  const recarregar = async () => { mudou = true; o = await api("GET", `/api/oportunidades/${id}`); desenhar(sessionStorage.getItem("op_aba") || "geral"); };
+  // Atualiza o dossiê e o quadro ao fundo (o cartão muda de coluna na hora, sem precisar fechar o painel)
+  const recarregar = async () => { o = await api("GET", `/api/oportunidades/${id}`); desenhar(sessionStorage.getItem("op_aba") || "geral"); if (aoMudar) aoMudar(); };
 
   function desenhar(abaAtual) {
     const c = o.cartao, ed = o.edital, dados = V.oportunidades.dados || { etapas: [], saidas: [] };
@@ -234,14 +245,16 @@ async function abrirOportunidade(id, aoMudar) {
       </div>
       ${mostrarDecisao ? `<div class="op-g-decisao"><div><b>Decisão Go / No-Go</b>
           <p class="fraco">${rec ? `A IA recomenda: <b>${esc(rec[0])}</b>.` : "Analise o edital para receber a recomendação da IA."}${c.decisao ? ` Decisão registrada: <b>${c.decisao === "go" ? "Go" : "No-Go"}</b>.` : ""}</p></div>
-        <div class="acoes"><button class="botao" data-go>Go — vamos participar</button><button class="botao secundario" data-nogo>No-Go</button></div></div>` : ""}
+        <div class="acoes">${!o.analise ? `<button class="botao" data-analisar-agora>${icone("radarPing", 15)} Analisar edital</button>` : ""}
+          <button class="botao${o.analise ? "" : " secundario"}" data-go>Go — vamos participar</button><button class="botao secundario" data-nogo>No-Go</button></div></div>` : ""}
       <div class="abas op-g-abas" role="tablist">${[["geral", "Visão geral"], ["itens", "Itens e lotes"], ["documentos", "Documentos"], ["concorrentes", "Concorrentes"], ["orgao", "Órgão"], ["historico", "Movimentações"]]
         .map(([k, t]) => `<button role="tab" data-g-aba="${k}" class="${abaAtual === k ? "ativa" : ""}" aria-selected="${abaAtual === k}">${t}</button>`).join("")}</div>
       <div id="g-corpo"></div>
       <footer class="op-g-rodape"><a class="botao secundario" href="#/editais/${ed.id}">Abrir edital completo</a>
         ${ed.numero_controle ? `<button class="botao texto" data-sinc-um>Sincronizar com o PNCP</button>` : ""}</footer>`;
     $("[data-fechar-gaveta]", gaveta).onclick = fechar;
-    $$("a[href^='#/']", gaveta).forEach((a) => a.addEventListener("click", () => { fundo.remove(); document.removeEventListener("keydown", tecla); }));
+    const an = $("[data-analisar-agora]", gaveta);
+    if (an) an.onclick = () => { sessionStorage.setItem("analisar_auto", String(ed.id)); location.hash = `#/editais/${ed.id}`; };
     $("#g-etapa", gaveta).onchange = async (ev) => {
       const alvo = ev.target.value; ev.target.value = c.etapa;
       await moverCartao(V.oportunidades.dados?.cartoes?.find((x) => x.id === c.id) || c, alvo, null);
@@ -300,11 +313,12 @@ async function abrirOportunidade(id, aoMudar) {
             <p class="fraco">Habilitação: ${ch.atende || 0} atende · ${ch.verificar || 0} verificar · ${(ch.falta || 0) + (ch.vencido || 0)} falta/vencido · ${a.clausulas} cláusula(s) restritiva(s)</p>
             ${a.riscos.length ? `<ul class="op-g-lista">${a.riscos.slice(0, 6).map((r) => `<li>${carimbo(RISCO_OP[r.nivel]?.[0] || r.nivel || "—", RISCO_OP[r.nivel]?.[1] || "neutro")} ${esc(r.tema)} — <span class="fraco">${esc(r.descricao)}</span></li>`).join("")}</ul>` : ""}
             ${a.exigencias_tecnicas.length ? `<p><b>Exigências técnicas do objeto:</b> ${esc(a.exigencias_tecnicas.join("; "))}</p>` : ""}`
-          : `<p class="fraco">Ainda sem análise. <a href="#/editais/${ed.id}">Analisar o edital</a> calcula o fit, os riscos e a recomendação.</p>`}</section>
+          : `<p class="fraco">Ainda sem análise. <a href="#/editais/${ed.id}" data-analisar-link>Analisar o edital</a> calcula o fit, os riscos e a recomendação.</p>`}</section>
         <section class="op-g-sec"><h3>Preços e proposta</h3>
           ${o.propostas.length ? `<ul class="op-g-lista">${o.propostas.map((p) => `<li><a href="#/propostas/${p.id}">${esc(p.titulo || "Proposta " + p.id)}</a></li>`).join("")}</ul>` : `<p class="fraco">Nenhuma proposta montada.</p>`}
           <div class="acoes"><button class="botao pequeno secundario" data-proposta>Montar proposta comercial</button><a class="botao pequeno texto" href="#/precos">Consultar preços praticados</a></div></section>`;
       const bp = $("[data-proposta]", el); if (bp) bp.onclick = () => modalNovaProposta(ed.id);
+      const al = $("[data-analisar-link]", el); if (al) al.onclick = () => sessionStorage.setItem("analisar_auto", String(ed.id));
     } else if (abaAtual === "itens") {
       el.innerHTML = `<p class="carregando">Consultando os itens no PNCP…</p>`;
       api("GET", `/api/oportunidades/${ed.id}/itens`).then((r) => {

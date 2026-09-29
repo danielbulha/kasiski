@@ -150,6 +150,13 @@ function painelAnalise(el, ed, analises, andamento) {
     catch (e) { avisarErro(e); }
   };
   if (ultima) ligarAcoesAnalise(el, ed, ultima);
+  // Vindo do dossiê da oportunidade com "Analisar edital": começa a análise sem outro clique
+  if (sessionStorage.getItem("analisar_auto") === String(ed.id)) {
+    sessionStorage.removeItem("analisar_auto");
+    if (andamento) { /* já está analisando */ }
+    else if (ed.tem_texto) $("#analisar", el).click();
+    else toast("Envie o PDF do edital para a IA poder analisar.", "erro");
+  }
   desenharPossiveis($("#possiveis-conc", el), ed);
   if (andamento) acompanharAnalise(el, ed, andamento);
   $("#montar-proposta", el).onclick = () => modalNovaProposta(ed.id);

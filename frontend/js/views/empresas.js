@@ -20,18 +20,34 @@ function linhaEmpresa(e) {
   return `<div class="lista-item"><div class="corpo"><b>${esc(e.razao_social)}</b>
     <p>${fmt.cnpj(e.cnpj)} · porte ${esc(e.porte)}${e.ufs ? " · " + esc(e.ufs) : ""}</p>
     ${segs.length ? `<p class="fraco">Segmentos: ${segs.map((s) => esc(nomesSeg[s] || s)).join(", ")}</p>` : ""}
-    ${e.palavras_chave ? `<p class="fraco">Radar: ${esc(e.palavras_chave)}</p>` : `<p class="fraco">Radar sem palavras-chave configuradas</p>`}</div>
+    ${e.termos_radar?.length ? `<p class="fraco">Radar busca: ${esc(e.termos_radar.join(", "))}</p>` : `<p class="fraco">Radar sem segmentos nem palavras-chave</p>`}</div>
     <div class="acoes"><button class="botao pequeno secundario" data-editar-emp="${e.id}">${icone("editar",14)} Editar</button>
       <button class="botao texto pequeno" data-excluir-emp="${e.id}">${icone("excluir",14)} Excluir</button></div></div>`;
 }
 
-const PALAVRAS_POR_SEGMENTO = {
-  obras: "construção, reforma, ampliação, engenharia civil", servicos_comuns: "prestação de serviços",
-  servicos_continuados: "limpeza, conservação, portaria, vigilância", fornecimento: "aquisição, fornecimento",
-  saude: "hospitalar, saúde, medicamentos, materiais médicos", educacao: "escolar, merenda, transporte escolar",
-  ti: "tecnologia da informação, software, infraestrutura de TI", alimentacao: "alimentação, gêneros alimentícios, nutrição",
-  transporte: "transporte, frota, locação de veículos", seguranca: "segurança, vigilância patrimonial",
+// Mesmos termos de backend/services/cnae.py (TERMOS_SEGMENTO): os segmentos marcados entram direto na busca do radar.
+const TERMOS_SEGMENTO = {
+  obras: ["obras de engenharia", "reforma predial", "pavimentação", "construção"],
+  servicos_continuados: ["limpeza", "conservação predial", "portaria", "recepção"],
+  saude: ["medicamentos", "material hospitalar", "equipamentos médicos", "serviços de saúde"],
+  educacao: ["material escolar", "merenda escolar", "transporte escolar", "mobiliário escolar"],
+  ti: ["software", "tecnologia da informação", "equipamentos de informática", "licenciamento"],
+  alimentacao: ["gêneros alimentícios", "fornecimento de refeições", "alimentação"],
+  transporte: ["locação de veículos", "transporte", "combustível", "manutenção de frota"],
+  seguranca: ["vigilância patrimonial", "segurança eletrônica", "monitoramento"],
 };
+const MAX_TERMOS_RADAR = 12;
+function termosRadar(segmentos, palavras) {
+  const norm = (t) => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  const segs = segmentos.filter(Boolean), kws = palavras.split(",").map((x) => x.trim()).filter(Boolean);
+  const termos = [], vistos = new Set();
+  const add = (t) => { const k = norm(t); if (k && !vistos.has(k) && termos.length < MAX_TERMOS_RADAR) { vistos.add(k); termos.push(t); } };
+  const dosSeg = [];
+  for (let r = 0; r < 4; r++) segs.forEach((s) => { const l = TERMOS_SEGMENTO[s] || []; if (r < l.length) dosSeg.push(l[r]); });
+  const teto = kws.length ? Math.floor(MAX_TERMOS_RADAR / 2) : MAX_TERMOS_RADAR;
+  dosSeg.slice(0, teto).forEach(add); kws.forEach(add); dosSeg.slice(teto).forEach(add);
+  return termos;
+}
 
 function modalEmpresa(e) {
   const m = modal({
@@ -53,12 +69,13 @@ function modalEmpresa(e) {
           ${ROTULOS.segmentosEmpresa.map(([k, v]) => `<label class="check"><input type="checkbox" class="seg-empresa" value="${k}"
             ${(e?.segmentos || "").split(",").map((s) => s.trim()).includes(k) ? "checked" : ""}> ${esc(v)}</label>`).join("")}
         </div>
-        <small>Marcados a partir dos CNAEs; ajuste se precisar. Usado para sugerir exigências setoriais na análise (ex.: ANVISA para saúde, PNAE para educação).</small></div>
+        <small>Sugeridos pelos CNAEs; marque e desmarque à vontade. <b>Os segmentos marcados entram direto na busca do radar</b> e orientam a nota de aderência e as exigências setoriais da análise (ex.: ANVISA para saúde, PNAE para educação).</small></div>
       <div class="campo"><label for="palavras_e">Palavras-chave para o radar</label><textarea id="palavras_e" name="palavras_chave" rows="3" placeholder="Ex.: limpeza, conservação predial, jardinagem">${esc(e?.palavras_chave || "")}</textarea>
         <small id="contador-palavras"></small>
         <div class="acoes" style="gap:4px">
           <button type="button" class="botao texto pequeno" id="sugerir-cnae" style="padding-left:0">Sugerir a partir dos CNAEs</button>
-          <button type="button" class="botao texto pequeno" id="sugerir-palavras">Sugerir a partir dos segmentos</button></div></div>
+          </div>
+        <div class="previa-radar" id="previa-radar" aria-live="polite"></div></div>
       <div class="linha-campos">
         <div class="campo"><label for="ufs_e">Estados de interesse</label><input id="ufs_e" name="ufs" value="${esc(e?.ufs || "")}" placeholder="Ex.: SP, MG (em branco = todo o Brasil)"></div>
         <div class="campo"><label for="vmin_e">Valor mínimo (R$)</label><input id="vmin_e" name="valor_min" inputmode="decimal" value="${e?.valor_min ?? ""}"></div>
@@ -74,11 +91,17 @@ function modalEmpresa(e) {
   };
   const contar = () => {
     const n = lista(campoPalavras.value).length;
-    $("#contador-palavras", m).textContent = !n ? "Separe por vírgula. São os termos buscados diariamente no PNCP."
-      : n > 8 ? `${n} termos. O radar busca os 8 primeiros; deixe os mais importantes no começo.`
-        : `${n} termo(s), separados por vírgula. São buscados diariamente no PNCP.`;
+    $("#contador-palavras", m).textContent = !n ? "Opcional se houver segmento marcado. Separe por vírgula para detalhar o que buscar."
+      : `${n} termo(s). Use para detalhar o que os segmentos não cobrem (ex.: jardinagem, controle de pragas).`;
+    const segs = $$(".seg-empresa:checked", m).map((c) => c.value);
+    const t = termosRadar(segs, campoPalavras.value);
+    const fora = lista(campoPalavras.value).filter((x) => !t.some((y) => y.toLowerCase() === x.toLowerCase()));
+    $("#previa-radar", m).innerHTML = t.length
+      ? `<b>O radar vai buscar no PNCP:</b> ${t.map((x) => `<span class="chip-termo">${esc(x)}</span>`).join(" ")}${fora.length ? `<br><small class="fraco">Ficaram de fora (limite de ${MAX_TERMOS_RADAR} termos): ${esc(fora.join(", "))}. Remova termos menos importantes ou desmarque segmentos.</small>` : ""}`
+      : `<span class="fraco">Marque um segmento ou escreva palavras-chave para o radar funcionar.</span>`;
   };
   campoPalavras.addEventListener("input", contar);
+  $$(".seg-empresa", m).forEach((c) => c.addEventListener("change", contar));
   contar();
 
   let ultima = null; // última consulta à Receita, para o botão "Sugerir a partir dos CNAEs"
@@ -125,15 +148,6 @@ function modalEmpresa(e) {
     if (!ultima) { await ocupado($("#sugerir-cnae", m), "Buscando…", () => buscar({ completo: false })); return; }
     campoPalavras.value = juntar(lista(campoPalavras.value), ultima.sugestao?.palavras_chave || []).join(", "); contar();
   };
-  $("#sugerir-palavras", m).onclick = () => {
-    const marcados = $$(".seg-empresa:checked", m).map((c) => c.value);
-    if (!marcados.length) { toast("Marque ao menos um segmento primeiro."); return; }
-    const sugestao = [...new Set(marcados.flatMap((k) => (PALAVRAS_POR_SEGMENTO[k] || "").split(",").map((s) => s.trim()).filter(Boolean)))];
-    const campo = $("#palavras_e", m);
-    const atuais = campo.value.split(",").map((s) => s.trim()).filter(Boolean);
-    campo.value = [...new Set([...atuais, ...sugestao])].join(", ");
-    contar();
-  };
   $("#form-empresa", m).onsubmit = async (ev) => {
     ev.preventDefault();
     const b = ev.target.querySelector("button[type=submit]");
@@ -141,7 +155,12 @@ function modalEmpresa(e) {
       try {
         const dados = dadosForm(ev.target);
         dados.segmentos = $$(".seg-empresa:checked", m).map((c) => c.value).join(",");
-        await api(e ? "PATCH" : "POST", e ? `/api/empresas/${e.id}` : "/api/empresas", dados);
+        const escopo = (x) => [x?.segmentos || "", (x?.palavras_chave || "").trim(), (x?.ufs || "").replace(/\s/g, "").toUpperCase(), String(x?.valor_min ?? ""), String(x?.valor_max ?? "")].join("|");
+        const salvo = await api(e ? "PATCH" : "POST", e ? `/api/empresas/${e.id}` : "/api/empresas", dados);
+        if (e && escopo(e) !== escopo(salvo) && salvo.termos_radar?.length) {
+          toast("Radar ajustado aos novos segmentos. Buscando editais no PNCP…");
+          api("POST", `/api/empresas/${salvo.id}/radar/atualizar`).then((r) => toast(`Radar atualizado: ${r.novos} edital(is) encontrado(s).`, "ok")).catch(() => {});
+        }
         if (!e) marcar("company_created");
         if ((dados.palavras_chave || "").trim() && !(e && (e.palavras_chave || "").trim())) marcar("radar_configured");
         await carregarConta(); m.fechar(); V.empresas($("#conteudo"));

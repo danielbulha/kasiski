@@ -718,3 +718,5 @@ tr.com-sugestao td { background: #FBFAF6; }
 
 body.op-gaveta-aberta { overflow: hidden; }
 .op-g-decisao .acoes { display: flex; gap: 8px; flex-wrap: wrap; }
+.previa-radar { margin-top: 8px; font-size: .86rem; line-height: 1.9; background: var(--ciano-claro); border-radius: var(--raio); padding: 8px 10px; }
+.chip-termo { display: inline-block; background: #fff; border: 1px solid var(--linha); border-radius: 999px; padding: 0 9px; line-height: 1.7; margin: 1px 0; }

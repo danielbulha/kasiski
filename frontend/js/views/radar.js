@@ -6,7 +6,8 @@ V.radar = async (el) => {
   const emp = empresaAtual();
   el.innerHTML = `
     <div class="cabecalho"><div><h1>Radar de editais</h1>
-      <p>Buscando por: ${esc(emp.palavras_chave || "nenhuma palavra-chave")} ${emp.ufs ? "· " + esc(emp.ufs) : "· todo o Brasil"}</p></div>
+      <p>Buscando por: ${emp.termos_radar?.length ? esc(emp.termos_radar.join(", ")) : "nenhum segmento ou palavra-chave"} ${emp.ufs ? "· " + esc(emp.ufs) : "· todo o Brasil"}
+        · <a href="#/empresas">ajustar</a></p></div>
       <div class="acoes"><select id="filtro" aria-label="Filtrar">
         <option value="novo" ${filtro === "novo" ? "selected" : ""}>Novos</option>
         <option value="acompanhando" ${filtro === "acompanhando" ? "selected" : ""}>Já acompanhados</option>

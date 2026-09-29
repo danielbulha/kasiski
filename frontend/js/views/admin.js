@@ -20,7 +20,7 @@ V.admin = async (el) => {
   el.innerHTML = `
     <div class="cabecalho"><h1>Administração</h1><button class="botao pequeno secundario" id="teste-email">Testar envio de e-mail</button></div>
     <div class="abas" role="tablist">
-      ${[["crm", "Clientes e testes"], ["marketing", "Marketing"], ["funil", "Funil de conversão"], ["receitas", "Receitas"], ["tabelas", "Tabelas de preços"], ["revisoes", "Pedidos de advogado"], ["atendimento", "Atendimento"], ["planos", "Planos e margem"], ["logs", "Logs de erros"], ["armazenamento", "Armazenamento"]]
+      ${[["crm", "Clientes e testes"], ["marketing", "Marketing"], ["funil", "Funil de conversão"], ["receitas", "Receitas"], ["faturamento", "Notas fiscais"], ["tabelas", "Tabelas de preços"], ["revisoes", "Pedidos de advogado"], ["atendimento", "Atendimento"], ["planos", "Planos e margem"], ["logs", "Logs de erros"], ["armazenamento", "Armazenamento"]]
         .map(([k, t]) => `<button role="tab" data-a-aba="${k}" class="${aba === k ? "ativa" : ""}" aria-selected="${aba === k}">${t}</button>`).join("")}
     </div>
     <div id="painel-admin"><p class="carregando">Carregando…</p></div>`;
@@ -49,6 +49,7 @@ V.admin = async (el) => {
     else if (aba === "funil") await abaFunil(painel);
     else if (aba === "marketing") await abaMarketing(painel);
     else if (aba === "receitas") await abaReceitas(painel);
+    else if (aba === "faturamento") await abaFaturamento(painel);
     else if (aba === "tabelas") await abaTabelasAdmin(painel);
     else if (aba === "logs") await abaLogs(painel);
     else if (aba === "armazenamento") await abaArmazenamento(painel);
@@ -1062,4 +1063,84 @@ async function abaPlanosAdmin(el) {
     if (!(await confirmar(`Reduzir ${reduzir.length} cobrança(s) para o preço da tabela nova? As assinaturas automáticas são alteradas no Mercado Pago a partir da próxima cobrança.`, "Reduzir cobranças"))) return;
     try { const r = await api("POST", "/api/admin/planos/transicao/aplicar"); toast(`${r.ajustados.length} ajustada(s)${r.falhas.length ? `, ${r.falhas.length} falha(s)` : ""}.`, r.falhas.length ? "erro" : "ok"); abaPlanosAdmin(el); } catch (e2) { avisarErro(e2); }
   };
+}
+
+
+// ------------------------------------------------------------ notas fiscais a emitir
+const NF_SITUACOES = [["pendente", "A emitir"], ["emitida", "Emitidas"], ["cancelar", "Cancelar nota (estorno)"], ["nao_emitir", "Não emitir"], ["todas", "Todas"]];
+const NF_ROTULO = { pendente: ["A emitir", "aviso"], emitida: ["Emitida", "ok"], cancelar: ["Cancelar nota", "erro"], nao_emitir: ["Não emitir", "neutro"], cancelada: ["Nota cancelada", "neutro"] };
+
+async function abaFaturamento(el) {
+  const f = abaFaturamento.f || (abaFaturamento.f = { situacao: "pendente", de: "", ate: "" });
+  const qs = new URLSearchParams({ situacao: f.situacao, ...(f.de ? { de: f.de } : {}), ...(f.ate ? { ate: f.ate } : {}) }).toString();
+  const r = await api("GET", `/api/admin/faturamento?${qs}`);
+  const pr = r.prestador || {};
+  const faltaPrest = [!pr.inscricao_municipal && "inscrição municipal (NFSE_PRESTADOR_IM)", !pr.codigo_servico && "código do serviço (NFSE_CODIGO_SERVICO)"].filter(Boolean);
+  el.innerHTML = `
+    <div class="aviso info"><b>Prestador:</b> ${esc(pr.razao_social || "")} · CNPJ ${esc(pr.cnpj || "")} · ${esc(pr.municipio || "")}
+      ${pr.inscricao_municipal ? ` · IM ${esc(pr.inscricao_municipal)}` : ""}${pr.codigo_servico ? ` · Serviço ${esc(pr.codigo_servico)}` : ""}
+      ${faltaPrest.length ? `<br><small>Falta configurar no Render (defina com o contador): ${faltaPrest.join(" e ")}.</small>` : ""}</div>
+    <div class="chips" role="group" aria-label="Situação da nota">${NF_SITUACOES.map(([k, t]) =>
+      `<button data-nf-sit="${k}" aria-pressed="${f.situacao === k}">${t}${r.resumo?.[k] ? ` (${r.resumo[k]})` : ""}</button>`).join("")}</div>
+    <div class="linha-campos" style="max-width:640px;margin-top:12px">
+      <div class="campo"><label for="nf-de">Pago de</label><input type="date" id="nf-de" value="${esc(f.de)}"></div>
+      <div class="campo"><label for="nf-ate">até</label><input type="date" id="nf-ate" value="${esc(f.ate)}"></div>
+      <div class="campo" style="align-self:end"><button class="botao secundario" id="nf-csv">${icone("baixar")} Baixar planilha (CSV)</button></div>
+    </div>
+    <section class="bloco tabela-rolagem">
+      ${r.itens.length ? `<p class="fraco">${r.itens.length} pagamento(s) · total ${fmt.moeda(r.total)}</p>
+      <table class="tabela-faixas tabela-nf"><thead><tr><th>Pago em</th><th>Tomador</th><th>Endereço</th><th>Valor</th><th>Discriminação</th><th>Nota</th><th></th></tr></thead>
+      <tbody>${r.itens.map(linhaNf).join("")}</tbody></table>` : vazio("Nada por aqui", f.situacao === "pendente" ? "Todos os pagamentos aprovados já têm nota ou foram marcados como não emitir." : "")}
+    </section>`;
+  $$("[data-nf-sit]", el).forEach((b) => b.onclick = () => { f.situacao = b.dataset.nfSit; abaFaturamento(el); });
+  $("#nf-de", el).onchange = (ev) => { f.de = ev.target.value; abaFaturamento(el); };
+  $("#nf-ate", el).onchange = (ev) => { f.ate = ev.target.value; abaFaturamento(el); };
+  $("#nf-csv", el).onclick = (ev) => ocupado(ev.currentTarget, "Gerando…", async () => {
+    try {
+      const resp = await api("GET", `/api/admin/faturamento.csv?${qs}`);
+      const url = URL.createObjectURL(await resp.blob());
+      const a = document.createElement("a"); a.href = url; a.download = `kasiski-notas-${f.situacao}.csv`; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    } catch (e) { avisarErro(e); }
+  });
+  $$("[data-nf-copiar]", el).forEach((b) => b.onclick = async () => {
+    const it = r.itens.find((x) => String(x.id) === b.dataset.nfCopiar);
+    const t = it.tomador || {};
+    const texto = [`${t.nome || ""} — ${t.documento_formatado || ""}`, t.email, `${t.logradouro || ""}, ${t.numero || ""}${t.complemento ? " " + t.complemento : ""} — ${t.bairro || ""}`,
+      `${t.municipio || ""}/${t.uf || ""} — CEP ${t.cep || ""}`, `Valor: ${fmt.moeda(it.valor)}`, it.discriminacao].filter(Boolean).join("\n");
+    try { await navigator.clipboard.writeText(texto); toast("Dados copiados.", "ok"); } catch (e) { toast("Não foi possível copiar.", "erro"); }
+  });
+  $$("[data-nf-emitida]", el).forEach((b) => b.onclick = () => {
+    const m = modal({ titulo: "Registrar nota emitida", corpo: `<form id="form-nf"><div class="campo"><label for="nf-numero">Número da NFS-e</label><input id="nf-numero" name="nf_numero" required></div>
+      <div class="campo"><label for="nf-obs">Observação <small class="fraco">(opcional)</small></label><input id="nf-obs" name="nf_obs" maxlength="300"></div>
+      <button class="botao" type="submit">Salvar</button></form>` });
+    $("#form-nf", m).onsubmit = async (ev) => {
+      ev.preventDefault();
+      try { await api("PATCH", `/api/admin/faturamento/${b.dataset.nfEmitida}`, { nf_status: "emitida", ...dadosForm(ev.target) }); m.fechar(); toast("Nota registrada.", "ok"); abaFaturamento(el); }
+      catch (e2) { avisarErro(e2); }
+    };
+  });
+  $$("[data-nf-acao]", el).forEach((b) => b.onclick = async () => {
+    const [id, st] = b.dataset.nfAcao.split(":");
+    if (st === "nao_emitir" && !(await confirmar("Marcar este pagamento como 'não emitir nota'?", "Marcar"))) return;
+    try { await api("PATCH", `/api/admin/faturamento/${id}`, { nf_status: st }); abaFaturamento(el); } catch (e) { avisarErro(e); }
+  });
+}
+
+function linhaNf(it) {
+  const t = it.tomador || {};
+  const [rot, tom] = NF_ROTULO[it.nf_status] || [it.nf_status, "neutro"];
+  const acoes = it.nf_status === "pendente"
+    ? `<button class="botao pequeno" data-nf-emitida="${it.id}">Nota emitida</button><button class="botao texto pequeno" data-nf-acao="${it.id}:nao_emitir">Não emitir</button>`
+    : it.nf_status === "cancelar" ? `<button class="botao pequeno" data-nf-acao="${it.id}:cancelada">Nota cancelada</button>`
+    : `<button class="botao texto pequeno" data-nf-acao="${it.id}:pendente">Voltar a pendente</button>`;
+  return `<tr class="faixa-${it.nf_status === "emitida" ? "ganho" : it.nf_status === "cancelar" ? "perdido" : it.nf_status === "pendente" ? "acompanhando" : "descartado"}">
+    <td>${fmt.data(it.pago_em)}<br><small class="fraco">${esc(it.meio || "")}</small></td>
+    <td>${it.tomador_completo ? `<b>${esc(t.nome)}</b><br><small>${esc(t.documento_formatado || "")}</small><br><small class="fraco">${esc(t.email || "")}</small>`
+      : `${carimbo("Sem dados fiscais", "erro")}<br><small>${esc(it.conta || "—")}</small>`}</td>
+    <td style="max-width:220px"><small>${t.logradouro ? `${esc(t.logradouro)}, ${esc(t.numero || "")}${t.complemento ? " " + esc(t.complemento) : ""} — ${esc(t.bairro || "")}<br>${esc(t.municipio || "")}/${esc(t.uf || "")} · CEP ${esc(t.cep || "")}` : "—"}</small></td>
+    <td><b>${fmt.moeda(it.valor)}</b></td>
+    <td style="max-width:300px"><small>${esc(it.discriminacao)}</small></td>
+    <td>${carimbo(rot, tom)}${it.nf_numero ? `<br><small>Nº ${esc(it.nf_numero)}</small>` : ""}${it.nf_obs ? `<br><small class="fraco">${esc(it.nf_obs)}</small>` : ""}</td>
+    <td class="acoes-celula" style="flex-direction:column;align-items:flex-start;gap:4px"><button class="botao texto pequeno" data-nf-copiar="${it.id}">Copiar dados</button>${acoes}</td></tr>`;
 }

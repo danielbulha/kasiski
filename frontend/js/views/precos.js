@@ -2,7 +2,9 @@
 // (Compras.gov.br) e consulta às tabelas oficiais de referência (SINAPI, SICRO, CMED, CCT...).
 const SITUACAO_ITEM = { acima_estimado: ["Acima do estimado", "erro"], inexequivel: ["Inexequível (<75%)", "erro"],
   garantia_adicional: ["Garantia adicional (<85%)", "aviso"], indicio_inexequivel: ["Indício de inexequibilidade (<50%)", "aviso"],
-  prejuizo: ["Abaixo do custo", "erro"] };
+  prejuizo: ["Abaixo do custo", "erro"], acima_teto: ["Acima do teto da tabela", "erro"], abaixo_piso: ["Abaixo do piso da CCT", "erro"] };
+const NOMES_FONTE_REF = { sinapi: "SINAPI", sicro: "SICRO", cmed: "CMED", bps: "BPS", sigtap: "SIGTAP", cct: "CCT", outra: "Tabela", mercado: "Compras.gov.br" };
+const CONFIANCA = { alta: ["Confiança alta", "ok"], media: ["Confiança média", "aviso"], baixa: ["Confira", "erro"] };
 const STATUS_PROPOSTA = { lendo_edital: ["Lendo o edital", "aviso"], rascunho: ["Rascunho", "neutro"], gerando: ["Gerando minuta", "aviso"],
   pronta: ["Minuta pronta", "ok"], erro: ["Erro", "erro"] };
 
@@ -29,12 +31,12 @@ V.precos = async (el) => {
 function upsellPropostas() {
   return `<section class="bloco destaque-plano"><h2>Proposta comercial com IA</h2>
     <p>A leitura das regras da proposta no edital, a formação do preço com BDI e tributos, a checagem de exequibilidade e a minuta em Word
-    fazem parte dos planos <b>Avançado</b> (${fmt.moeda(S.planos.avancado?.preco || 799)}/mês) e <b>Consultor</b>.</p>
+    fazem parte dos planos a partir do <b>Profissional</b> (${fmt.moeda(S.planos.profissional?.preco || 247)}/mês).</p>
     <a class="botao" href="#/conta">Ver planos</a></section>`;
 }
 
 function modalUpsellPropostas() {
-  modal({ titulo: "Disponível no plano Avançado", corpo: `<p>A elaboração da proposta comercial com IA faz parte dos planos Avançado e Consultor.
+  modal({ titulo: "Disponível a partir do Profissional", corpo: `<p>A elaboração da proposta comercial com IA faz parte dos planos Profissional, Business e Consultor.
     Seu plano atual (${esc(S.plano?.nome || "")}) inclui as pesquisas de preço e a consulta às tabelas de referência.</p>`,
     acoes: `<a class="botao" href="#/conta" data-fechar>Ver planos</a>` });
 }
@@ -87,25 +89,42 @@ async function abaTabelasRef(el) {
   el.innerHTML = `<section class="bloco">
     <p class="fraco">${tabs.length ? `Tabelas disponíveis: ${tabs.map((t) => `${esc(t.nome)}${t.data_base ? ` (${fmt.data(t.data_base)})` : ""}`).join(" · ")}` : "Nenhuma tabela de referência carregada ainda."}</p>
     <form id="form-busca-ref" class="linha-campos" style="align-items:flex-end">
-      <div class="campo" style="grid-column:span 2"><label for="br-q">Buscar item</label><input id="br-q" name="q" placeholder="Ex.: servente, cimento CP II, dipirona 500mg" required minlength="3"></div>
-      <div class="campo"><label for="br-uf">UF</label><input id="br-uf" name="uf" maxlength="2" value="${esc((empresaAtual().ufs || "").slice(0, 2))}"></div>
+      <div class="campo" style="grid-column:span 2"><label for="br-q">Buscar item</label><input id="br-q" name="q" placeholder="Ex.: servente, cimento CP II, dipirona 500mg, código SINAPI ou registro" required minlength="3"></div>
+      <div class="campo"><label for="br-uf">UF do órgão</label><input id="br-uf" name="uf" maxlength="2" value="${esc((empresaAtual().ufs || "").slice(0, 2))}"></div>
+      <div class="campo"><label for="br-crit">Teto CMED</label><select id="br-crit" name="criterio"><option value="">Automático (CAP → PMVG)</option><option value="PMVG">PMVG</option><option value="PF">PF</option></select></div>
       <button class="botao" type="submit">Buscar</button></form>
     <div id="res-ref"></div></section>`;
   $("#form-busca-ref", el).onsubmit = async (ev) => {
     ev.preventDefault();
     const d = dadosForm(ev.target);
     try {
-      const r = await api("GET", `/api/tabelas-referencia/buscar?q=${encodeURIComponent(d.q)}&uf=${encodeURIComponent(d.uf || "")}`);
+      const r = await api("GET", `/api/tabelas-referencia/buscar?q=${encodeURIComponent(d.q)}&uf=${encodeURIComponent(d.uf || "")}&criterio=${encodeURIComponent(d.criterio || "")}`);
       $("#res-ref", el).innerHTML = r.length ? tabelaRefs(r, false) : vazio("Nada encontrado", "Tente termos mais curtos ou outra UF.");
     } catch (e) { $("#res-ref", el).innerHTML = erroTela(e); }
   };
 }
 
+const EXTRAS_DESTAQUE = ["substância", "substancia", "laboratório", "laboratorio", "registro", "apresentação", "apresentacao", "tarja", "cap",
+  "confaz", "restrição hospitalar", "restricao hospitalar", "classe terapêutica", "ean 1", "origem", "regime de preço", "tipo de produto", "cbo"];
+const semAcento = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+function extrasDestaque(r) {
+  const ex = r.extras || {};
+  return Object.entries(ex).filter(([k]) => EXTRAS_DESTAQUE.some((d) => semAcento(k).startsWith(semAcento(d))))
+    .slice(0, 9).map(([k, v]) => `<span class="ref-extra"><b>${esc(k)}:</b> ${esc(v)}</span>`).join(" ");
+}
 function tabelaRefs(refs, comUso) {
-  return `<div class="tabela-rolagem"><table><thead><tr><th>Tabela</th><th>Código</th><th>Descrição</th><th>Unid.</th><th>Preço</th>${comUso ? "<th></th>" : ""}</tr></thead>
-    <tbody>${refs.map((r, i) => `<tr><td>${esc(r.tabela)}${r.data_base ? `<br><small>${fmt.data(r.data_base)}${r.uf ? " · " + esc(r.uf) : ""}</small>` : ""}</td>
-      <td>${esc(r.codigo || "—")}</td><td>${esc(r.descricao)}</td><td>${esc(r.unidade || "—")}</td><td>${fmt.moeda(r.preco)}</td>
-      ${comUso ? `<td><button class="botao pequeno secundario" data-usar-ref="${i}">Usar como custo</button></td>` : ""}</tr>`).join("")}</tbody></table></div>`;
+  return `<div class="tabela-rolagem"><table class="tabela-refs"><thead><tr><th>Tabela</th><th>Código</th><th>Descrição e dados da tabela</th><th>Unid.</th><th>Preço aplicável</th>${comUso ? "<th></th>" : ""}</tr></thead>
+    <tbody>${refs.map((r, i) => {
+      const precos = Object.entries(r.precos || {});
+      const aplic = r.preco_aplicavel ?? r.preco;
+      return `<tr><td>${esc(r.tabela)}${r.data_base ? `<br><small>${fmt.data(r.data_base)}${r.uf ? " · " + esc(r.uf) : ""}${r.desonerado === true ? " · desonerado" : r.desonerado === false ? " · não desonerado" : ""}</small>` : ""}</td>
+      <td>${esc(r.codigo || "—")}${r.por_codigo ? '<br><small class="ok-texto">código exato</small>' : ""}</td>
+      <td>${esc(r.descricao)}${extrasDestaque(r) ? `<div class="ref-extras">${extrasDestaque(r)}</div>` : ""}
+        ${precos.length > 1 ? `<details class="ref-precos"><summary>${precos.length} colunas de preço</summary><div>${precos.map(([k, v]) => `<span class="${k === r.coluna_aplicavel ? "ref-preco-usado" : ""}">${esc(k)}: ${fmt.moeda(v)}</span>`).join("")}</div></details>` : ""}</td>
+      <td>${esc(r.unidade || "—")}</td>
+      <td><b>${fmt.moeda(aplic)}</b>${r.coluna_aplicavel ? `<br><small>${esc(r.coluna_aplicavel)}</small>` : ""}${r.regra ? `<br><small class="fraco">${esc(r.regra)}</small>` : ""}</td>
+      ${comUso ? `<td><button class="botao pequeno secundario" data-usar-ref="${i}">Usar no item</button></td>` : ""}</tr>`;
+    }).join("")}</tbody></table></div>`;
 }
 
 // ---------------------------------------------------------------- editor da proposta
@@ -115,11 +134,15 @@ V.proposta = async (el, id) => {
   const desenhar = () => {
     const c = p.condicoes || {}, t = p.totais;
     const ocupada = ["lendo_edital", "gerando"].includes(p.status);
+    const desconto = (p.parametros || {}).modo === "desconto";
+    const produto = !!c.exige_marca_modelo || p.itens.some((x) => x.marca || x.fabricante || x.registro || x.fabricante_sugerido || (x.referencias?.tabela?.fonte === "cmed"));
+    const pendentes = p.itens.filter((x) => x.sugestao && !x.aceito).length;
     el.innerHTML = `
       <div class="cabecalho"><div><p class="fraco" style="margin:0"><a href="#/precos">← Preços e propostas</a></p>
         <h1>${esc(p.titulo)}</h1><p>${carimboStatus(STATUS_PROPOSTA, p.status)}${edital ? ` · <a href="#/editais/${edital.id}">${esc(edital.numero || "edital")} · ${esc(edital.orgao || "")}</a>` : ""}</p></div>
         <div class="acoes">
           ${p.edital_id ? `<button class="botao secundario" id="reler" ${ocupada ? "disabled" : ""}>Reler edital</button>` : ""}
+          <button class="botao secundario" id="precificar" ${ocupada || !p.itens.length ? "disabled" : ""}>Precificar pelo edital</button>
           <button class="botao" id="gerar-minuta" ${ocupada ? "disabled" : ""}>${p.texto ? "Refazer minuta" : "Gerar minuta"}</button>
           <button class="botao secundario" id="baixar-docx" ${p.itens.length ? "" : "disabled"}>Baixar Word</button>
           <button class="botao texto" id="excluir-prop">${icone("excluir", 14)} Excluir</button></div></div>
@@ -127,6 +150,7 @@ V.proposta = async (el, id) => {
       ${p.erro ? `<div class="aviso erro">${esc(p.erro)}</div>` : ""}
       ${p.demonstracao ? `<div class="aviso info">Resultado de demonstração: configure as chaves de IA para ler o edital e redigir a proposta de verdade.</div>` : ""}
       ${Object.keys(c).length ? blocoCondicoes(c) : ""}
+      ${p.itens.length ? blocoReferencias(p) : ""}
       <section class="bloco"><div class="bloco-titulo"><h2>Formação do preço</h2></div>
         <form id="form-param" class="linha-campos">
           <div class="campo"><label for="pp-regime">Regime tributário</label><select id="pp-regime" name="regime">
@@ -139,10 +163,13 @@ V.proposta = async (el, id) => {
             ${c.validade_minima_dias ? `<small>Mínimo do edital: ${esc(c.validade_minima_dias)} dias</small>` : ""}</div>
         </form>
         <p class="fraco" style="margin:0">Preço unitário = custo unitário × (1 + BDI). O BDI da fórmula do TCU já embute os tributos informados.</p></section>
-      <section class="bloco"><div class="bloco-titulo"><h2>Itens</h2><button class="botao pequeno secundario" id="add-item">${icone("adicionar", 14)} Adicionar item</button></div>
+      <section class="bloco"><div class="bloco-titulo"><h2>Itens</h2><div class="acoes">
+          ${pendentes ? `<button class="botao pequeno" id="aceitar-todas">Aceitar as ${pendentes} sugestões</button>` : p.itens.some((x) => x.sugestao) ? '<small class="ok-texto">Todas as sugestões aceitas</small>' : ""}
+          <button class="botao pequeno secundario" id="add-item">${icone("adicionar", 14)} Adicionar item</button></div></div>
+        ${pendentes ? `<p class="fraco" style="margin-top:-4px">O Kasiski buscou cada item nas tabelas que o edital exige, nos preços praticados e no histórico dos concorrentes, e sugeriu um preço. Confira as marcadas com <b>Confira</b> e clique em aceitar.</p>` : ""}
         <div class="tabela-rolagem"><table class="tabela-itens"><thead><tr><th>Item</th><th>Descrição</th><th>Unid.</th><th>Qtd.</th><th>Estimado unit.</th>
-          <th>Custo unit.</th><th>BDI %</th><th>Preço unit.</th><th>Total</th><th></th></tr></thead>
-          <tbody>${p.itens.length ? p.itens.map(linhaItem).join("") : `<tr><td colspan="10">${vazio("Nenhum item", ocupada ? "Aguarde a leitura do edital." : "Adicione os itens da proposta.")}</td></tr>`}</tbody></table></div>
+          <th>Referência</th><th>Sugestão do Kasiski</th><th>${desconto ? "Desconto %" : "Custo unit."}</th><th>BDI %</th><th>Preço unit.</th><th>Total</th><th></th></tr></thead>
+          <tbody>${p.itens.length ? p.itens.map((it, i) => linhaItem(it, i, { desconto, produto })).join("") : `<tr><td colspan="12">${vazio("Nenhum item", ocupada ? "Aguarde a leitura do edital." : "Adicione os itens da proposta.")}</td></tr>`}</tbody></table></div>
         <div class="grade grade-4 grade-kpi" style="margin-top:16px">
           <div class="indicador"><b>${fmt.moeda(t.total)}</b><span>valor global da proposta</span></div>
           <div class="indicador"><b>${t.total_estimado ? fmt.moeda(t.total_estimado) : "—"}</b><span>estimado pela Administração${t.total_estimado && t.total ? ` · ${Math.round(100 * t.total / t.total_estimado)}%` : ""}</span></div>
@@ -187,10 +214,27 @@ V.proposta = async (el, id) => {
       salvar(d);
     });
     $("#calc-bdi", el).onclick = () => modalBdi(p, (d) => salvar(d));
+    const fr = $("#form-ref", el);
+    if (fr) fr.addEventListener("change", async () => {
+      const d = dadosForm(fr);
+      try { p = await api("PATCH", `/api/propostas/${id}`, { parametros: { ...d, usar_mercado: d.usar_mercado, usar_concorrentes: d.usar_concorrentes }, reprecificar: true }); desenharMantendoFoco(); toast("Referências e sugestões atualizadas.", "ok"); }
+      catch (e) { avisarErro(e); }
+    });
+    const pr = $("#precificar", el);
+    if (pr) pr.onclick = () => ocupado(pr, "Buscando preços…", async () => {
+      try { p = await api("POST", `/api/propostas/${id}/precificar`); desenhar(); toast("Preços de referência atualizados.", "ok"); } catch (e) { avisarErro(e); }
+    });
+    const at = $("#aceitar-todas", el);
+    if (at) at.onclick = () => ocupado(at, "Aplicando…", async () => {
+      try { p = await api("POST", `/api/propostas/${id}/aceitar`, {}); desenhar(); toast(`${p.aceitos} sugestão(ões) aplicada(s). Confira os pontos de atenção.`, "ok"); } catch (e) { avisarErro(e); }
+    });
+    $$("[data-aceitar]", el).forEach((b) => b.onclick = async () => {
+      try { p = await api("POST", `/api/propostas/${id}/aceitar`, { indices: [Number(b.dataset.aceitar)] }); desenharMantendoFoco(); } catch (e) { avisarErro(e); }
+    });
     $$("[data-campo]", el).forEach((inp) => inp.addEventListener("change", () => {
       const itens = itensAtuais(), i = Number(inp.dataset.i), campo = inp.dataset.campo;
       let v = inp.value;
-      if (["quantidade", "custo_unitario", "bdi", "preco_unitario", "valor_unitario_estimado"].includes(campo)) v = v === "" ? null : v;
+      if (["quantidade", "custo_unitario", "bdi", "preco_unitario", "valor_unitario_estimado", "desconto_pct"].includes(campo)) v = v === "" ? null : v;
       itens[i][campo] = v;
       if (campo === "preco_unitario") itens[i].preco_manual = v !== null;
       if (campo === "custo_unitario") itens[i].preco_manual = false;
@@ -245,26 +289,80 @@ function blocoCondicoes(c) {
   </details></section>`;
 }
 
-function linhaItem(it, i) {
+function celulaReferencia(it) {
+  const r = it.referencias || {}, t = r.tabela;
+  const partes = [];
+  if (t) partes.push(`<div><span class="chip-fonte">${esc(NOMES_FONTE_REF[t.fonte] || t.fonte || "Tabela")}</span> ${esc(t.codigo || "")}
+    <b>${fmt.moeda(t.preco)}</b><small class="fraco">${t.tipo === "teto" ? "teto" : t.tipo === "piso" ? "piso salarial" : "custo"}</small>
+    ${t.coluna ? `<br><small class="fraco">${esc(t.coluna)}${t.data_base ? " · " + fmt.data(t.data_base) : ""}</small>` : t.data_base ? `<br><small class="fraco">${fmt.data(t.data_base)}</small>` : ""}
+    <br><small class="fraco" title="${esc(t.descricao || "")}">${esc((t.descricao || "").slice(0, 70))}</small> ${carimboStatus(CONFIANCA, t.confianca)}</div>`);
+  if (r.mercado?.mediana) partes.push(`<small>Mercado: ${fmt.moeda(r.mercado.mediana)} <span class="fraco">(${r.mercado.n})</span></small>`);
+  if (r.concorrentes?.media) partes.push(`<small>Concorrentes: ${fmt.moeda(r.concorrentes.media)} <span class="fraco">(${r.concorrentes.empresas?.length || r.concorrentes.n || ""} emp.)</span></small>`);
+  return partes.length ? partes.join("<br>") : '<small class="fraco">sem referência</small>';
+}
+
+function celulaSugestao(it, i) {
+  const s = it.sugestao;
+  if (!s) return '<small class="fraco">—</small>';
+  const valor = s.desconto_pct !== undefined && s.desconto_pct !== null ? `${fmt.num(s.desconto_pct)}% · ${fmt.moeda(s.preco_unitario)}` : fmt.moeda(s.preco_unitario);
+  return `<div class="sugestao ${it.aceito ? "aceita" : ""}"><b>${valor}</b><br><small class="fraco">${esc(s.explicacao || "")}</small>
+    ${it.aceito ? '<br><small class="ok-texto">✓ aceita</small>' : `<br><button class="botao pequeno secundario" data-aceitar="${i}">Aceitar</button>`}</div>`;
+}
+
+function linhaItem(it, i, op = {}) {
   const num = (v) => (v === null || v === undefined ? "" : String(v).replace(".", ","));
   const din = (v) => (v === null || v === undefined || v === "" ? "" : Number(v).toFixed(2).replace(".", ","));
   const sit = (it.situacao || []).map((s) => carimboStatus(SITUACAO_ITEM, s)).join(" ");
-  const ref = it.referencias || {};
-  const dica = [ref.tabela ? `Tabela: ${ref.tabela.nome} ${fmt.moeda(ref.tabela.preco)}` : "", ref.mercado?.mediana ? `Mercado: mediana ${fmt.moeda(ref.mercado.mediana)} (${ref.mercado.n} amostras)` : ""].filter(Boolean).join(" · ");
-  return `<tr>
+  const campoProduto = op.produto ? `<div class="linha-produto">
+      <input class="celula" data-campo="fabricante" data-i="${i}" value="${esc(it.fabricante || "")}" placeholder="${esc(it.fabricante_sugerido || "Marca / fabricante")}" aria-label="Marca ou fabricante">
+      <input class="celula" data-campo="registro" data-i="${i}" value="${esc(it.registro || "")}" placeholder="${esc(it.registro_sugerido || "Registro ANVISA")}" aria-label="Registro ANVISA"></div>` : "";
+  return `<tr class="${it.sugestao && !it.aceito ? "com-sugestao" : ""}">
     <td><input class="celula curta" data-campo="numero" data-i="${i}" value="${esc(it.numero || "")}" aria-label="Número do item"></td>
     <td><textarea class="celula" rows="2" data-campo="descricao" data-i="${i}" aria-label="Descrição">${esc(it.descricao || "")}</textarea>
-      ${dica ? `<small class="fraco">${esc(dica)}</small>` : ""}${sit ? `<div>${sit}</div>` : ""}</td>
+      ${it.codigo_referencia ? `<small class="fraco">Código no edital: ${esc(it.codigo_referencia)}${it.fonte_referencia ? " (" + esc(it.fonte_referencia) + ")" : ""}</small>` : ""}
+      ${campoProduto}${sit ? `<div>${sit}</div>` : ""}</td>
     <td><input class="celula curta" data-campo="unidade" data-i="${i}" value="${esc(it.unidade || "")}" aria-label="Unidade"></td>
     <td><input class="celula curta" data-campo="quantidade" data-i="${i}" value="${num(it.quantidade)}" inputmode="decimal" aria-label="Quantidade"></td>
     <td><input class="celula" data-campo="valor_unitario_estimado" data-i="${i}" value="${din(it.valor_unitario_estimado)}" inputmode="decimal" aria-label="Estimado unitário" placeholder="—"></td>
-    <td><input class="celula" data-campo="custo_unitario" data-i="${i}" value="${din(it.custo_unitario)}" inputmode="decimal" aria-label="Custo unitário" placeholder="custo"></td>
+    <td class="celula-ref">${celulaReferencia(it)}</td>
+    <td class="celula-sugestao">${celulaSugestao(it, i)}</td>
+    <td>${op.desconto ? `<input class="celula curta" data-campo="desconto_pct" data-i="${i}" value="${num(it.desconto_pct)}" inputmode="decimal" aria-label="Desconto %" placeholder="%">`
+      : `<input class="celula" data-campo="custo_unitario" data-i="${i}" value="${din(it.custo_unitario)}" inputmode="decimal" aria-label="Custo unitário" placeholder="custo">`}</td>
     <td><input class="celula curta" data-campo="bdi" data-i="${i}" value="${num(it.bdi)}" inputmode="decimal" aria-label="BDI do item" placeholder="—" title="Vazio = BDI padrão da proposta"></td>
     <td><input class="celula" data-campo="preco_unitario" data-i="${i}" value="${din(it.preco_unitario)}" inputmode="decimal" aria-label="Preço unitário" title="Calculado pelo custo e BDI. Digite para fixar um preço manual.">
-      ${it.pct_estimado ? `<small class="fraco">${it.pct_estimado}% do est.</small>` : ""}${it.pct_mercado ? `<small class="fraco"> · ${it.pct_mercado}% do mercado</small>` : ""}</td>
+      ${it.pct_estimado ? `<small class="fraco">${it.pct_estimado}% do est.</small>` : ""}${it.pct_concorrentes ? `<small class="fraco"> · ${it.pct_concorrentes}% dos concorrentes</small>` : it.pct_mercado ? `<small class="fraco"> · ${it.pct_mercado}% do mercado</small>` : ""}</td>
     <td class="num">${fmt.moeda(it.preco_total)}</td>
     <td class="acoes-celula"><button class="botao pequeno secundario" data-refs="${i}" title="Tabelas oficiais e preços praticados">Preços</button>
       <button class="botao texto pequeno" data-remover="${i}" aria-label="Remover item">${icone("excluir", 14)}</button></td></tr>`;
+}
+
+function blocoReferencias(p) {
+  const c = p.condicoes || {}, par = p.parametros || {};
+  const refs = c.referencias_preco || [];
+  const temCmed = (par.fontes || []).includes("cmed") || p.itens.some((x) => x.referencias?.tabela?.fonte === "cmed");
+  const temSinapi = (par.fontes || []).some((f) => ["sinapi", "sicro"].includes(f)) || p.itens.some((x) => ["sinapi", "sicro"].includes(x.referencias?.tabela?.fonte));
+  const sel = (v, a) => (String(v) === String(a) ? "selected" : "");
+  return `<section class="bloco"><div class="bloco-titulo"><h2>Referências de preço do edital</h2></div>
+    ${refs.length ? `<ul class="lista-refs-edital">${refs.map((r) => `<li><b>${esc(r.fonte || "Referência")}</b>${r.detalhe ? `: ${esc(r.detalhe)}` : ""}${r.pagina ? ` <small class="fraco">(pág. ${esc(r.pagina)})</small>` : ""}</li>`).join("")}</ul>`
+      : `<p class="fraco">O edital não indica tabela oficial de referência: o Kasiski usa o valor estimado, as tabelas carregadas mais próximas, os preços praticados e o histórico dos concorrentes.</p>`}
+    <form id="form-ref" class="linha-campos">
+      <div class="campo"><label for="rf-uf">UF do órgão</label><input id="rf-uf" name="uf" maxlength="2" value="${esc(par.uf || "")}"></div>
+      ${temCmed || (par.fontes || []).length === 0 ? `<div class="campo"><label for="rf-icms">ICMS dos medicamentos (%)</label><input id="rf-icms" name="icms_pct" inputmode="decimal" value="${par.icms_pct ?? ""}">
+        <small>Define a coluna da CMED. Alíquota geral do estado; ajuste se houver benefício (ex.: genéricos em SP, 12%).</small></div>
+      <div class="campo"><label for="rf-crit">Teto CMED</label><select id="rf-crit" name="criterio_cmed">
+        <option value="auto" ${sel(par.criterio_cmed, "auto")}>Automático: PMVG se o produto tem CAP, senão PF</option>
+        <option value="PMVG" ${sel(par.criterio_cmed, "PMVG")}>PMVG em todos os itens</option><option value="PF" ${sel(par.criterio_cmed, "PF")}>PF em todos os itens</option></select></div>` : ""}
+      ${temSinapi ? `<div class="campo"><label for="rf-des">SINAPI / SICRO</label><select id="rf-des" name="desonerado">
+        <option value="" ${par.desonerado === null || par.desonerado === undefined ? "selected" : ""}>Qualquer regime</option>
+        <option value="nao" ${par.desonerado === false ? "selected" : ""}>Não desonerado</option><option value="sim" ${par.desonerado === true ? "selected" : ""}>Desonerado</option></select></div>` : ""}
+      <div class="campo"><label for="rf-modo">Proposta por</label><select id="rf-modo" name="modo">
+        <option value="preco" ${sel(par.modo, "preco")}>Preço</option><option value="desconto" ${sel(par.modo, "desconto")}>Percentual de desconto sobre a tabela</option></select></div>
+      <div class="campo"><label>Usar também</label>
+        <label class="check-inline"><input type="checkbox" name="usar_mercado" ${par.usar_mercado !== false ? "checked" : ""}> preços praticados (Compras.gov.br)</label>
+        <label class="check-inline"><input type="checkbox" name="usar_concorrentes" ${par.usar_concorrentes !== false ? "checked" : ""}> preço médio dos possíveis concorrentes</label></div>
+    </form>
+    <p class="fraco" style="margin:0"><small>Tabelas de custo (SINAPI, SICRO): preço = custo × (1 + BDI). Convenção coletiva: o piso salarial entra na planilha de custos do posto e serve de verificação (alerta se o preço ficar abaixo dele). Tabelas de preço máximo (CMED, BPS) e o estimado do edital limitam o preço;
+      sem custo, a sugestão é o menor entre o teto, a mediana praticada e o preço médio dos concorrentes.</small></p></section>`;
 }
 
 function modalBdi(p, aoAplicar) {
@@ -302,7 +400,7 @@ async function modalReferencias(p, i, aoSalvar) {
     const d = dadosForm($("#form-refs", m));
     $("#rf-res", m).innerHTML = `<p class="carregando">Buscando nas tabelas oficiais${d.catmat ? " e no Compras.gov.br" : ""}…</p>`;
     let r;
-    try { r = await api("POST", `/api/propostas/${p.id}/referencias`, d); } catch (e) { $("#rf-res", m).innerHTML = erroTela(e); return; }
+    try { r = await api("POST", `/api/propostas/${p.id}/referencias`, { ...d, codigo_referencia: it.codigo_referencia || "" }); } catch (e) { $("#rf-res", m).innerHTML = erroTela(e); return; }
     const e = r.mercado?.estatisticas || {};
     $("#rf-res", m).innerHTML = `
       <h3>Preços praticados em compras públicas</h3>
@@ -319,9 +417,21 @@ async function modalReferencias(p, i, aoSalvar) {
     $$("[data-usar-ref]", m).forEach((b) => b.onclick = () => {
       const ref = r.tabelas[Number(b.dataset.usarRef)];
       const itens = p.itens.map((x) => ({ ...x }));
-      itens[i] = { ...itens[i], custo_unitario: ref.preco, preco_manual: false, catmat: d.catmat, tipo_catalogo: d.tipo_catalogo,
-        referencias: { ...(itens[i].referencias || {}), tabela: { nome: ref.tabela, codigo: ref.codigo, descricao: ref.descricao, preco: ref.preco, unidade: ref.unidade, data_base: ref.data_base } } };
-      m.fechar(); aoSalvar(itens); toast("Custo preenchido pela tabela. Confira a unidade antes de seguir.", "ok");
+      const valor = ref.preco_aplicavel ?? ref.preco;
+      const teto = ["cmed", "bps"].includes(ref.fonte), piso = ref.fonte === "cct";
+      const ex = ref.extras || {};
+      const pegar = (...ps) => { const k = Object.keys(ex).find((x) => ps.some((q) => semAcento(x).startsWith(q))); return k ? ex[k] : null; };
+      const tabela = { fonte: ref.fonte, nome: ref.tabela, codigo: ref.codigo, descricao: ref.descricao, preco: valor, unidade: ref.unidade, data_base: ref.data_base,
+        coluna: ref.coluna_aplicavel, regra: ref.regra, tipo: teto ? "teto" : piso ? "piso" : "custo", confianca: "alta", motivo: "escolhida por você" };
+      itens[i] = { ...itens[i], catmat: d.catmat, tipo_catalogo: d.tipo_catalogo, aceito: false,
+        referencias: { ...(itens[i].referencias || {}), tabela, tabela_manual: true } };
+      if (teto) {
+        itens[i].fabricante = itens[i].fabricante || pegar("laboratorio", "fabricante") || null;
+        itens[i].registro = itens[i].registro || pegar("registro") || null;
+        if (!itens[i].preco_unitario || itens[i].preco_unitario > valor) { itens[i].preco_unitario = valor; itens[i].preco_manual = true; }
+      } else if (!piso) { itens[i].custo_unitario = valor; itens[i].preco_manual = false; }
+      m.fechar(); aoSalvar(itens);
+      toast(teto ? "Teto da tabela aplicado ao item (preço limitado a ele). Fabricante e registro preenchidos." : piso ? "Piso salarial guardado no item: o Kasiski avisa se o preço ficar abaixo dele." : "Custo preenchido pela tabela. Confira a unidade antes de seguir.", "ok");
     });
     const um = $("#usar-mercado", m);
     if (um) um.onclick = () => {

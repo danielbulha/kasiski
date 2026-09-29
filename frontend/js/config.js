@@ -20,7 +20,7 @@ window.CERTAME = {
     GTM_ID: "",              // Google Tag Manager (GTM-XXXXXXX)
     GA4_ID: "",              // Google Analytics 4 (G-XXXXXXXXXX) — só usado se não houver GTM
     GOOGLE_ADS_ID: "",       // Google Ads (AW-XXXXXXXXX) — só usado se não houver GTM
-    LINKEDIN_PARTNER_ID: "", // LinkedIn Insight Tag (número) — só usado se não houver GTM
+    LINKEDIN_PARTNER_ID: "10945985", // LinkedIn Insight Tag (número) — só usado se não houver GTM
     META_PIXEL_ID: "",       // Meta Pixel (número) — só usado se não houver GTM
   },
   // Cloudflare Turnstile (anti-robô nas ferramentas gratuitas). Preencha junto com TURNSTILE_SECRET no Render.

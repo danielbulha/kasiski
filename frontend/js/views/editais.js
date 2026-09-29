@@ -13,7 +13,7 @@ V.editais = async (el) => {
       (formato CNPJ-1-sequencial/ano) ou enviando o PDF, para editais de portais sem integração com o PNCP.
       Depois de cadastrado, use <b>Analisar edital</b> para a IA extrair os dados, conferir sua habilitação e apontar cláusulas restritivas.</p>`)}
     <section class="bloco tabela-rolagem">
-      ${lista.length ? `<table><thead><tr><th>Objeto</th><th>Órgão</th><th>Sessão</th><th>Valor</th><th>Status</th><th>Análise</th><th><span class="oculto-visual">Documento</span></th></tr></thead>
+      ${lista.length ? `${legendaFaixas(ROTULOS.statusEdital, "faixa-")}<table class="tabela-faixas"><thead><tr><th>Objeto</th><th>Órgão</th><th>Sessão</th><th>Valor</th><th>Status</th><th>Análise</th><th><span class="oculto-visual">Documento</span></th></tr></thead>
         <tbody>${lista.map(linhaEdital).join("")}</tbody></table>` : vazio("Nenhum edital aqui", "Use o radar ou cadastre um edital para começar.")}
     </section>`;
   $("#filtro", el).onchange = (ev) => { sessionStorage.setItem("editais_status", ev.target.value); V.editais(el); };
@@ -22,9 +22,15 @@ V.editais = async (el) => {
   $("#novo", el).onclick = () => modalNovoEdital();
 };
 
+// Legenda das faixas coloridas (a cor nunca é a única pista: o status também aparece escrito na linha)
+function legendaFaixas(rotulos, prefixo) {
+  return `<div class="legenda-faixas" aria-hidden="true">${Object.entries(rotulos).map(([k, v]) =>
+    `<span><i class="${prefixo}${k}"></i>${esc(v)}</span>`).join("")}</div>`;
+}
+
 function linhaEdital(e) {
   const decisao = e.decisao ? carimboStatus(ROTULOS.decisao, e.decisao) : "";
-  return `<tr class="clicavel" data-id="${e.id}">
+  return `<tr class="clicavel faixa-${esc(e.status || "acompanhando")}" data-id="${e.id}">
     <td style="max-width:320px">${esc((e.objeto || "(sem objeto — analise para extrair)").slice(0, 160))}
       ${e.tipo_objeto ? `<div style="margin-top:4px">${carimbo(ROTULOS.tipoObjeto[e.tipo_objeto] || e.tipo_objeto, "neutro")}${e.segmento && e.segmento !== "outro" ? " " + carimbo(ROTULOS.segmento[e.segmento] || e.segmento, "neutro") : ""}</div>` : ""}</td>
     <td>${esc(e.orgao || "—")}</td>

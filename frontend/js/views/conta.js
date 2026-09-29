@@ -44,6 +44,8 @@ V.conta = async (el) => {
     ${creditosHtml(p)}
     ${empresasExtrasHtml(p)}
     ${pacotesHtml(p)}
+    <section class="bloco" id="dados-fiscais"><div class="bloco-titulo"><h2>Dados para a nota fiscal</h2><span id="nf-selo"></span></div>
+      <div id="nf-corpo"><p class="carregando">Carregando…</p></div></section>
     <section class="bloco" id="equipe"><div class="bloco-titulo"><h2>Equipe</h2></div><div id="equipe-corpo"><p class="carregando">Carregando…</p></div></section>
     <section class="bloco"><div class="bloco-titulo"><h2>Planos</h2>
       <div class="alternador" role="group" aria-label="Ciclo de cobrança">
@@ -81,6 +83,7 @@ V.conta = async (el) => {
   $$("[data-assinar]", el).forEach((b) => b.onclick = () => modalCheckout(b.dataset.assinar, V.conta.ciclo || "mensal"));
   ligarExtras(el, p);
   carregarEquipe($("#equipe-corpo", el));
+  carregarDadosFiscais(el);
   const cp = $("#comprar-pacote", el);
   if (cp) cp.onclick = () => modalPacote(p);
   const cpc = $("#cancelar-pacote", el);
@@ -269,6 +272,19 @@ function ligarExtras(el, p) {
     if (!(await confirmar("Cancelar a renovação das empresas adicionais? Elas seguem liberadas até o fim do período pago.", "Cancelar renovação"))) return;
     try { await api("POST", "/api/billing/empresas/cancelar"); toast("Renovação cancelada.", "ok"); V.conta(el); } catch (e) { avisarErro(e); }
   };
+}
+
+async function carregarDadosFiscais(el) {
+  const corpo = $("#nf-corpo", el), selo = $("#nf-selo", el);
+  if (!corpo) return;
+  try {
+    const r = await api("GET", "/api/conta/dados-fiscais");
+    selo.innerHTML = r.completo ? carimbo("Completo", "ok") : carimbo("Pendente", "aviso");
+    corpo.innerHTML = `<p class="fraco">Usados na nota fiscal de serviço (NFS-e) emitida a cada pagamento. Pode ser o CNPJ da sua empresa ou o seu CPF.${r.completo ? "" : " <b>Preencha antes de assinar ou comprar um pacote.</b>"}</p>
+      ${formDadosFiscais(r.dados, r.posso_editar)}`;
+    ligarFormDadosFiscais(corpo, () => carregarDadosFiscais(el));
+  } catch (e) { corpo.innerHTML = erroTela(e); }
+  if (location.hash.includes("dados-fiscais")) $("#dados-fiscais", el).scrollIntoView({ behavior: "smooth" });
 }
 
 async function carregarEquipe(el) {

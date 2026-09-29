@@ -88,6 +88,7 @@
       if (CFG.LINKEDIN_PARTNER_ID) {
         window._linkedin_partner_id = CFG.LINKEDIN_PARTNER_ID;
         window._linkedin_data_partner_ids = [CFG.LINKEDIN_PARTNER_ID];
+        if (!window.lintrk) { window.lintrk = function (x, y) { window.lintrk.q.push([x, y]); }; window.lintrk.q = []; }
         carregar("https://snap.licdn.com/li.lms-analytics/insight.min.js", "li-insight");
       }
       if (CFG.META_PIXEL_ID && !window.fbq) {

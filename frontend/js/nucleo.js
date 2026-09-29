@@ -72,6 +72,7 @@ function erroTela(e) {
 }
 
 function avisarErro(e) {
+  if (e.codigo === "dados_fiscais") { modalDadosFiscais(); return; }
   if (e.status === 402) {
     const [msg, oferta] = String(e.message).split(/ (?=(?:Essencial|Profissional|Business|Consultor) — R\$)/);
     const teste = S.plano?.teste_disponivel;
@@ -274,3 +275,74 @@ window.addEventListener("unhandledrejection", (ev) => {
   if (r.status && r.status < 500) return; // erros de validação/plano já mostrados ao usuário
   reportarErro({ tipo: "javascript", mensagem: `Promessa não tratada: ${r.message || String(r)}`, pilha: r.stack || "" });
 });
+
+// ------------------------------------------------------------ dados para a nota fiscal (tomador)
+function formDadosFiscais(f = {}, editavel = true) {
+  const v = (k) => esc(f[k] || "");
+  const dis = editavel ? "" : " disabled";
+  return `<form class="form-fiscal" novalidate>
+    <div class="linha-campos">
+      <div class="campo"><label for="nf-doc">CPF ou CNPJ</label>
+        <div class="campo-com-botao"><input id="nf-doc" name="documento" inputmode="numeric" required value="${esc(f.documento_formatado || f.documento || "")}" placeholder="00.000.000/0000-00"${dis}>
+        ${editavel ? `<button type="button" class="botao secundario pequeno" data-nf-cnpj>Buscar CNPJ</button>` : ""}</div></div>
+      <div class="campo"><label for="nf-nome">Nome ou razão social</label><input id="nf-nome" name="nome" required value="${v("nome")}"${dis}></div>
+    </div>
+    <div class="linha-campos">
+      <div class="campo"><label for="nf-email">E-mail para receber a nota</label><input id="nf-email" name="email" type="email" required value="${v("email") || esc(S.usuario?.email || "")}"${dis}></div>
+      <div class="campo"><label for="nf-im">Inscrição municipal <small class="fraco">(opcional)</small></label><input id="nf-im" name="inscricao_municipal" value="${v("inscricao_municipal")}"${dis}></div>
+    </div>
+    <div class="linha-campos">
+      <div class="campo"><label for="nf-cep">CEP</label><input id="nf-cep" name="cep" inputmode="numeric" required maxlength="9" value="${v("cep")}" placeholder="00000-000"${dis}></div>
+      <div class="campo" style="grid-column:span 2"><label for="nf-log">Endereço</label><input id="nf-log" name="logradouro" required value="${v("logradouro")}"${dis}></div>
+    </div>
+    <div class="linha-campos">
+      <div class="campo"><label for="nf-num">Número</label><input id="nf-num" name="numero" required value="${v("numero")}"${dis}></div>
+      <div class="campo"><label for="nf-comp">Complemento</label><input id="nf-comp" name="complemento" value="${v("complemento")}"${dis}></div>
+      <div class="campo"><label for="nf-bairro">Bairro</label><input id="nf-bairro" name="bairro" required value="${v("bairro")}"${dis}></div>
+    </div>
+    <div class="linha-campos">
+      <div class="campo"><label for="nf-mun">Cidade</label><input id="nf-mun" name="municipio" required value="${v("municipio")}"${dis}></div>
+      <div class="campo"><label for="nf-uf">UF</label><input id="nf-uf" name="uf" required maxlength="2" value="${v("uf")}" style="text-transform:uppercase"${dis}></div>
+      <input type="hidden" name="codigo_ibge" value="${v("codigo_ibge")}">
+    </div>
+    ${editavel ? `<button class="botao" type="submit">Salvar dados da nota</button>` : `<p class="fraco">Só o responsável pela conta pode alterar estes dados.</p>`}
+  </form>`;
+}
+
+function ligarFormDadosFiscais(raiz, aoSalvar) {
+  const form = $(".form-fiscal", raiz);
+  if (!form) return;
+  const preencher = (d) => Object.entries(d).forEach(([k, val]) => { const i = form.elements[k]; if (i && val) i.value = val; });
+  const cep = form.elements.cep;
+  if (cep) cep.addEventListener("blur", async () => {
+    const n = cep.value.replace(/\D/g, "");
+    if (n.length !== 8) return;
+    try { preencher(await api("GET", `/api/conta/dados-fiscais/cep/${n}`)); form.elements.numero.focus(); } catch (e) { /* preenchimento manual */ }
+  });
+  const bc = $("[data-nf-cnpj]", form);
+  if (bc) bc.onclick = () => ocupado(bc, "Buscando…", async () => {
+    const n = form.elements.documento.value.replace(/\D/g, "");
+    if (n.length !== 14) { toast("Digite os 14 números do CNPJ para buscar.", "erro"); return; }
+    try {
+      const r = await api("GET", `/api/conta/dados-fiscais/cnpj/${n}`);
+      preencher({ ...r, documento: form.elements.documento.value });
+      if (r.situacao && r.situacao !== "ATIVA") toast(`Atenção: situação do CNPJ na Receita: ${r.situacao}.`, "erro");
+    } catch (e) { avisarErro(e); }
+  });
+  form.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const b = form.querySelector("button[type=submit]");
+    await ocupado(b, "Salvando…", async () => {
+      try { const r = await api("PUT", "/api/conta/dados-fiscais", dadosForm(form)); toast("Dados da nota fiscal salvos.", "ok"); if (aoSalvar) aoSalvar(r); }
+      catch (e) { avisarErro(e); }
+    });
+  };
+}
+
+async function modalDadosFiscais(aoSalvar) {
+  let atual = { dados: {} };
+  try { atual = await api("GET", "/api/conta/dados-fiscais"); } catch (e) { /* formulário vazio */ }
+  const m = modal({ titulo: "Dados para a nota fiscal", largo: true,
+    corpo: `<p class="fraco">Emitimos nota fiscal de serviço (NFS-e) para cada pagamento. Informe quem será o tomador: sua empresa (CNPJ) ou você (CPF).</p>${formDadosFiscais(atual.dados, atual.posso_editar !== false)}` });
+  ligarFormDadosFiscais(m, (r) => { m.fechar(); if (aoSalvar) aoSalvar(r); else toast("Pronto. Agora é só clicar de novo para ir ao pagamento.", "ok"); });
+}

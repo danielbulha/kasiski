@@ -25,6 +25,8 @@ function layout() {
   else if (S.plano?.assinatura?.status === "inadimplente") aviso.push(`<div class="faixa-aviso"><span>Não conseguimos cobrar seu cartão. Atualize o pagamento para não perder o acesso.</span><a href="#/conta">Resolver</a></div>`);
   else if (S.plano?.assinatura?.pago_ate && !S.plano.assinatura.recorrente && fmt.dias(S.plano.assinatura.pago_ate) <= 5)
     aviso.push(`<div class="faixa-aviso"><span>Seu plano vence ${fmt.prazo(S.plano.assinatura.pago_ate)} (${fmt.data(S.plano.assinatura.pago_ate)}).</span><a href="#/conta">Renovar</a></div>`);
+  else if (S.plano && S.plano.dados_fiscais_ok === false && ["essencial", "profissional", "business", "consultor", "enterprise"].includes(S.plano.codigo_base) && S.plano?.assinatura?.status)
+    aviso.push(`<div class="faixa-aviso"><span>Complete os <b>dados para a nota fiscal</b> (CPF ou CNPJ e endereço) para recebermos e emitirmos a NFS-e dos seus pagamentos.</span><a href="#/conta?dados-fiscais">Completar agora</a></div>`);
   else if (S.plano?.em_teste) aviso.push(`<div class="faixa-aviso"><span>Você está experimentando o <b>Profissional</b> até ${fmt.data(S.plano.trial_fim)} (${S.plano.uso.analises} de ${S.plano.analises} análises usadas). Depois, a conta volta ao Free sem perder nada.</span><a href="#/conta">Assinar o Profissional</a></div>`);
   else if (S.plano?.codigo === "free" && S.plano?.teste_disponivel) aviso.push(`<div class="faixa-aviso"><span>Você está no <b>Free</b>: ${S.plano.uso.analises} de ${S.plano.analises} análise de edital neste mês.</span><button class="botao pequeno" data-iniciar-teste>Experimentar o Profissional por ${S.plano.teste_dias} dias</button></div>`);
   return `

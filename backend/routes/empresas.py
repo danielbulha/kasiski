@@ -99,7 +99,12 @@ def criar():
 def editar(eid):
     e = empresa_da_conta(eid)
     antes = (e.palavras_chave or "").strip()
+    escopo_antes = (e.segmentos, e.palavras_chave, e.ufs, e.valor_min, e.valor_max)
     _preencher(e, dados())
+    if (e.segmentos, e.palavras_chave, e.ufs, e.valor_min, e.valor_max) != escopo_antes:
+        # o radar passa a buscar outra coisa: some com as sugestões antigas ainda não avaliadas
+        from models import RadarItem
+        RadarItem.query.filter_by(empresa_id=e.id, status="novo").delete(synchronize_session=False)
     if not antes and (e.palavras_chave or "").strip():
         from services import marketing
         marketing.evento_conta(g.conta, "radar_configured", {"empresa_id": e.id})

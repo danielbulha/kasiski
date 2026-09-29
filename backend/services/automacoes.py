@@ -69,7 +69,7 @@ def metricas(conta):
     eds = Edital.query.filter(Edital.empresa_id.in_(ids)).all() if ids else []
     return {
         "empresas": len(ids),
-        "radar_config": any((e.palavras_chave or "").strip() for e in Empresa.query.filter_by(conta_id=conta.id)),
+        "radar_config": any(e._termos_radar() for e in Empresa.query.filter_by(conta_id=conta.id)),
         "radar_itens": RadarItem.query.filter(RadarItem.empresa_id.in_(ids)).count() if ids else 0,
         "editais": len(eds),
         "analises": Analise.query.filter(Analise.edital_id.in_([e.id for e in eds]), Analise.status == "concluida").count() if eds else 0,

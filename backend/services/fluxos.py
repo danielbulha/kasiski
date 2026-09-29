@@ -13,8 +13,14 @@ log = logging.getLogger(__name__)
 
 
 def _empresa_dict(e):
-    return {"razao_social": e.razao_social, "cnpj": e.cnpj, "porte": e.porte, "cnaes": e.cnaes,
-            "atuacao": e.palavras_chave, "ufs": e.ufs}
+    from services import cnae
+    nomes = {"obras": "obras", "servicos_comuns": "serviços comuns", "servicos_continuados": "serviços continuados com mão de obra",
+             "fornecimento": "fornecimento de bens", "saude": "saúde", "educacao": "educação", "ti": "tecnologia da informação",
+             "alimentacao": "alimentação", "transporte": "transporte", "seguranca": "segurança", "outro": "outro"}
+    segs = [nomes.get(s.strip(), s.strip()) for s in (e.segmentos or "").split(",") if s.strip()]
+    return {"razao_social": e.razao_social, "cnpj": e.cnpj, "porte": e.porte,
+            "segmentos_escolhidos_pela_empresa": segs, "atuacao": e.palavras_chave,
+            "termos_do_radar": cnae.termos_radar(e.segmentos, e.palavras_chave), "cnaes": e.cnaes, "ufs": e.ufs}
 
 
 _TERMOS_TIPO_OBJETO = {
@@ -302,9 +308,11 @@ def gerar_peca(tipo, empresa, referencia, pontos, instrucoes):
 
 # ---------------------------------------------------------------- radar
 def atualizar_radar(empresa, usar_ia=True):
-    if not (empresa.palavras_chave or "").strip():
-        raise ErroAPI("Cadastre as palavras-chave de atuação da empresa para usar o radar.")
-    encontrados = pncp.buscar_editais_abertos(empresa.palavras_chave, empresa.ufs or None)
+    from services import cnae
+    termos = cnae.termos_radar(empresa.segmentos, empresa.palavras_chave)
+    if not termos:
+        raise ErroAPI("Marque os segmentos de atuação ou cadastre palavras-chave da empresa para usar o radar.")
+    encontrados = pncp.buscar_editais_abertos(termos, empresa.ufs or None, max_termos=cnae.MAX_TERMOS_RADAR)
     existentes = {r.numero_controle for r in RadarItem.query.filter_by(empresa_id=empresa.id)}
     novos = [e for e in encontrados if e["numero_controle"] not in existentes]
     if empresa.valor_max:

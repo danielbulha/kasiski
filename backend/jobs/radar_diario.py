@@ -26,7 +26,7 @@ def executar():
             if planos.teste_expirado(conta):
                 continue
             for emp in Empresa.query.filter_by(conta_id=conta.id):
-                if not (emp.palavras_chave or "").strip():
+                if not emp._termos_radar():
                     continue
                 try:
                     novos, respostas = fluxos.atualizar_radar(emp)

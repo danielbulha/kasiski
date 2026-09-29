@@ -74,11 +74,15 @@ def _normalizar(item):
     }
 
 
-def buscar_editais_abertos(palavras, ufs=None, paginas=2):
-    """Editais recebendo propostas que contêm as palavras-chave (busca textual do PNCP)."""
+def buscar_editais_abertos(palavras, ufs=None, paginas=2, max_termos=8):
+    """Editais recebendo propostas que contêm as palavras-chave (busca textual do PNCP).
+    palavras: texto separado por vírgula ou lista de termos."""
     resultados = {}
-    termos = [p.strip() for p in (palavras or "").split(",") if p.strip()] or [""]
-    for termo in termos[:8]:
+    if isinstance(palavras, (list, tuple)):
+        termos = [p.strip() for p in palavras if p and p.strip()] or [""]
+    else:
+        termos = [p.strip() for p in (palavras or "").split(",") if p.strip()] or [""]
+    for termo in termos[:max_termos]:
         for pagina in range(1, paginas + 1):
             params = {"q": termo, "tipos_documento": "edital", "ordenacao": "-data", "pagina": pagina,
                       "tam_pagina": 20, "status": "recebendo_proposta"}

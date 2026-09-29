@@ -119,7 +119,11 @@ class Empresa(db.Model):
     def to_dict(self):
         return {"id": self.id, "razao_social": self.razao_social, "cnpj": self.cnpj, "porte": self.porte,
                 "cnaes": self.cnaes, "segmentos": self.segmentos, "palavras_chave": self.palavras_chave, "ufs": self.ufs,
-                "valor_min": self.valor_min, "valor_max": self.valor_max}
+                "valor_min": self.valor_min, "valor_max": self.valor_max, "termos_radar": self._termos_radar()}
+
+    def _termos_radar(self):
+        from services import cnae
+        return cnae.termos_radar(self.segmentos, self.palavras_chave)
 
 
 class Documento(db.Model):

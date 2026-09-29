@@ -316,3 +316,49 @@ def texto_cnaes(cnaes):
     ordenados = sorted(cnaes or [], key=lambda c: not c.get("principal"))
     return "\n".join(f"{formatar(c.get('codigo'))} {c.get('descricao') or ''}{' (principal)' if c.get('principal') else ''}".strip()
                      for c in ordenados if re.sub(r"\D", "", str(c.get("codigo") or "")).strip("0"))
+
+
+# ---------------------------------------------------------------- termos do radar a partir dos segmentos marcados
+# Termos como os órgãos escrevem no objeto do edital. "Serviços comuns" e "Fornecimento" descrevem o TIPO de
+# contratação, não o setor: sozinhos trariam qualquer edital do país, então não geram termos de busca.
+TERMOS_SEGMENTO = {
+    "obras": ["obras de engenharia", "reforma predial", "pavimentação", "construção"],
+    "servicos_continuados": ["limpeza", "conservação predial", "portaria", "recepção"],
+    "saude": ["medicamentos", "material hospitalar", "equipamentos médicos", "serviços de saúde"],
+    "educacao": ["material escolar", "merenda escolar", "transporte escolar", "mobiliário escolar"],
+    "ti": ["software", "tecnologia da informação", "equipamentos de informática", "licenciamento"],
+    "alimentacao": ["gêneros alimentícios", "fornecimento de refeições", "alimentação"],
+    "transporte": ["locação de veículos", "transporte", "combustível", "manutenção de frota"],
+    "seguranca": ["vigilância patrimonial", "segurança eletrônica", "monitoramento"],
+    "servicos_comuns": [], "fornecimento": [], "outro": [],
+}
+MAX_TERMOS_RADAR = 12
+
+
+def termos_radar(segmentos, palavras, limite=MAX_TERMOS_RADAR):
+    """Termos efetivamente buscados no PNCP: os segmentos marcados têm prioridade (até metade das vagas,
+    alternando entre eles) e as palavras-chave completam a lista. Sem repetição."""
+    segs = [s.strip() for s in (segmentos or "").split(",") if s.strip()]
+    kws = [p.strip() for p in (palavras or "").split(",") if p.strip()]
+    termos, vistos = [], set()
+
+    def add(t):
+        k = _chave(t)
+        if k and k not in vistos and len(termos) < limite:
+            vistos.add(k)
+            termos.append(t)
+
+    dos_segmentos = []
+    for rodada in range(4):
+        for s in segs:
+            lista = TERMOS_SEGMENTO.get(s, [])
+            if rodada < len(lista):
+                dos_segmentos.append(lista[rodada])
+    teto_seg = limite // 2 if kws else limite
+    for t in dos_segmentos[:teto_seg]:
+        add(t)
+    for t in kws:
+        add(t)
+    for t in dos_segmentos[teto_seg:]:  # sobrou vaga: mais termos dos segmentos
+        add(t)
+    return termos

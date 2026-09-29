@@ -279,7 +279,9 @@ DOCUMENTO DO CONCORRENTE:
 
 # ---------------------------------------------------------------- radar (IA barata)
 def pontuar_radar(empresa, editais):
-    sistema = BASE + " Avalie rapidamente a aderência de editais ao perfil de uma empresa."
+    sistema = BASE + (" Avalie rapidamente a aderência de editais ao perfil de uma empresa. Os SEGMENTOS escolhidos pela empresa "
+                      "e as palavras-chave de atuação definem o que ela quer disputar e têm prioridade; os CNAEs só servem de apoio "
+                      "(uma empresa pode atuar em segmentos além dos CNAEs cadastrados).")
     usuario = f"""PERFIL DA EMPRESA: {_j(empresa)}
 EDITAIS: {_j(editais)}
 Devolva JSON: {{"notas": [{{"numero_controle": "", "nota": 0, "motivo": "uma frase"}}]}}

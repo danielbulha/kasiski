@@ -110,7 +110,34 @@ def painel():
         "contratos_ativos": Contrato.query.filter(Contrato.empresa_id.in_(ids),
                                                   (Contrato.fim.is_(None)) | (Contrato.fim >= date.today())).count(),
         "primeiros_passos": _primeiros_passos(ids),
+        "doublecheck": _resumo_doublecheck(ids),
     })
+
+
+def _resumo_doublecheck(ids):
+    """Quanto o DoubleCheck conferiu: itens verificados por estado, nas análises de edital, de concorrente e nas peças."""
+    from models import Analise, AnaliseConcorrente, Peca
+    from services.fluxos import resumo_doublecheck
+    ids = ids or [0]
+    eds = [e.id for e in Edital.query.filter(Edital.empresa_id.in_(ids)).with_entities(Edital.id)]
+    tot = {"confirmado": 0, "divergencia": 0, "revisao": 0, "analises": 0}
+    fontes = []
+    if eds:
+        fontes += Analise.query.filter(Analise.edital_id.in_(eds), Analise.status == "concluida").order_by(Analise.id.desc()).limit(200).all()
+        fontes += AnaliseConcorrente.query.filter(AnaliseConcorrente.edital_id.in_(eds)).order_by(AnaliseConcorrente.id.desc()).limit(200).all()
+    for a in fontes:
+        n = resumo_doublecheck(a.resultado or {})
+        if n["total"]:
+            tot["analises"] += 1
+            for k in ("confirmado", "divergencia", "revisao"):
+                tot[k] += n[k]
+    for p in Peca.query.filter(Peca.empresa_id.in_(ids)).order_by(Peca.id.desc()).limit(200):
+        dc = p.doublecheck or {}
+        if dc.get("status") in ("concluido", "desatualizado") and dc.get("estado") in tot:
+            tot["analises"] += 1
+            tot[dc["estado"]] += 1
+    tot["total"] = tot["confirmado"] + tot["divergencia"] + tot["revisao"]
+    return tot
 
 
 def _primeiros_passos(ids):

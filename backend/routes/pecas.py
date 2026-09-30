@@ -90,8 +90,28 @@ def gerar(eid):
     planos.registrar_uso(g.conta, "pecas", [r], cobravel=True)
     from services import marketing
     marketing.evento_conta(g.conta, "legal_document_generated", {"tipo": tipo})
+    p.doublecheck = {"status": "processando", "pontos": [{k: str(x.get(k) or "")[:400] for k in ("clausula", "tema", "descricao", "por_que_restringe", "fundamento", "pagina")}
+                                                         for x in pontos[:12] if isinstance(x, dict)]}
     db.session.commit()
+    _rodar_doublecheck(p.id)
     return jsonify(p.to_dict()), 201
+
+
+def _rodar_doublecheck(pid):
+    from services import tarefas
+    tarefas.rodar(fluxos.doublecheck_peca, pid)
+
+
+@bp.post("/pecas/<int:pid>/doublecheck")
+@login_requerido
+def refazer_doublecheck(pid):
+    """Roda o DoubleCheck de novo (depois de editar a minuta, por exemplo)."""
+    p = _peca(pid)
+    dc = dict(p.doublecheck or {})
+    p.doublecheck = {"status": "processando", "pontos": dc.get("pontos") or []}
+    db.session.commit()
+    _rodar_doublecheck(p.id)
+    return jsonify(p.to_dict())
 
 
 def _peca(pid):
@@ -115,6 +135,8 @@ def editar(pid):
     p = _peca(pid)
     d = dados()
     if "conteudo" in d:
+        if d["conteudo"] != p.conteudo and (p.doublecheck or {}).get("status") == "concluido":
+            p.doublecheck = {**p.doublecheck, "status": "desatualizado"}  # a minuta mudou depois da verificação
         p.conteudo = d["conteudo"]
     if "titulo" in d:
         p.titulo = d["titulo"][:300]

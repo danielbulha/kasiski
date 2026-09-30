@@ -337,13 +337,16 @@ class Peca(NaLixeira, db.Model):
     conteudo = db.Column(db.Text)
     status = db.Column(db.String(30), default="rascunho")  # rascunho, revisao_solicitada, revisada
     demonstracao = db.Column(db.Boolean, default=False)
+    doublecheck = db.Column(db.JSON)  # verificação independente da minuta: {status, estado, resumo, achados, pontos}
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
     atualizado_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def to_dict(self, completo=True):
+        dc = dict(self.doublecheck or {})
+        dc.pop("pontos", None)
         d = {"id": self.id, "empresa_id": self.empresa_id, "edital_id": self.edital_id, "contrato_id": self.contrato_id,
              "tipo": self.tipo, "titulo": self.titulo, "status": self.status, "demonstracao": self.demonstracao,
-             "criado_em": _iso(self.criado_em), "atualizado_em": _iso(self.atualizado_em)}
+             "doublecheck": dc or None, "criado_em": _iso(self.criado_em), "atualizado_em": _iso(self.atualizado_em)}
         if completo:
             d["conteudo"] = self.conteudo
         return d

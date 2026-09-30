@@ -61,16 +61,34 @@ def _data_iso(v):
         return None
 
 
-def _verificar(texto, itens, familia_principal):
-    """Envia os apontamentos para outra IA conferir. Devolve (mapa id->verificação, resposta)."""
+MOTOR_VERIFICACAO = "KASISKI Verification Engine"
+
+
+def dc_normalizar(v, modelo=None):
+    """Resposta do verificador -> verificação DoubleCheck com um dos três estados (confirmado, divergencia, revisao).
+    Mantém "confirmado" (True/False/None) por compatibilidade com análises antigas."""
+    res = (v.get("resultado") or "").lower()
+    if res not in ("confirmado", "divergencia", "revisao"):
+        res = "confirmado" if v.get("confirmado") is True else "divergencia" if v.get("confirmado") is False else "revisao"
+    return {"estado": res, "confirmado": True if res == "confirmado" else False if res == "divergencia" else None,
+            "comentario": str(v.get("comentario") or "")[:600], "leitura_alternativa": str(v.get("leitura_alternativa") or "")[:600] or None,
+            "trecho": str(v.get("trecho") or "")[:400] or None, "pagina": str(v.get("pagina") or "")[:20] or None,
+            "motor": MOTOR_VERIFICACAO, "modelo": modelo}
+
+
+SEM_RETORNO = {"estado": "revisao", "confirmado": None, "comentario": "O verificador não retornou para este item. Revisão humana recomendada.",
+               "motor": MOTOR_VERIFICACAO}
+
+
+def _verificar(texto, itens, familia_principal, contexto=None):
+    """DoubleCheck: envia os itens para outra IA conferir. Devolve (mapa id->verificação, resposta)."""
     if not itens:
         return {}, None
-    s, u, demo = prompts.verificacao(cortar(texto), itens)
-    r = llm.chamar("verificacao", s, u, max_tokens=3000, demo=demo, evitar_familia=familia_principal)
+    s, u, demo = prompts.verificacao(cortar(texto), itens, contexto)
+    r = llm.chamar("verificacao", s, u, max_tokens=6000, demo=demo, evitar_familia=familia_principal)
     try:
         dados = llm.extrair_json(r.texto)
-        mapa = {str(v.get("id")): {"confirmado": bool(v.get("confirmado")), "comentario": v.get("comentario", ""),
-                                  "modelo": r.modelo} for v in dados.get("verificacoes", [])}
+        mapa = {str(v.get("id")): dc_normalizar(v, r.modelo) for v in dados.get("verificacoes", [])}
     except Exception as e:
         log.warning("Verificação ilegível: %s", e)
         mapa = {}
@@ -133,11 +151,22 @@ def analisar_edital(edital, empresa, analise=None):
         rk["id"] = f"r{i}"
         itens.append({"id": rk["id"], "tipo": "risco", "tema": rk.get("tema"), "descricao": rk.get("descricao"),
                       "pagina": rk.get("pagina")})
-    _etapa(analise, "Verificação cruzada com a segunda IA")
-    mapa, r_ver = _verificar(texto, itens, r_an.familia)
-    for lista in (resultado.get("clausulas_restritivas", []), resultado.get("riscos", [])):
+    # exigências de habilitação e setoriais: a exigência está no edital como foi lida? o documento do cofre atende?
+    for i, c in enumerate(resultado.get("checklist", []) or []):
+        c["id"] = f"k{i}"
+        itens.append({"id": c["id"], "tipo": "exigencia_habilitacao", "exigencia": c.get("exigencia"), "pagina": c.get("pagina"),
+                      "situacao_atribuida": c.get("status"), "documento_do_cofre": c.get("documento_cofre")})
+    for i, c in enumerate(resultado.get("checklist_setorial", []) or []):
+        c["id"] = f"t{i}"
+        itens.append({"id": c["id"], "tipo": "exigencia_setorial", "exigencia": c.get("exigencia"), "pagina": c.get("pagina"),
+                      "fundamento": c.get("fundamento")})
+    _etapa(analise, "DoubleCheck: verificação independente")
+    mapa, r_ver = _verificar(texto, itens, r_an.familia, contexto={"cofre": cofre})
+    for lista in (resultado.get("clausulas_restritivas", []), resultado.get("riscos", []),
+                  resultado.get("checklist", []) or [], resultado.get("checklist_setorial", []) or []):
         for it in lista:
-            it["verificacao"] = mapa.get(it["id"], {"confirmado": None, "comentario": "Sem retorno do revisor."})
+            it["verificacao"] = mapa.get(it["id"], dict(SEM_RETORNO))
+    resultado["doublecheck"] = resumo_doublecheck(resultado)
 
     resultado["extracao"] = extracao
 
@@ -173,6 +202,54 @@ def ler_cronograma(edital):
     mudou = cronograma.montar(edital, extracao)
     gerar_prazos_edital(edital)
     return mudou
+
+
+def resumo_doublecheck(resultado):
+    """Contagem dos três estados nos itens verificados de uma análise."""
+    n = {"confirmado": 0, "divergencia": 0, "revisao": 0}
+    for chave in ("clausulas_restritivas", "riscos", "checklist", "checklist_setorial", "apontamentos", "descartados"):
+        for it in resultado.get(chave) or []:
+            v = it.get("verificacao") or {}
+            est = v.get("estado") or ("confirmado" if v.get("confirmado") is True else "divergencia" if v.get("confirmado") is False else "revisao" if v else None)
+            if est:
+                n[est] += 1
+    n["total"] = sum(n.values())
+    return n
+
+
+def doublecheck_peca(peca_id):
+    """Roda em segundo plano depois de gerar a peça: o verificador procura falhas antes de o usuário protocolar."""
+    from models import Contrato, Edital, Peca
+    p = Peca.query.get(peca_id)
+    if not p:
+        return
+    ref = {}
+    documento = ""
+    if p.edital_id:
+        ed = Edital.query.get(p.edital_id)
+        if ed:
+            ref = {"orgao": ed.orgao, "numero": ed.numero, "objeto": ed.objeto,
+                   "data_sessao": ed.data_abertura.isoformat() if ed.data_abertura else None}
+            documento = cortar(ed.texto or "", 60000)
+    elif p.contrato_id:
+        ct = Contrato.query.get(p.contrato_id)
+        if ct:
+            ref = {"orgao": ct.orgao, "numero": ct.numero, "objeto": ct.objeto}
+            documento = cortar(ct.texto or "", 60000) if getattr(ct, "texto", None) else ""
+    s, u, demo = prompts.verificacao_peca(prompts.TIPOS_PECA.get(p.tipo, p.tipo), p.conteudo or "", ref,
+                                          (p.doublecheck or {}).get("pontos") or [], documento)
+    try:
+        r = llm.chamar("verificacao", s, u, max_tokens=3000, demo=demo)
+        d = llm.extrair_json(r.texto) or {}
+        res = d.get("resultado") if d.get("resultado") in ("confirmado", "divergencia", "revisao") else "revisao"
+        p.doublecheck = {"status": "concluido", "estado": res, "resumo": str(d.get("resumo") or "")[:500],
+                         "achados": [{k: str(a.get(k) or "")[:500] for k in ("tipo", "trecho", "comentario")} for a in (d.get("achados") or [])[:12]],
+                         "motor": MOTOR_VERIFICACAO, "concluido_em": datetime.utcnow().isoformat(timespec="minutes")}
+    except Exception as e:
+        log.warning("DoubleCheck da peça %s falhou: %s", peca_id, e)
+        p.doublecheck = {"status": "erro", "estado": "revisao", "resumo": "Não foi possível concluir a verificação agora. Revise a peça com atenção.",
+                         "achados": [], "motor": MOTOR_VERIFICACAO}
+    db.session.commit()
 
 
 def gerar_prazos_edital(edital):
@@ -328,9 +405,10 @@ def analisar_concorrente(edital, concorrente, tipo, texto, nome_arquivo, valor_p
     confirmados, descartados = [], []
     for a in aps:
         if a.get("regra_automatica"):
-            a["verificacao"] = {"confirmado": True, "comentario": "Regra objetiva / dado público.", "modelo": "regra"}
+            a["verificacao"] = {"estado": "confirmado", "confirmado": True, "comentario": "Regra objetiva da lei aplicada a dado público.",
+                                "motor": "KASISKI Rule Engine", "modelo": "regra"}
         else:
-            a["verificacao"] = mapa.get(a["id"], {"confirmado": False, "comentario": "Sem confirmação do revisor."})
+            a["verificacao"] = mapa.get(a["id"], dict(SEM_RETORNO))
         (confirmados if a["verificacao"]["confirmado"] else descartados).append(a)
     ordem = {"forte": 0, "medio": 1, "fraco": 2}
     resultado["apontamentos"] = sorted(confirmados, key=lambda a: ordem.get(a.get("forca"), 3))

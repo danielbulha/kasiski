@@ -180,22 +180,63 @@ EDITAL:
 
 
 # ---------------------------------------------------------------- verificação cruzada (outra IA)
-def verificacao(texto, itens):
-    sistema = BASE + (" Você é o REVISOR independente de outra IA. Confira cada apontamento contra o documento "
-                      "original e contra a lei. Seja cético: só confirme o que o texto sustenta.")
-    usuario = f"""Confira os apontamentos abaixo. Para cada um, devolva se o documento e a lei sustentam o que foi dito.
+def verificacao(texto, itens, contexto=None):
+    """KASISKI DoubleCheck: o verificador independente confere cada item contra o documento (e a lei)."""
+    sistema = BASE + (" Você é o VERIFICADOR independente do protocolo DoubleCheck: outra IA fez a análise primária e você "
+                      "confere cada item contra o documento original e contra a lei. Seja cético: só confirme o que o texto "
+                      "sustenta. Se entender o trecho de outro jeito, diga qual é a outra leitura. Se o documento não permitir "
+                      "concluir, peça revisão humana.")
+    extra = f"\nCONTEXTO ADICIONAL (dados da empresa, para conferir a correspondência com o cofre): {_j(contexto)}\n" if contexto else ""
+    usuario = f"""Confira os itens abaixo. Para cada um, classifique:
+- "confirmado": o documento sustenta o que foi dito (exigência, valor, página e referência batem);
+- "divergencia": o documento diz outra coisa ou admite outra interpretação razoável (explique a outra leitura);
+- "revisao": o documento não permite concluir (trecho ilegível, ambíguo, ausente) e é preciso um olhar humano.
+Copie em "trecho" a frase do documento que sustenta a sua conclusão (literal, até 300 caracteres) e indique a página ([pág. N]).
+{extra}
+ITENS DA ANÁLISE PRIMÁRIA: {_j(itens)}
 
-APONTAMENTOS: {_j(itens)}
-
-Devolva JSON: {{"verificacoes": [{{"id": "", "confirmado": true, "comentario": "curto, dizendo o que confere ou o que está errado"}}]}}
+Devolva JSON: {{"verificacoes": [{{"id": "", "resultado": "confirmado|divergencia|revisao", "comentario": "curto, dizendo o que confere ou o que está errado",
+ "leitura_alternativa": "só em divergência: como o verificador entende o trecho", "trecho": "", "pagina": ""}}]}}
 
 DOCUMENTO:
 {texto}"""
-    demo = {"verificacoes": [{"id": i["id"], "confirmado": True, "comentario": "Confere com o documento."}
-                             for i in itens]}
+    demo = {"verificacoes": [{"id": i["id"], "resultado": "confirmado", "comentario": "Confere com o documento.",
+                              "trecho": "", "pagina": i.get("pagina") or ""} for i in itens]}
     if len(itens) > 2:
-        demo["verificacoes"][-1] = {"id": itens[-1]["id"], "confirmado": False,
-                                    "comentario": "Não localizei esse trecho no documento."}
+        demo["verificacoes"][-1] = {"id": itens[-1]["id"], "resultado": "divergencia",
+                                    "comentario": "O trecho citado trata de outra exigência.",
+                                    "leitura_alternativa": "O prazo mencionado se refere à vigência do contrato, não à experiência mínima.",
+                                    "trecho": "", "pagina": itens[-1].get("pagina") or ""}
+    if len(itens) > 4:
+        demo["verificacoes"][-2] = {"id": itens[-2]["id"], "resultado": "revisao",
+                                    "comentario": "O documento não permite concluir com segurança. Revisão recomendada.",
+                                    "trecho": "", "pagina": ""}
+    return sistema, usuario, demo
+
+
+def verificacao_peca(tipo_nome, peca_texto, referencia, pontos, documento):
+    """DoubleCheck da peça: o verificador procura falhas antes de a peça chegar ao usuário."""
+    sistema = BASE + (" Você é o VERIFICADOR independente do protocolo DoubleCheck. Outra IA redigiu a minuta abaixo. "
+                      "Procure, com ceticismo: inconsistência factual, argumento sem suporte no documento, referência legal "
+                      "errada ou inexistente, contradição interna, interpretação alternativa relevante e pontos que exigem "
+                      "revisão humana. Não reescreva a peça.")
+    usuario = f"""PEÇA: {tipo_nome}
+DADOS DE REFERÊNCIA: {_j(referencia)}
+PONTOS QUE A PEÇA DEVIA SUSTENTAR: {_j(pontos)}
+
+MINUTA:
+{peca_texto}
+
+DOCUMENTO DE ORIGEM (edital ou contrato; pode estar vazio):
+{documento or "(não disponível)"}
+
+Devolva JSON: {{"resultado": "confirmado|divergencia|revisao", "resumo": "uma frase",
+ "achados": [{{"tipo": "inconsistencia_factual|sem_suporte|referencia_errada|contradicao|interpretacao_alternativa|revisao_humana",
+   "trecho": "trecho da minuta", "comentario": "o que conferir ou corrigir"}}]}}
+Use "confirmado" quando não houver achados relevantes; "divergencia" quando houver erro ou leitura alternativa; "revisao" quando
+faltar informação para conferir."""
+    demo = {"resultado": "revisao", "resumo": "Minuta coerente; confira os dados entre colchetes antes de protocolar.",
+            "achados": [{"tipo": "revisao_humana", "trecho": "[dados a completar]", "comentario": "Complete os dados marcados antes de protocolar."}]}
     return sistema, usuario, demo
 
 

@@ -417,6 +417,8 @@ def extras():
 /r/:t              /relatorio/?t=:t&utm_source=prospeccao&utm_medium=outbound&utm_campaign=relatorio 302
 /ferramentas/analisar-edital      /analisar-edital/        301
 /ferramentas/consultar-concorrente /consultar-concorrente/ 301
+/verificacao-cruzada   /doublecheck/  301
+/verificacao-cruzada/  /doublecheck/  301
 """)
     import seguranca
     for destino in (SAIDA, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend")):
@@ -443,7 +445,10 @@ if __name__ == "__main__":
     pg_relatorio()
     pg_consultorias()
     for s in C.SOLUCOES:
-        pg_solucao(s)
+        if not s.get("pagina_propria"):
+            pg_solucao(s)
+    import doublecheck
+    doublecheck.pg_doublecheck(pagina, migalhas, SOFT)
     for lp in C.LPS:
         pg_lp(lp)
     pg_glossario()

@@ -102,8 +102,11 @@ def analisar_edital(edital, empresa, analise=None):
             setattr(edital, campo, str(extracao[campo])[:300])
     if not edital.valor_estimado and isinstance(extracao.get("valor_estimado"), (int, float)):
         edital.valor_estimado = float(extracao["valor_estimado"])
-    if not edital.data_abertura and _data_iso(extracao.get("data_abertura")):
-        edital.data_abertura = _data_iso(extracao["data_abertura"])
+    # datas: o que a IA leu no edital, conferido com a leitura do texto e com o PNCP (services/cronograma.py);
+    # só a data informada pelo usuário tem precedência
+    from services import cronograma
+    cronograma.montar(edital, extracao)
+    gerar_prazos_edital(edital)
 
     # 2) Análise jurídica com a Claude
     _etapa(analise, "Conferindo habilitação e cláusulas")
@@ -149,8 +152,30 @@ def analisar_edital(edital, empresa, analise=None):
     return analise, [r_ext, r_an, r_ver]
 
 
+def ler_cronograma(edital):
+    """Leitura rápida só das datas pela IA (sem a análise completa). Guarda no cronograma e refaz os prazos."""
+    if not edital.texto:
+        return False
+    from services import cronograma
+    s, u, demo = prompts.cronograma_edital(cortar(edital.texto, 60000))
+    r = llm.chamar("barata", s, u, max_tokens=1200, demo=demo)
+    try:
+        dados = llm.extrair_json(r.texto) or {}
+    except Exception as e:
+        log.info("Cronograma ilegível: %s", e)
+        dados = {}
+    ult = Analise.query.filter_by(edital_id=edital.id, status="concluida").order_by(Analise.id.desc()).first()
+    extracao = dict(((ult.resultado or {}).get("extracao") if ult else None) or {})
+    if dados:
+        extracao["cronograma"] = dados
+        extracao["data_abertura"] = dados.get("data_sessao") or extracao.get("data_abertura")
+    mudou = cronograma.montar(edital, extracao)
+    gerar_prazos_edital(edital)
+    return mudou
+
+
 def gerar_prazos_edital(edital):
-    """Cria/atualiza os prazos automáticos a partir da data de abertura.
+    """Cria/atualiza os prazos automáticos a partir do cronograma (sessão, envio de propostas, impugnação).
 
     Em pregão/concorrência (regra geral), usa o art. 164: esclarecimento e impugnação até 3 dias úteis
     antes da sessão. Em dispensa/inexigibilidade (contratação direta), não existe sessão de disputa nem
@@ -160,29 +185,63 @@ def gerar_prazos_edital(edital):
     não há sessão pública para esse tipo de processo)."""
     if not edital.data_abertura:
         return
-    Prazo.query.filter_by(edital_id=edital.id, automatico=True).filter(
-        Prazo.tipo.in_(["esclarecimento", "impugnacao", "sessao", "aviso_contratacao_direta"])).delete(
-        synchronize_session=False)
+    from services.cronograma import FONTES
+    tipos = ["esclarecimento", "impugnacao", "sessao", "aviso_contratacao_direta", "inicio_propostas", "fim_propostas"]
+    antigos = Prazo.query.filter_by(edital_id=edital.id, automatico=True).filter(Prazo.tipo.in_(tipos)).all()
+    feitos = {(p.tipo, p.data) for p in antigos if p.concluido}  # conserva o "concluído" de prazos que não mudaram
+    for p in antigos:
+        db.session.delete(p)
+    db.session.flush()
     base = {"empresa_id": edital.empresa_id, "edital_id": edital.id, "automatico": True}
+    cron = (edital.cronograma or {})
+    ev = cron.get("eventos") or {}
+    conferir = "" if cron.get("confirmado") else " · confira no edital"
+
+    def fonte(chave):
+        f = (ev.get(chave) or {}).get("fonte")
+        pag = (ev.get(chave) or {}).get("pagina")
+        return f"Data {FONTES.get(f, 'do cadastro')}" + (f" (pág. {pag})" if pag else "") if f else ""
+
+    def data_ev(chave):
+        v = (ev.get(chave) or {}).get("data")
+        try:
+            return datetime.fromisoformat(v) if v else None
+        except ValueError:
+            return None
+
+    def novo(**kw):
+        p = Prazo(**kw, **base)
+        p.concluido = (p.tipo, p.data) in feitos
+        p.fundamento = (p.fundamento or "")[:300]
+        db.session.add(p)
 
     if eh_contratacao_direta(edital.modalidade):
         from services.prazos import somar_uteis
         fim_manifestacao = somar_uteis(edital.data_abertura.date(), 3)
-        db.session.add(Prazo(titulo="Fim do prazo de manifestação sobre o aviso de contratação direta",
-                             data=fim_do_dia(fim_manifestacao), tipo="aviso_contratacao_direta",
-                             fundamento="Lei 14.133, art. 75, §3º — divulgação prévia mínima de 3 dias úteis "
-                                        "antes da celebração do contrato", **base))
+        novo(titulo="Fim do prazo de manifestação sobre o aviso de contratação direta",
+             data=fim_do_dia(fim_manifestacao), tipo="aviso_contratacao_direta",
+             fundamento="Lei 14.133, art. 75, §3º — divulgação prévia mínima de 3 dias úteis antes da celebração do contrato")
         return
 
-    limite = subtrair_uteis(edital.data_abertura.date(), 3)
-    db.session.add_all([
-        Prazo(titulo="Último dia para pedido de esclarecimento", data=fim_do_dia(limite), tipo="esclarecimento",
-              fundamento="Lei 14.133, art. 164 — até 3 dias úteis antes da abertura", **base),
-        Prazo(titulo="Último dia para impugnar o edital", data=fim_do_dia(limite), tipo="impugnacao",
-              fundamento="Lei 14.133, art. 164 — até 3 dias úteis antes da abertura", **base),
-        Prazo(titulo="Sessão pública de disputa", data=edital.data_abertura, tipo="sessao",
-              fundamento=edital.portal_disputa or "Conferir portal no edital", **base),
-    ])
+    sessao = edital.data_abertura
+    inicio, fim = data_ev("inicio_propostas"), data_ev("fim_propostas")
+    if inicio and inicio.date() < sessao.date():
+        novo(titulo="Início do envio de propostas e documentos", data=inicio, tipo="inicio_propostas",
+             fundamento=f"A partir desta data o sistema do órgão aceita propostas e documentos. {fonte('inicio_propostas')}{conferir}")
+    if fim and fim < sessao and (sessao - fim).total_seconds() > 3600:
+        novo(titulo="Fim do envio de propostas e documentos", data=fim, tipo="fim_propostas",
+             fundamento=f"Depois disso o sistema não aceita propostas. {fonte('fim_propostas')}{conferir}")
+    limite = fim_do_dia(subtrair_uteis(sessao.date(), 3))
+    for tipo, titulo in (("esclarecimento", "Último dia para pedido de esclarecimento"), ("impugnacao", "Último dia para impugnar o edital")):
+        do_edital = data_ev(tipo)
+        if do_edital and do_edital.date() < sessao.date() and (ev.get(tipo) or {}).get("fonte") != "pncp":
+            data = do_edital if (do_edital.hour or do_edital.minute) else fim_do_dia(do_edital.date())
+            novo(titulo=titulo, data=data, tipo=tipo, fundamento=f"Prazo fixado no edital. {fonte(tipo)}{conferir}")
+        else:
+            novo(titulo=titulo, data=limite, tipo=tipo,
+                 fundamento=f"Lei 14.133, art. 164 — até 3 dias úteis antes da abertura{conferir}")
+    novo(titulo="Sessão pública de disputa", data=sessao, tipo="sessao",
+         fundamento=f"{edital.portal_disputa or 'Conferir portal no edital'}. {fonte('sessao')}{conferir}")
 
 
 def gerar_prazos_recurso(edital, data_intimacao):

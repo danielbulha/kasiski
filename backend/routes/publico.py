@@ -279,6 +279,39 @@ def relatorio_nao_contatar(token):
     return jsonify({"ok": True})
 
 
+_CSP_PAGINA = {"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"}
+
+
+def _optout_prospect(p, origem):
+    p.status = "nao_contatar"
+    p.notas = ((p.notas or "") + f"\nPediu para não ser contatada ({origem}) em {datetime.utcnow():%d/%m/%Y}.").strip()[:4000]
+    if p.lead_id:
+        lead = Lead.query.get(p.lead_id)
+        if lead:
+            lead.marketing_optout = True
+    db.session.commit()
+
+
+@bp.route("/prospect/<token>/sair", methods=["GET", "POST"])
+def prospect_sair(token):
+    """Descadastro do e-mail de prospecção. GET mostra a confirmação; POST (botão ou one-click do provedor) aplica."""
+    from flask import Response
+    from models import Prospect
+    p = Prospect.query.filter_by(token=(token or "")[:40]).first() if token else None
+    estilo = ("<style>body{font-family:Arial,sans-serif;background:#F4F3EF;color:#071D2D;display:flex;justify-content:center;padding:48px 16px}"
+              "main{background:#fff;border-radius:10px;padding:28px;max-width:460px}button{font:inherit;font-weight:700;background:#071D2D;color:#fff;"
+              "border:0;border-radius:6px;padding:10px 18px;cursor:pointer}</style>")
+    if request.method == "POST":
+        if p and p.status != "nao_contatar":
+            _optout_prospect(p, "link do e-mail")
+        return Response(f"<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width'>{estilo}"
+                        "<main><h1>Pronto.</h1><p>Sua empresa saiu de todas as listas de contato do Kasiski. Não enviaremos novos e-mails.</p></main>",
+                        mimetype="text/html", headers=_CSP_PAGINA)
+    return Response(f"<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width'>{estilo}"
+                    "<main><h1>Não receber contatos do Kasiski</h1><p>Confirme para que sua empresa saia das nossas listas de contato comercial.</p>"
+                    "<form method='post'><button type='submit'>Confirmar</button></form></main>", mimetype="text/html", headers=_CSP_PAGINA)
+
+
 # ---------------------------------------------------------------- leads e eventos
 @bp.post("/leads")
 def leads():

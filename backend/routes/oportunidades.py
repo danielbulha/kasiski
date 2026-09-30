@@ -36,7 +36,9 @@ def quadro(eid):
     todos = Edital.query.filter_by(empresa_id=eid).order_by(Edital.data_abertura.asc().nullslast(), Edital.id.desc()).all()
     eds = [e for e in todos if not arquivo_licitacao.fora_do_quadro(e)]  # encerradas há mais de 15 dias ficam só no Arquivo
     mudou = False
+    dados_radar = {r.numero_controle: r.dados for r in RadarItem.query.filter_by(empresa_id=eid) if r.numero_controle}
     for ed in eds:  # eventos que não dependem do PNCP (data da sessão) andam na hora
+        mudou = op.corrigir_sessao(ed, dados_radar.get(ed.numero_controle)) or mudou
         if ed.etapa is None:
             ed.etapa = op.etapa_de(ed)
             mudou = True

@@ -74,6 +74,9 @@ class Config:
     # ------------------------------------------------------------ e-mail (Resend) e verificação
     RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
     EMAIL_REMETENTE = os.getenv("EMAIL_REMETENTE", "Kasiski <nao-responda@kasiski.com.br>")
+    # e-mails de prospecção enviados pelo Admin (as respostas voltam para esta caixa)
+    PROSPECCAO_REMETENTE = os.getenv("PROSPECCAO_REMETENTE", "Daniel | Kasiski <daniel@kasiski.com.br>")
+    PROSPECCAO_LIMITE_DIA = int(os.getenv("PROSPECCAO_LIMITE_DIA", "60"))   # teto diário (protege a reputação do domínio)
     # auto = exige o código só quando há como enviar e-mail (RESEND_API_KEY preenchida); sim / nao forçam
     VERIFICAR_EMAIL = os.getenv("VERIFICAR_EMAIL", "auto").lower()
     USD_BRL = float(os.getenv("USD_BRL", "5.5"))

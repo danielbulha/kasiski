@@ -68,6 +68,9 @@ def _normalizar(item):
         "valor_estimado": item.get("valorTotalEstimado") or item.get("valor_global"),
         "data_abertura": item.get("dataAberturaProposta") or item.get("data_inicio_vigencia"),
         "data_encerramento": item.get("dataEncerramentoProposta") or item.get("data_fim_vigencia"),
+        # sessão pública: no PNCP, "abertura da proposta" é o início do recebimento (geralmente a publicação);
+        # a disputa acontece no fim do recebimento de propostas
+        "data_sessao": item.get("dataEncerramentoProposta") or item.get("dataAberturaProposta") or item.get("data_fim_vigencia"),
         "portal_disputa": link,
         "link": url_pncp or link,
         "numero": item.get("numeroCompra") or item.get("numero") or "",
@@ -353,6 +356,7 @@ def situacao_compra(numero_controle, timeout=20):
     return {"situacao": d.get("situacaoCompraNome") or d.get("situacaoCompra") or "",
             "unidade_codigo": str(un.get("codigoUnidade") or "") or None, "unidade_nome": un.get("nomeUnidade"),
             "data_abertura": d.get("dataAberturaProposta"), "data_encerramento": d.get("dataEncerramentoProposta"),
+            "data_sessao": d.get("dataEncerramentoProposta") or d.get("dataAberturaProposta"),
             "modalidade": d.get("modalidadeNome"), "valor_estimado": d.get("valorTotalEstimado"),
             "valor_homologado": d.get("valorTotalHomologado")}
 

@@ -235,6 +235,8 @@ class Edital(NaLixeira, db.Model):
     unidade_nome = db.Column(db.String(300))
     pncp_situacao = db.Column(db.String(80))
     pncp_sincronizado_em = db.Column(db.DateTime)
+    data_sessao_fonte = db.Column(db.String(20))  # de onde veio a data da sessão: usuario > edital (lida pela IA) > pncp
+    cronograma = db.Column(db.JSON)  # sessão, envio de propostas, impugnação... por fonte e divergências (services/cronograma.py)
     arquivado_em = db.Column(db.DateTime)        # licitação encerrada: dossiê no Arquivo (services/arquivo_licitacao.py)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -252,7 +254,10 @@ class Edital(NaLixeira, db.Model):
                   "motivo_saida": self.motivo_saida, "unidade_codigo": self.unidade_codigo, "unidade_nome": self.unidade_nome,
                   "pncp_situacao": self.pncp_situacao, "pncp_sincronizado_em": _iso(self.pncp_sincronizado_em),
                   "arquivado_em": _iso(self.arquivado_em)})
+        from services import cronograma as _cr
+        d["alerta_datas"] = _cr.alerta(self)
         if completo:
+            d["cronograma"] = _cr.publico(self)
             d["caracteres_texto"] = len(self.texto or "")
             d["possiveis_concorrentes"] = self.possiveis_concorrentes
         return d
@@ -1007,6 +1012,7 @@ class Prospect(db.Model):
     site = db.Column(db.String(300))
     email_sugerido = db.Column(db.String(200))  # melhor e-mail para a abordagem
     contatos_em = db.Column(db.DateTime)
+    emails_enviados = db.Column(db.JSON)        # [{para, assunto, em, por, id}] — abordagens enviadas pelo sistema
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
     atualizado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -1023,7 +1029,7 @@ class Prospect(db.Model):
             d.update({"orgaos": self.orgaos or {}, "exemplos": self.exemplos or [], "socios": self.socios or [],
                       "notas": self.notas, "abertura": self.abertura, "capital_social": self.capital_social,
                       "simples": self.simples, "buscas": self.buscas or [], "contatos": self.contatos or [],
-                      "site": self.site, "contatos_em": _iso(self.contatos_em)})
+                      "site": self.site, "contatos_em": _iso(self.contatos_em), "emails_enviados": self.emails_enviados or []})
         return d
 
 

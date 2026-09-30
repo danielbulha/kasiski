@@ -35,15 +35,17 @@ def configurado():
     return bool(current_app.config["RESEND_API_KEY"])
 
 
-def enviar(para, assunto, texto, html_corpo, cabecalhos=None):
+def enviar(para, assunto, texto, html_corpo, cabecalhos=None, de=None, responder_para=None):
+    """de: remetente específico (ex.: e-mail pessoal da prospecção); precisa ser de um domínio verificado no Resend."""
     if not configurado():
         current_app.logger.warning("E-mail não enviado (RESEND_API_KEY vazia) para %s: %s", para, assunto)
         return False
     try:
         r = requests.post("https://api.resend.com/emails", timeout=20, headers={
             "Authorization": f"Bearer {current_app.config['RESEND_API_KEY']}", "Content-Type": "application/json"},
-            json={"from": remetente(), "to": [para], "subject": assunto,
-                  "text": texto, "html": html_corpo, **({"headers": cabecalhos} if cabecalhos else {})})
+            json={"from": de or remetente(), "to": [para], "subject": assunto,
+                  "text": texto, "html": html_corpo, **({"headers": cabecalhos} if cabecalhos else {}),
+                  **({"reply_to": [responder_para]} if responder_para else {})})
     except requests.RequestException as ex:
         current_app.logger.exception("Resend indisponível")
         e = ErroAPI("Não conseguimos enviar o e-mail agora. Tente de novo em instantes.", 502, "email_falhou")
@@ -54,7 +56,10 @@ def enviar(para, assunto, texto, html_corpo, cabecalhos=None):
         e = ErroAPI("Não conseguimos enviar o e-mail agora. Tente de novo em instantes.", 502, "email_falhou")
         e.detalhe = f"Resend respondeu {r.status_code}: {r.text[:500]}"
         raise e
-    return True
+    try:
+        return (r.json() or {}).get("id") or True  # id do Resend (verdadeiro para quem só testa o sucesso)
+    except ValueError:
+        return True
 
 
 def enviar_lote(mensagens):

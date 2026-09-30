@@ -10,6 +10,7 @@ from datetime import datetime
 
 from extensions import db
 from models import Analise, Edital, Movimento
+from services import cronograma, pncp
 
 log = logging.getLogger(__name__)
 
@@ -134,10 +135,30 @@ def cartao(ed, ultima=None, nota_radar=None):
             "decisao": ed.decisao, "decisao_ia": ((r or {}).get("recomendacao") or {}).get("decisao"),
             "uf": ed.uf, "municipio": ed.municipio, "numero_controle": ed.numero_controle,
             "etapa_em": ed.etapa_em.isoformat() if ed.etapa_em else None, "motivo_saida": ed.motivo_saida,
-            "pncp_situacao": ed.pncp_situacao}
+            "pncp_situacao": ed.pncp_situacao,
+            "alerta_datas": _alerta_curto(ed)}
+
+
+def _alerta_curto(ed):
+    a = cronograma.alerta(ed)
+    return {"nivel": a["nivel"], "titulo": a["titulo"]} if a else None
 
 
 # ---------------------------------------------------------------- eventos automáticos
+def corrigir_sessao(ed, nota_radar_dados=None):
+    """Monta o cronograma de editais que ainda não têm (registros antigos): lê as datas no texto do edital e na última
+    análise e confere com o PNCP (dados do radar), sem consultar a rede. Devolve True se alterou o registro."""
+    if ed.cronograma:
+        return False
+    from services import fluxos
+    if ed.origem != "pncp" and ed.data_abertura and not ed.data_sessao_fonte:
+        ed.data_sessao_fonte = "usuario"  # cadastro manual: a data foi informada pelo usuário
+    d = nota_radar_dados or {}
+    cronograma.montar(ed, pncp_datas={"abertura": d.get("data_abertura"), "encerramento": d.get("data_encerramento")})
+    fluxos.gerar_prazos_edital(ed)
+    return True
+
+
 def avancar_por_data(ed):
     """Sessão pública já começou e o cartão ainda estava na preparação → Em disputa."""
     if ed.data_abertura and ed.data_abertura <= datetime.utcnow() and etapa_de(ed) in ("preparacao", "pronta"):
@@ -166,10 +187,8 @@ def sincronizar(ed, empresa):
         ed.pncp_situacao = (s.get("situacao") or "")[:80] or ed.pncp_situacao
         ed.unidade_codigo = s.get("unidade_codigo") or ed.unidade_codigo
         ed.unidade_nome = (s.get("unidade_nome") or "")[:300] or ed.unidade_nome
-        nova = pncp._data(s.get("data_abertura"))
-        if nova and nova != ed.data_abertura:
-            ed.data_abertura = nova
-            from services import fluxos
+        from services import fluxos
+        if cronograma.montar(ed, pncp_datas={"abertura": s.get("data_abertura"), "encerramento": s.get("data_encerramento")}):
             fluxos.gerar_prazos_edital(ed)
         if _REVOGADA.search(ed.pncp_situacao or "") and avancar(ed, "perdida", f"PNCP: licitação {ed.pncp_situacao.lower()}."):
             feitos.append("perdida")

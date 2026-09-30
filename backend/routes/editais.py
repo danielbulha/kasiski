@@ -1,4 +1,5 @@
 """Radar de editais (PNCP), cadastro de editais (PNCP ou upload) e análise com verificação cruzada."""
+import logging
 import threading
 from datetime import datetime, timedelta
 from flask import Blueprint, current_app, g, jsonify, request
@@ -8,8 +9,9 @@ from auth import login_requerido
 from extensions import ErroAPI, db
 from models import Analise, AnaliseConcorrente, DocumentoLicitacao, Edital, Peca, Prazo, RadarItem
 from routes import dados, edital_da_conta, empresa_da_conta, para_data, para_datahora, para_float
-from services import arquivos, fluxos, pncp
+from services import arquivos, cronograma, fluxos, pncp
 
+log = logging.getLogger(__name__)
 bp = Blueprint("editais", __name__, url_prefix="/api")
 STATUS = {"acompanhando", "participando", "ganho", "perdido", "descartado"}
 
@@ -97,11 +99,15 @@ def _importar_pncp(empresa_id, numero_controle, base=None, como="Importada do PN
                 arquivo=caminho, arquivo_url=doc.get("url"),
                 orgao=info.get("orgao"), objeto=info.get("objeto"), modalidade=info.get("modalidade"),
                 uf=(info.get("uf") or "")[:2], municipio=info.get("municipio"),
-                valor_estimado=info.get("valor_estimado"), data_abertura=pncp._data(info.get("data_abertura")),
+                valor_estimado=info.get("valor_estimado"),
+                data_abertura=pncp._data(info.get("data_sessao") or info.get("data_encerramento") or info.get("data_abertura")),
+                data_sessao_fonte="pncp",
                 portal_disputa=info.get("portal_disputa"), link=info.get("link"), texto=texto, nome_arquivo=nome)
     db.session.add(ed)
     db.session.flush()
+    cronograma.montar(ed, pncp_datas={"abertura": info.get("data_abertura"), "encerramento": info.get("data_encerramento")})
     fluxos.gerar_prazos_edital(ed)
+    _ler_datas_depois(ed)
     from services import oportunidades, marketing
     oportunidades.registrar_criacao(ed, como)
     marketing.evento_conta(getattr(g, "conta", None), "edital_added", {"origem": "pncp"})
@@ -148,9 +154,13 @@ def criar(eid):
                 portal_disputa=d.get("portal_disputa"), link=d.get("link"),
                 valor_estimado=para_float(d.get("valor_estimado")), data_abertura=para_datahora(d.get("data_abertura")))
     ed.texto = arquivos.extrair_texto(caminho)
+    if ed.data_abertura:
+        ed.data_sessao_fonte = "usuario"
     db.session.add(ed)
     db.session.flush()
+    cronograma.montar(ed)
     fluxos.gerar_prazos_edital(ed)
+    _ler_datas_depois(ed)
     from services import oportunidades
     oportunidades.registrar_criacao(ed, "Edital enviado pelo usuário.")
     from services import marketing
@@ -164,6 +174,11 @@ def criar(eid):
 def ver(edid):
     ed = edital_da_conta(edid)
     _expirar_travadas(edid)
+    from services import oportunidades as _op
+    if not ed.cronograma:
+        rad = RadarItem.query.filter_by(empresa_id=ed.empresa_id, numero_controle=ed.numero_controle).first() if ed.numero_controle else None
+        if _op.corrigir_sessao(ed, rad.dados if rad else None):
+            db.session.commit()
     analises = Analise.query.filter_by(edital_id=edid, status="concluida").order_by(Analise.id.desc()).all()
     andamento = Analise.query.filter_by(edital_id=edid).filter(Analise.status != "concluida") \
         .order_by(Analise.id.desc()).first()
@@ -204,17 +219,100 @@ def editar(edid):
     if "valor_estimado" in d:
         ed.valor_estimado = para_float(d["valor_estimado"])
     if "data_abertura" in d:
-        ed.data_abertura = para_datahora(d["data_abertura"])
-        fluxos.gerar_prazos_edital(ed)
+        _datas_do_usuario(ed, {"sessao": d["data_abertura"]})
     if "arquivo" in request.files and request.files["arquivo"].filename:
         ed.arquivo, ed.nome_arquivo = arquivos.salvar(request.files["arquivo"], f"editais/{ed.empresa_id}")
         try:
             ed.texto = arquivos.extrair_texto(ed.arquivo)
+            cronograma.montar(ed)
+            fluxos.gerar_prazos_edital(ed)
+            _ler_datas_depois(ed)
         except ErroAPI as e:  # PDF escaneado: guarda para consulta; a análise pede a versão pesquisável
             db.session.commit()
             return jsonify({**ed.to_dict(), "aviso": e.mensagem})
     db.session.commit()
     return jsonify(ed.to_dict())
+
+
+def _datas_do_usuario(ed, datas, confirmar=False):
+    """Datas informadas/corrigidas pelo usuário valem sobre qualquer leitura automática."""
+    cron = dict(ed.cronograma or {})
+    usuario = dict(cron.get("usuario") or {})
+    for ev, v in (datas or {}).items():
+        if ev not in cronograma.EVENTOS:
+            continue
+        dt = para_datahora(v) if v else None
+        if dt:
+            usuario[ev] = dt.isoformat(timespec="minutes")
+        else:
+            usuario.pop(ev, None)
+    cron["usuario"] = usuario
+    ed.cronograma = cron
+    if "sessao" in usuario:
+        ed.data_abertura, ed.data_sessao_fonte = datetime.fromisoformat(usuario["sessao"]), "usuario"
+    elif ed.data_sessao_fonte == "usuario":
+        ed.data_sessao_fonte = None
+    cronograma.montar(ed)
+    if confirmar and ed.data_abertura:
+        c = dict(ed.cronograma)
+        c["confirmado"] = {"por": g.usuario.nome, "em": datetime.utcnow().isoformat(timespec="minutes"),
+                           "sessao": ed.data_abertura.isoformat(timespec="minutes")}
+        ed.cronograma = c
+    fluxos.gerar_prazos_edital(ed)
+
+
+def _ler_datas_depois(ed):
+    """Leitura das datas pela IA em segundo plano, logo que o edital chega com texto."""
+    if not ed.texto:
+        return
+    from services import tarefas
+    tarefas.rodar(_ler_datas_tarefa, ed.id)
+
+
+def _ler_datas_tarefa(edid):
+    import time
+    for _ in range(10):  # espera a transação que criou o edital terminar
+        ed = Edital.query.get(edid)
+        if ed:
+            break
+        time.sleep(1)
+        db.session.rollback()
+    if not ed or (ed.cronograma or {}).get("confirmado"):
+        return
+    try:
+        fluxos.ler_cronograma(ed)
+        db.session.commit()
+    except Exception:
+        log.exception("Leitura das datas do edital %s falhou", edid)
+        db.session.rollback()
+
+
+@bp.post("/editais/<int:edid>/cronograma")
+@login_requerido
+def cronograma_salvar(edid):
+    """Corrige e/ou confirma as datas: {datas: {sessao, inicio_propostas, fim_propostas, impugnacao, esclarecimento}, confirmar}"""
+    ed = edital_da_conta(edid)
+    d = dados()
+    _datas_do_usuario(ed, d.get("datas") or {}, confirmar=bool(d.get("confirmar")))
+    db.session.commit()
+    return jsonify({"edital": ed.to_dict(completo=True),
+                    "prazos": [p.to_dict() for p in Prazo.query.filter_by(edital_id=edid).order_by(Prazo.data)]})
+
+
+@bp.post("/editais/<int:edid>/cronograma/reler")
+@login_requerido
+def cronograma_reler(edid):
+    """Lê de novo as datas no edital com a IA (útil depois de errata ou de enviar o PDF correto)."""
+    ed = edital_da_conta(edid)
+    if not ed.texto:
+        raise ErroAPI("Este edital ainda não tem texto. Envie o PDF para o Kasiski ler as datas.")
+    c = dict(ed.cronograma or {})
+    c["confirmado"] = None
+    ed.cronograma = c
+    fluxos.ler_cronograma(ed)
+    db.session.commit()
+    return jsonify({"edital": ed.to_dict(completo=True),
+                    "prazos": [p.to_dict() for p in Prazo.query.filter_by(edital_id=edid).order_by(Prazo.data)]})
 
 
 @bp.get("/editais/<int:edid>/documento")
@@ -236,8 +334,10 @@ def documento(edid):
                 return Response(doc["conteudo"], mimetype="application/pdf",
                                 headers={"Content-Disposition": f'inline; filename="{ed.nome_arquivo or "edital.pdf"}"'})
             ed.arquivo_url, ed.nome_arquivo = doc.get("url"), ed.nome_arquivo or doc.get("nome")
-            if not ed.texto:
+            if not ed.texto and doc.get("texto"):
                 ed.texto = doc.get("texto")
+                cronograma.montar(ed)
+                fluxos.gerar_prazos_edital(ed)
             db.session.commit()
     if not ed.arquivo:
         # sem PDF legível: devolve os arquivos públicos do PNCP para abrir direto no portal, e o app oferece o envio do PDF

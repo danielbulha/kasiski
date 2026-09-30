@@ -22,7 +22,12 @@ def extracao_edital(texto):
  "orgao": "", "numero": "", "objeto": "", "modalidade": "", "criterio_julgamento": "",
  "tipo_objeto": "obra | servico_engenharia | servico_comum | servico_continuado | fornecimento | fornecimento_continuado | outro",
  "segmento": "saude | educacao | ti | alimentacao | transporte | limpeza | seguranca | obras | outro",
- "valor_estimado": null, "data_abertura": "AAAA-MM-DDTHH:MM ou null", "portal_disputa": "",
+ "valor_estimado": null, "data_abertura": "AAAA-MM-DDTHH:MM da SESSÃO PÚBLICA (igual a cronograma.data_sessao)", "portal_disputa": "",
+ "cronograma": {{"data_sessao": "AAAA-MM-DDTHH:MM da abertura da SESSÃO PÚBLICA de disputa; null se não houver",
+   "inicio_recebimento_propostas": "AAAA-MM-DDTHH:MM a partir de quando propostas e documentos podem ser enviados; null",
+   "fim_recebimento_propostas": "AAAA-MM-DDTHH:MM limite para envio de propostas e documentos; null",
+   "limite_impugnacao": "AAAA-MM-DD se o edital fixar a data; null", "limite_esclarecimento": "AAAA-MM-DD se o edital fixar a data; null",
+   "paginas": {{"data_sessao": "N"}}, "trechos": {{"data_sessao": "frase do edital com a data, copiada literalmente"}}}},
  "obra_ou_servico_engenharia": false, "exclusivo_me_epp": false, "grande_vulto": false,
  "exigencias_habilitacao": [{{"categoria": "juridica|fiscal|trabalhista|economica|tecnica|declaracao|setorial",
    "descricao": "", "pagina": ""}}],
@@ -30,6 +35,12 @@ def extracao_edital(texto):
  "penalidades": [""], "prazo_execucao": "", "condicoes_pagamento": "", "reajuste": "",
  "termos_busca_pncp": ["2 ou 3 expressões curtas (2 a 4 palavras) com o núcleo do objeto, como aparecem em contratos públicos, para achar contratações parecidas. Ex.: 'limpeza predial', 'conservação e limpeza'"]
 }}
+
+Regras das datas (o erro aqui muda todos os prazos do cliente):
+- A data da SESSÃO PÚBLICA é a da abertura da disputa/sessão ("abertura da sessão pública", "início da disputa de lances", "data do certame").
+- NÃO confunda com o INÍCIO do recebimento/envio de propostas e documentos ("propostas a partir de..."), com a publicação do edital, com a data de assinatura nem com datas de leis. Essas vão nos campos próprios ou ficam de fora.
+- Se houver errata/retificação que mude a data, use a data nova.
+- Se o edital só trouxer "recebimento das propostas até DD/MM às HH:MM" seguido da sessão, a sessão é a data informada para a abertura.
 
 Regras de classificação:
 - "tipo_objeto": obra (construção/reforma/ampliação); servico_engenharia (serviço técnico de engenharia sem ser obra, ex. projeto, manutenção predial complexa); servico_comum (serviço sem mão de obra residente, ex. um evento); servico_continuado (serviço com dedicação de mão de obra ou continuidade, ex. limpeza, portaria, gestão terceirizada); fornecimento (compra pontual de bens); fornecimento_continuado (registro de preços ou entrega parcelada recorrente); outro se não se encaixar.
@@ -44,7 +55,7 @@ EDITAL:
         "objeto": "Prestação de serviços contínuos de limpeza e conservação predial",
         "modalidade": "Pregão eletrônico", "criterio_julgamento": "Menor preço global",
         "tipo_objeto": "servico_continuado", "segmento": "limpeza",
-        "valor_estimado": 1850000.0, "data_abertura": None, "portal_disputa": "BLL Compras",
+        "valor_estimado": 1850000.0, "data_abertura": None, "portal_disputa": "BLL Compras", "cronograma": {},
         "obra_ou_servico_engenharia": False, "exclusivo_me_epp": False, "grande_vulto": False,
         "exigencias_habilitacao": [
             {"categoria": "juridica", "descricao": "Contrato social e alterações", "pagina": "12"},
@@ -63,6 +74,24 @@ EDITAL:
         "reajuste": "Repactuação anual (mão de obra) e IPCA (insumos)",
     }
     return sistema, usuario, demo
+
+
+def cronograma_edital(texto):
+    """Só as datas do edital (leitura rápida, sem a análise completa)."""
+    sistema = BASE + " Sua tarefa agora é apenas EXTRAIR as datas do cronograma da licitação."
+    usuario = f"""Extraia do edital abaixo o cronograma, em JSON:
+{{"data_sessao": "AAAA-MM-DDTHH:MM da abertura da SESSÃO PÚBLICA de disputa; null se não houver",
+ "inicio_recebimento_propostas": "AAAA-MM-DDTHH:MM a partir de quando propostas e documentos podem ser enviados; null",
+ "fim_recebimento_propostas": "AAAA-MM-DDTHH:MM limite para envio de propostas e documentos; null",
+ "limite_impugnacao": "AAAA-MM-DD se o edital fixar a data; null", "limite_esclarecimento": "AAAA-MM-DD se o edital fixar a data; null",
+ "paginas": {{"data_sessao": "N"}}, "trechos": {{"data_sessao": "frase do edital com a data, copiada literalmente"}}}}
+
+Regras: a sessão pública é a abertura da disputa. NÃO confunda com o início do envio de propostas ("a partir de"), com a
+publicação, com a assinatura do edital nem com datas de leis. Havendo errata que mude a data, use a nova. Não invente datas.
+
+EDITAL:
+{texto}"""
+    return sistema, usuario, {}
 
 
 # ---------------------------------------------------------------- análise do edital (Claude)

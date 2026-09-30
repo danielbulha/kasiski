@@ -5,7 +5,7 @@ import io
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-from flask import Blueprint, Response, g, jsonify, request
+from flask import Blueprint, Response, current_app, g, jsonify, request
 
 import planos
 from auth import admin_requerido
@@ -642,7 +642,8 @@ def prospeccao_ver(pid):
         db.session.commit()
     from services import contatos
     return jsonify({**p.to_dict(completo=True), "link_relatorio": link, "roteiro": pr.roteiro(p, link),
-                    "email_rascunho": contatos.rascunho_email(p, link, (g.usuario.nome or "Daniel").split()[0])})
+                    "email_rascunho": contatos.rascunho_email(p, link, (g.usuario.nome or "Daniel").split()[0]),
+                    "remetente": current_app.config["PROSPECCAO_REMETENTE"]})
 
 
 @bp.post("/prospeccao/<int:pid>/contatos")
@@ -714,3 +715,59 @@ def prospeccao_csv():
                     p.email_sugerido or "", p.site or "", p.status, _link_relatorio(p)])
     return Response("﻿" + buf.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition": "attachment; filename=kasiski-prospeccao.csv"})
+
+
+@bp.post("/prospeccao/<int:pid>/enviar-email")
+@admin_requerido
+def prospeccao_enviar_email(pid):
+    """Envia pelo próprio sistema o e-mail de abordagem revisado no Admin (remetente PROSPECCAO_REMETENTE)."""
+    import html as _html
+    import re as _re
+    from models import Prospect
+    from services import email as mail
+    p = Prospect.query.get_or_404(pid)
+    d = dados()
+    para = (d.get("para") or "").strip().lower()
+    assunto = (d.get("assunto") or "").strip()[:150]
+    corpo = (d.get("corpo") or "").strip()
+    if p.status == "nao_contatar":
+        raise ErroAPI("Esta empresa pediu para não ser contatada. O envio foi bloqueado.", 409)
+    if not _re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", para):
+        raise ErroAPI("Informe um e-mail de destino válido.")
+    if not assunto or len(corpo) < 40:
+        raise ErroAPI("Revise o assunto e a mensagem antes de enviar.")
+    if not mail.configurado():
+        raise ErroAPI("O envio de e-mails não está configurado (RESEND_API_KEY no Render).", 400, "email_nao_configurado")
+    agora = datetime.utcnow()
+    enviados = list(p.emails_enviados or [])
+    if any(e.get("para") == para and e.get("em", "") >= (agora - timedelta(days=7)).isoformat() for e in enviados) and not d.get("reenviar"):
+        raise ErroAPI(f"Você já enviou um e-mail para {para} nos últimos 7 dias. Marque 'enviar mesmo assim' para repetir.", 409, "ja_enviado")
+    hoje = agora.date().isoformat()
+    total_hoje = sum(1 for x in Prospect.query.filter(Prospect.emails_enviados.isnot(None)).all()
+                     for e in (x.emails_enviados or []) if str(e.get("em", "")).startswith(hoje))
+    if total_hoje >= current_app.config["PROSPECCAO_LIMITE_DIA"]:
+        raise ErroAPI(f"Limite de {current_app.config['PROSPECCAO_LIMITE_DIA']} e-mails de prospecção por dia atingido. "
+                      "Isso protege a reputação do domínio kasiski.com.br. Continue amanhã.", 429)
+    base = current_app.config.get("BACKEND_URL") or request.host_url.rstrip("/")
+    sair = f"{base}/api/public/prospect/{p.token}/sair"
+    remetente = current_app.config["PROSPECCAO_REMETENTE"]
+    responder = _re.search(r"<([^>]+)>", remetente)
+    rodape_txt = f"\n\n--\nNão quer receber contatos do Kasiski? {sair}"
+    paragrafos = "".join(f"<p style='margin:0 0 12px'>{_html.escape(bloco).replace(chr(10), '<br>')}</p>" for bloco in corpo.split("\n\n"))
+    paragrafos = _re.sub(r"(https?://[^\s<]+)", r'<a href="\1">\1</a>', paragrafos)
+    html_corpo = (f"<div style='font-family:Arial,sans-serif;font-size:15px;line-height:1.5;color:#071D2D;max-width:620px'>{paragrafos}"
+                  f"<p style='margin-top:24px;font-size:12px;color:#6b7c88'>Não quer receber contatos do Kasiski? "
+                  f"<a href='{sair}' style='color:#6b7c88'>Clique aqui</a> e sua empresa sai das nossas listas.</p></div>")
+    mid = mail.enviar(para, assunto, corpo + rodape_txt, html_corpo, de=remetente,
+                      responder_para=responder.group(1) if responder else None,
+                      cabecalhos={"List-Unsubscribe": f"<{sair}>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"})
+    enviados.append({"para": para, "assunto": assunto, "em": agora.isoformat(), "por": g.usuario.nome,
+                     "id": mid if isinstance(mid, str) else None})
+    p.emails_enviados = enviados
+    if p.status in ("novo", None):
+        p.status = "contatado"
+    p.contatado_em = p.contatado_em or agora
+    p.atualizado_em = agora
+    p.notas = ((p.notas or "") + f"\nE-mail de abordagem enviado para {para} em {agora:%d/%m/%Y %H:%M} por {g.usuario.nome}.").strip()[:4000]
+    db.session.commit()
+    return jsonify({"ok": True, "prospect": p.to_dict(completo=True)})

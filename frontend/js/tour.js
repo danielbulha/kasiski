@@ -20,6 +20,7 @@ const TOUR_PASSOS = {
   ],
   profissional: [
     { titulo: "Bem-vindo ao Profissional", texto: "Agora você tem as ferramentas para disputar e executar: preços, propostas, peças e contratos." },
+    { alvo: _tourMenu("#/disputa"), titulo: "Sala de disputa", texto: "Acompanhe vários pregões ao mesmo tempo. Defina a estratégia e o piso de cada item: o Kasiski calcula o próximo lance, conta os intervalos entre lances e manda parar no piso. A análise de lances com IA sugere proposta inicial e alvo pelos preços que os concorrentes praticaram. Você dá o lance no portal." },
     { alvo: _tourMenu("#/precos"), titulo: "Preços e propostas", texto: "Pesquise preços praticados em contratações públicas e monte a proposta comercial a partir do edital." },
     { alvo: _tourMenu("#/pecas"), titulo: "Peças", texto: "A IA redige esclarecimentos, impugnações, recursos e contrarrazões com base no edital e na lei, e o DoubleCheck™ (uma segunda IA) procura erro factual, argumento sem suporte e referência errada antes de chegar a você." },
     { alvo: _tourMenu("#/contratos"), titulo: "Gestão de contratos", texto: "Cadastre os contratos ganhos: vigência, pagamentos, reajustes e alertas de atraso." },

@@ -61,7 +61,7 @@ def tabela_comparativa():
               ("Diagnóstico B2G e checklist", lambda p: True), ("Radar", lambda p: "1 busca/dia" if p["radar_max"] else "Diário automático"), ("Armazenamento", lambda p: _armaz(p.get("armazenamento_mb"))),
               ("Cofre", lambda p: "Básico" if p["cofre_max"] else True), ("Editais com IA/mês", lambda p: p["analises"]),
               ("Go/No-Go", lambda p: "Básico" if p["analises"] <= 5 else True),
-              ("Concorrentes/mês", lambda p: p["concorrentes"]), ("Preços", lambda p: p["precos"]), ("Propostas", lambda p: p["propostas"]),
+              ("Concorrentes/mês", lambda p: p["concorrentes"]), ("Preços", lambda p: p["precos"]), ("Propostas", lambda p: p["propostas"]), ("Sala de disputa", lambda p: p["propostas"]),
               ("Peças com IA/mês", lambda p: p["pecas"]), ("Contratos", lambda p: p["contratos"]),
               ("Multiempresa", lambda p: p["empresas"] if p["empresas"] > 1 else False)]
     cab = "".join(f"<th>{esc(P[k]['nome'])}</th>" for k in ks)
@@ -72,19 +72,67 @@ def tabela_comparativa():
 PASSOS = [("01", "Detectar", "Todo dia útil, o radar consulta o PNCP e separa os editais abertos que combinam com as palavras-chave, os estados e a faixa de valor da sua empresa."),
           ("02", "Interpretar", "A análise lê o edital inteiro, extrai exigências e prazos, compara a habilitação com os documentos do seu cofre e aponta cláusulas restritivas."),
           ("03", "Agir", "Você recebe a recomendação de participar ou não, os prazos na agenda e a minuta da peça pronta para revisão — esclarecimento, impugnação ou recurso.")]
-RECURSOS = [("Radar de editais", "Busca diária no PNCP com nota de aderência de 0 a 100 para cada edital encontrado.", "/radar-licitacoes/"),
+RECURSOS = [("Radar de editais", "Busca diária no PNCP e nos diários oficiais, com nota de aderência de 0 a 100 e as datas conferidas no edital.", "/radar-licitacoes/"),
             ("Análise do edital", "Resumo, checklist de habilitação, riscos e recomendação de participar, com a página de cada ponto.", "/analisar-edital/"),
             ("DoubleCheck™", "Uma IA analisa, outra confere e você decide. Cada conclusão vem com a fonte, e as divergências ficam à vista.", "/doublecheck/"),
             ("Pipeline Go / No-Go", "Kanban da oportunidade, do edital identificado ao contrato ativo, com fit, risco e movimentação automática pelo PNCP.", "/go-no-go/"),
             ("Cofre de habilitação", "Certidões e atestados com controle de validade. Alerta antes de vencer, não depois.", "/habilitacao/"),
             ("Inteligência de concorrentes", "Possíveis concorrentes, dossiê do CNPJ, sanções no TCU e na CGU e análise da habilitação e da proposta do adversário.", "/concorrentes/"),
+            ("Sala de disputa e análise de lances", "Vários pregões na mesma tela, com proposta inicial e alvo sugeridos pela IA a partir dos preços dos concorrentes e o próximo lance calculado na hora.", "/sala-de-disputa/"),
             ("Gerador de peças", "Minutas de esclarecimento, impugnação, recurso, contrarrazões, reequilíbrio e defesa prévia.", "/gerador-de-pecas/"),
             ("Preços e proposta comercial", "Preços praticados, tabelas oficiais (SINAPI, CMED, convenções coletivas) e a minuta da proposta com BDI e checagem de exequibilidade.", "/propostas/"),
             ("Gestão de contratos", "Envie o PDF: a IA preenche vigência, garantia, reajuste, medição e faturamento e avisa antes de cada prazo.", "/gestao-contratos/")]
+DIFERENCIAIS = [
+    ("Duas IAs em cada conclusão", "O DoubleCheck™ confere exigências, cláusulas, riscos, falhas de concorrentes e peças com um segundo modelo, e mostra a fonte e as divergências.", "/doublecheck/"),
+    ("Por quanto o mercado fecha", "A análise de lances cruza os preços que os possíveis concorrentes praticaram no PNCP com o estimado e o seu piso, e sugere proposta inicial e alvo.", "/sala-de-disputa/"),
+    ("Vários pregões, um método", "Na Sala de disputa, cada item tem estratégia, piso e o próximo lance calculado na hora, com o intervalo entre lances contado.", "/sala-de-disputa/"),
+    ("Prazo que vale é o do edital", "O Kasiski lê as datas no edital e avisa quando o cadastro do órgão no PNCP diverge. Os prazos de impugnação e recurso saem das datas certas.", "/radar-licitacoes/"),
+    ("Do dossiê ao recurso", "Possíveis concorrentes, sanções, preços praticados e falhas confirmadas na habilitação do adversário, que viram recurso com um clique.", "/concorrentes/"),
+    ("Jurídico de verdade", "Impugnações, recursos e contrarrazões fundamentados na Lei 14.133, conferidos pelo DoubleCheck e com revisão por advogado quando você quiser.", "/gerador-de-pecas/"),
+]
+COMPARATIVO = [  # (etapa, buscador tradicional, Kasiski)
+    ("Encontrar editais", "Busca por palavra-chave em portais", "PNCP e diários oficiais, nota de aderência e datas conferidas no edital"),
+    ("Decidir se vale participar", "Você lê o edital sozinho", "Análise do edital, checklist contra o cofre e Go/No-Go, com DoubleCheck™ em cada item"),
+    ("Saber quem vai disputar", "—", "Possíveis concorrentes, sanções e os preços que eles praticaram"),
+    ("Definir o preço", "Planilha à parte", "Proposta com BDI, tributos, preços de referência e piso de exequibilidade"),
+    ("Disputar os lances", "Lances no portal, no improviso", "Sala de disputa: proposta inicial e alvo pelo histórico, próximo lance e piso travado"),
+    ("Contestar e se defender", "Contratar à parte", "Peças jurídicas conferidas por duas IAs e revisão por advogado sob demanda"),
+    ("Depois de vencer", "Outro sistema", "Gestão do contrato: prazos, reajuste, garantia e pagamentos em atraso"),
+]
+
+
+def diferenciais_html():
+    cards = "".join(f'<a class="s-item s-item-link s-dif" href="{u}"><b>{esc(t)}</b><p>{esc(d)}</p></a>' for t, d, u in DIFERENCIAIS)
+    linhas = "".join(f"<tr><th scope=\"row\">{esc(e)}</th><td>{esc(b)}</td><td>{esc(k)}</td></tr>" for e, b, k in COMPARATIVO)
+    return f'''<section class="s-secao" id="diferenciais"><p class="s-sobre">Por que Kasiski</p>
+  <h2>Outros sistemas encontram editais. O Kasiski ajuda a vencê-los.</h2>
+  <p class="s-lead">Do edital ao contrato, cada etapa tem inteligência própria — e cada conclusão da IA é conferida antes de chegar a você.</p>
+  <div class="s-grade3">{cards}</div>
+  <div class="s-tabela-rolagem s-dif-tabela"><table class="s-comparativo"><thead><tr><th>Etapa</th><th>Buscador de licitações tradicional</th><th>Kasiski</th></tr></thead>
+    <tbody>{linhas}</tbody></table></div></section>'''
+
+
+def sala_html():
+    return '''<section class="s-secao s-secao-clara s-sala" id="sala-de-disputa"><div class="s-sala-texto"><p class="s-sobre">Novo · Sala de disputa</p>
+  <h2>Entre na sessão sabendo por quanto o mercado costuma fechar.</h2>
+  <p class="s-lead">A análise de lances cruza os preços que os possíveis concorrentes praticaram em contratações parecidas com o valor estimado e o seu piso.
+    A IA sugere a proposta inicial, o alvo e a estratégia, e o DoubleCheck™ confere cada número. Na sessão, vários pregões na mesma tela, o próximo lance calculado na hora e o piso que não se ultrapassa.</p>
+  <ul class="s-lista-check"><li>Proposta inicial e alvo pelo histórico dos concorrentes</li><li>Estratégia conservadora, moderada, agressiva ou sua</li>
+    <li>Intervalo entre lances contado, com aviso sonoro</li><li>Piso tirado do custo da sua proposta: sem vencer com prejuízo</li></ul>
+  <div class="s-acoes"><a class="s-botao s-botao-sec" href="/sala-de-disputa/" data-cta="home_sala">Conhecer a Sala de disputa</a></div></div>
+  <div class="s-sala-previa" aria-hidden="true">
+    <div class="s-sala-cab"><b>Pregão 45/2026 · item 1</b><em class="s-carimbo aviso">Você foi superado</em></div>
+    <div class="s-sala-num"><div><small>Melhor do portal</small><b>R$ 845.000,00</b></div><div><small>Meu último</small><b>R$ 851.200,00</b></div><div><small>Piso</small><b>R$ 790.000,00</b></div></div>
+    <div class="s-sala-prox"><small>Próximo lance pela estratégia</small><strong>R$ 836.550,00</strong><span>Liberado para lançar</span></div>
+    <div class="s-sala-ia"><b>Análise de lances</b><span>Fechamento provável: 88% do estimado · proposta sugerida: 92,5%</span><span class="s-dc-mini">DoubleCheck™ <em class="s-carimbo ok">Confirmado</em></span></div>
+  </div></section>'''
+
+
 SETORES = ["Obras e engenharia", "Serviços continuados", "Fornecimento e registro de preços", "Saúde", "Educação", "Tecnologia da informação",
            "Segurança e vigilância", "Transporte e frota", "Alimentação", "Dispensa e inexigibilidade"]
 DUVIDAS = [("O Kasiski substitui um advogado?", "Não. As peças são minutas fundamentadas para você revisar antes de protocolar. Se preferir, é possível solicitar dentro do sistema a revisão por advogado, contratada à parte."),
-           ("Qual a diferença entre o Kasiski e um buscador de licitações?", "Buscadores encontram editais; o Kasiski ajuda a decidir onde competir. Depois da busca vêm a aderência, a leitura do edital, a habilitação, o Go/No-Go, os preços, os concorrentes, a proposta, as peças, os prazos e o contrato — tudo no mesmo lugar."),
+           ("Qual a diferença entre o Kasiski e um buscador de licitações?", "Buscadores encontram editais; o Kasiski ajuda a decidir onde competir e por quanto. Depois da busca vêm a aderência, a leitura do edital conferida por duas IAs (DoubleCheck™), a habilitação, o Go/No-Go, os concorrentes e os preços que eles praticam, a sala de disputa, a proposta, as peças, os prazos e o contrato — tudo no mesmo lugar."),
+           ("O Kasiski tem robô de lances?", "O Kasiski tem a Sala de disputa: acompanha vários pregões ao mesmo tempo, sugere a proposta inicial e o alvo pelo histórico de preços dos concorrentes, calcula o próximo lance pela sua estratégia, conta o intervalo entre lances e para no seu piso. O lance é dado por você no portal: nenhuma senha ou certificado digital da empresa fica com o Kasiski e nenhum lance sai sem a sua decisão."),
            ("Como funciona a proposta comercial com IA?", "A partir do Profissional, o Kasiski lê no edital o que a proposta precisa conter, ajuda a formar o preço com custos, BDI e tributos, compara com preços praticados e tabelas oficiais, avisa riscos de inexequibilidade e entrega a minuta em Word."),
            ("De onde vêm os dados?", "De fontes públicas oficiais: PNCP (editais, contratos e atas), Receita Federal, TCU e Portal da Transparência (sanções) e Compras.gov.br (preços praticados). Editais fora do PNCP podem ser enviados em PDF."),
            ("Como a IA evita erros?", "Com o KASISKI DoubleCheck™: cada exigência, cláusula restritiva, risco, falha de concorrente e peça gerada passa por um segundo modelo, de outro fornecedor, que confere de forma independente. O resultado aparece ao lado de cada ponto (confirmado, divergência ou revisão recomendada), com a página do documento de origem. Isso reduz o risco de erro, mas não o elimina: a decisão é sempre sua."),
@@ -133,13 +181,15 @@ def pg_home(pagina, ORG, SOFT):
     corpo = f"""{REDIRECIONA_APP}
 <section class="s-heroi"><div class="s-heroi-texto"><p class="s-sobre">Buscadores encontram editais. O Kasiski ajuda a decidir onde competir.</p>
   <h1>Inteligência para vender ao poder público.</h1>
-  <p class="s-lead">O Kasiski monitora os editais publicados no PNCP, confere a habilitação da sua empresa, analisa concorrentes e redige impugnações e recursos — com cada conclusão da IA conferida por um segundo modelo pelo DoubleCheck™.</p>
+  <p class="s-lead">O Kasiski monitora editais no PNCP e nos diários oficiais, confere a habilitação da sua empresa, mostra por quanto os concorrentes costumam fechar, organiza a disputa de lances e redige impugnações e recursos — com cada conclusão da IA conferida por um segundo modelo pelo DoubleCheck™.</p>
   <div class="s-acoes"><a class="s-botao s-botao-grande" href="{cad}" data-cta="home_heroi">Criar conta grátis</a>
     <a class="s-botao s-botao-sec s-botao-grande" href="/diagnostico/" data-cta="home_diagnostico">Fazer o diagnóstico B2G</a></div>
   <p class="s-nota">Free para sempre · {ta} análise de edital por mês · experimente o Profissional por {C.TRIAL_DIAS} dias · sem cartão</p></div>
   {previa()}</section>
 <section class="s-secao s-faixa s-faixa-esq" id="como"><p class="s-sobre s-sobre-claro">Do ruído ao sinal</p>
   <h2>Milhares de editais por semana. Poucos fazem sentido para você.</h2><div class="s-grade3">{passos}</div></section>
+{diferenciais_html()}
+{sala_html()}
 <section class="s-secao" id="recursos"><p class="s-sobre">Recursos</p><h2>Tudo o que a disputa exige, do edital ao contrato.</h2><div class="s-grade3">{recursos}</div></section>
 {doublecheck.secao_home()}
 <section class="s-secao s-secao-clara"><p class="s-sobre">Setores</p><h2>Regras gerais da Lei 14.133 e exigências de cada setor.</h2>
@@ -159,5 +209,5 @@ def pg_home(pagina, ORG, SOFT):
   <p>Crie sua conta Free e veja o que o Kasiski encontra nos editais do seu setor.</p>
   <a class="s-botao s-botao-grande" href="{cad}" data-cta="home_final">Criar conta grátis</a></section>"""
     pagina("/", "Kasiski — inteligência para vender ao poder público | licitações com IA",
-           "Radar de editais no PNCP, análise de edital com IA, Go/No-Go, concorrentes, preços, propostas e gestão de contratos. Plano Free para sempre; Profissional por R$ 247/mês.",
+           "Radar de editais no PNCP e diários oficiais, análise de edital com duas IAs (DoubleCheck), concorrentes e seus preços, sala de disputa de lances, propostas, peças e contratos. Plano Free para sempre.",
            corpo, prioridade="1.0", jsonld=[ORG, SOFT, faq_ld])

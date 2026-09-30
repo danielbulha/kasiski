@@ -296,10 +296,12 @@ async function abrirOportunidade(id, aoMudar) {
         .map(([k, t]) => `<button role="tab" data-g-aba="${k}" class="${abaAtual === k ? "ativa" : ""}" aria-selected="${abaAtual === k}">${t}</button>`).join("")}</div>
       <div id="g-corpo"></div>
       <footer class="op-g-rodape"><a class="botao" href="#/editais/${ed.id}">Ver todos os detalhes ${icone("chevronDireita", 14)}</a>
+        ${["preparacao", "pronta", "em_disputa"].includes(c.etapa) && S.plano?.disputa ? `<a class="botao secundario" href="#/disputa" data-ir-disputa="${ed.id}">${icone("lance", 14)} Sala de disputa</a>` : ""}
         ${ed.numero_controle && ed.origem !== "diario" ? `<button class="botao texto" data-sinc-um>Sincronizar com o PNCP</button>` : ""}
         <span class="op-g-rodape-dir">${["perdida", "desistencia", "contrato_ativo"].includes(c.etapa) ? `<button class="botao texto" data-arquivar>${icone("arquivo", 14)} Mandar para o Arquivo</button>` : ""}
         <button class="botao texto" data-excluir-op>${icone("excluir", 14)} Excluir</button></span></footer>`;
     $("[data-fechar-gaveta]", gaveta).onclick = fechar;
+    const irDs = $("[data-ir-disputa]", gaveta); if (irDs) irDs.addEventListener("click", () => sessionStorage.setItem("ds_preparar", irDs.dataset.irDisputa));
     const an = $("[data-analisar-agora]", gaveta);
     if (an) an.onclick = () => { sessionStorage.setItem("analisar_auto", String(ed.id)); location.hash = `#/editais/${ed.id}`; };
     $("#g-etapa", gaveta).onchange = async (ev) => {

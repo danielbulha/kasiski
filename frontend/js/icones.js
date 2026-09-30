@@ -6,6 +6,7 @@ const _ICONES = {
   painel: '<path d="M3 3h6v8H3zM11 3h6v5h-6zM11 10h6v7h-6zM3 13h6v4H3z"/>',
   radar: '<circle cx="10" cy="10" r="7"/><circle cx="10" cy="10" r="3.2"/><path d="M10 3v2M10 15v2M3 10h2M15 10h2" stroke-linecap="round"/>',
   editais: '<path d="M5 2.5h7l3 3V17a.5.5 0 0 1-.5.5h-9A.5.5 0 0 1 5 17V3a.5.5 0 0 1 .5-.5Z"/><path d="M12 2.5V6h3.2M7.5 9h5M7.5 12h5M7.5 15h3"/>',
+  lance: '<path d="M11.5 3.5 16.5 8.5M9 6l5 5M4.2 16.8l6.3-6.3" stroke-linecap="round"/><rect x="8.1" y="2.9" width="4" height="8.8" rx="1" transform="rotate(-45 10.1 7.3)"/><path d="M3 17.5h7" stroke-linecap="round"/>',
   kanban: '<rect x="2.5" y="3" width="4.2" height="14" rx="1"/><rect x="7.9" y="3" width="4.2" height="9" rx="1"/><rect x="13.3" y="3" width="4.2" height="11.5" rx="1"/>',
   cofre: '<rect x="4" y="8.5" width="12" height="8.5" rx="1.2"/><path d="M6.5 8.5V6a3.5 3.5 0 0 1 7 0v2.5"/><circle cx="10" cy="12.5" r="1.4"/><path d="M10 13.9V15.3"/>',
   concorrentes: '<circle cx="7" cy="6.5" r="2.6"/><path d="M2 17v-1.2A4.3 4.3 0 0 1 6.3 11.5h1.4A4.3 4.3 0 0 1 12 15.8V17"/><circle cx="14.5" cy="7.5" r="2.1"/><path d="M13.3 11.6a4 4 0 0 1 4.7 3.9V17"/>',

@@ -51,7 +51,7 @@ function dcLinha(v, primaria = {}) {
   const pag = v.pagina || primaria.pagina;
   const conf = est === "confirmado" ? "Alta" : est === "divergencia" ? "Baixa" : "Indefinida";
   return `<div class="dc-linha">${dcSelo(v, primaria)}
-    <span class="dc-meta"><small>Fonte</small>${pag ? `Pág. ${esc(pag)}` : "Documento"}${primaria.fonte ? ` · ${esc(primaria.fonte)}` : ""}</span>
+    <span class="dc-meta"><small>Fonte</small>${pag ? `Pág. ${esc(pag)}` : esc(primaria.origem || "Documento")}${primaria.fonte ? ` · ${esc(primaria.fonte)}` : ""}</span>
     <span class="dc-meta"><small>Confiança</small>${conf} <i class="dc-barras b${est}" aria-hidden="true"><b></b><b></b><b></b></i></span>
     ${v.leitura_alternativa && est === "divergencia" ? `<span class="dc-alt"><b>Leitura do verificador:</b> ${esc(v.leitura_alternativa)}</span>` : ""}</div>`;
 }

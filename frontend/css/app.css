@@ -968,3 +968,84 @@ body.op-gaveta-aberta { overflow: hidden; }
 .dc-achados li { margin: 6px 0; }
 .dc-achados q { color: var(--grafite); font-style: italic; }
 @media print { .dc-selo { border: 1px solid #999 !important; } .dc-rodape { display: block !important; } }
+
+/* ---------- sala de disputa ---------- */
+.ds-aviso { font-size: .88rem; }
+.ds-proximas { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 14px; }
+.ds-proximas > b { flex-basis: 100%; font-size: .85rem; color: var(--grafite); }
+.ds-prox { display: flex; gap: 10px; align-items: center; background: var(--folha); border: 1px solid var(--linha); border-radius: var(--raio); padding: 8px 12px; }
+.ds-prox > span:first-child { display: flex; flex-direction: column; line-height: 1.25; }
+.ds-prox small { color: var(--grafite); font-size: .78rem; }
+.ds-cont { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--ciano-escuro); white-space: nowrap; }
+.ds-cont.agora { color: var(--carimbo); }
+.ds-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; margin-bottom: 14px; }
+.ds-cartao { background: var(--folha); border: 1px solid var(--linha); border-top: 4px solid var(--linha-forte); border-radius: var(--raio); padding: 14px; display: grid; gap: 10px; min-width: 0; }
+.ds-cartao.ds-cobrir { border-top-color: var(--ambar); }
+.ds-cartao.ds-lider { border-top-color: var(--visto); }
+.ds-cartao.ds-no_piso { border-top-color: var(--ambar); }
+.ds-cartao.ds-parar { border-top-color: var(--carimbo); }
+.ds-cartao.encerrada { opacity: .75; }
+.ds-cartao header { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.ds-cartao header small { display: block; color: var(--grafite); font-size: .8rem; margin-top: 2px; }
+.ds-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ds-chips span { font-size: .72rem; font-weight: 600; background: var(--oficio-claro); border-radius: 4px; padding: 2px 7px; }
+.ds-numeros { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.ds-numeros div { background: var(--papel); border-radius: 6px; padding: 8px; min-width: 0; }
+.ds-numeros small { display: block; font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; color: var(--grafite); }
+.ds-numeros b { font-variant-numeric: tabular-nums; font-size: .86rem; white-space: nowrap; display: block; overflow: hidden; text-overflow: ellipsis; }
+.ds-proximo { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: flex-end; border: 1px dashed var(--linha-forte); border-radius: 8px; padding: 10px; }
+.ds-proximo small { display: block; color: var(--grafite); font-size: .82rem; }
+.ds-proximo strong { font-size: 1.5rem; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.ds-prox-acoes { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.ds-espera { font-size: .8rem; font-weight: 700; color: var(--ambar); font-variant-numeric: tabular-nums; }
+.ds-espera.liberado { color: var(--visto); }
+.ds-margem { height: 6px; background: var(--oficio-claro); border-radius: 99px; overflow: hidden; }
+.ds-margem i { display: block; height: 100%; background: var(--ciano-escuro); }
+.ds-parar .ds-margem i, .ds-no_piso .ds-margem i { background: var(--ambar); }
+.ds-registro { display: flex; gap: 6px; flex-wrap: wrap; }
+.ds-registro input { flex: 1 1 130px; min-width: 0; font-variant-numeric: tabular-nums; }
+.ds-cartao footer { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: .85rem; }
+.ds-hist summary { cursor: pointer; font-size: .85rem; color: var(--grafite); }
+.ds-hist ol { list-style: none; padding: 0; margin: 6px 0; font-size: .85rem; max-height: 180px; overflow-y: auto; }
+.ds-hist li { display: flex; gap: 10px; }
+.ds-hist li span { color: var(--grafite); font-variant-numeric: tabular-nums; }
+.ds-estrategias { border: 0; padding: 0; display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.ds-estrategias legend { font-weight: 600; margin-bottom: 6px; }
+.ds-est { display: flex; gap: 8px; align-items: flex-start; border: 1px solid var(--linha); border-radius: 8px; padding: 10px; cursor: pointer; }
+.ds-est:has(input:checked) { border-color: var(--ciano-escuro); background: var(--ciano-claro); }
+.ds-est small { display: block; color: var(--grafite); font-size: .8rem; }
+.ds-itens-lista { display: grid; gap: 4px; max-height: 260px; overflow-y: auto; border: 1px solid var(--linha); border-radius: 6px; padding: 8px; }
+.ds-rodape { font-size: .8rem; }
+@media (max-width: 420px) { .ds-grade { grid-template-columns: 1fr; } }
+
+[hidden] { display: none !important; }
+.ds-prox > span:first-child { min-width: 0; max-width: 340px; }
+.ds-prox > span:first-child b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 560px) {
+  .ds-prox { flex-wrap: wrap; width: 100%; }
+  .ds-prox > span:first-child { flex-basis: 100%; max-width: none; }
+  .ds-numeros { grid-template-columns: 1fr; gap: 4px; }
+  .ds-numeros div { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .ds-numeros b { font-size: .95rem; }
+}
+
+/* análise de lances (IA + DoubleCheck) */
+.ds-ia { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; background: var(--ciano-claro); border-radius: 6px; padding: 6px 10px; font-size: .85rem; }
+.al-sugestoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin: 12px 0; }
+.al-sugestoes > div { border: 1px solid var(--linha); border-radius: 8px; padding: 10px 12px; display: grid; gap: 3px; align-content: start; }
+.al-sugestoes small { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--grafite); }
+.al-sugestoes b { font-size: 1.2rem; font-variant-numeric: tabular-nums; }
+.al-sugestoes span { font-size: .8rem; color: var(--grafite); }
+.al-sugestoes .botao { justify-self: start; margin-top: 4px; }
+.al-escala { margin: 6px 0 14px; }
+.al-escala figcaption { font-size: .8rem; color: var(--grafite); margin-bottom: 8px; }
+.al-trilho { position: relative; height: 10px; background: var(--oficio-claro); border-radius: 99px; margin: 0 8px 10px; }
+.al-marca { position: absolute; top: -4px; width: 4px; height: 18px; border-radius: 2px; transform: translateX(-2px); background: var(--oficio); }
+.al-legenda { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 4px 14px; font-size: .85rem; }
+.al-legenda i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; background: var(--oficio); }
+.al-est { background: var(--linha-forte) !important; } .al-med { background: #6d8597 !important; } .al-fech { background: var(--ciano-escuro) !important; }
+.al-agr { background: var(--ambar) !important; } .al-piso { background: var(--carimbo) !important; } .al-prop { background: var(--visto) !important; }
+.al-resumo { font-size: .95rem; }
+.al-afirma { border-left: 3px solid var(--linha); padding: 2px 0 2px 10px; margin: 8px 0; }
+.al-afirma p { margin: 0; }
+.al-h { font-size: 1rem; margin: 16px 0 6px; }

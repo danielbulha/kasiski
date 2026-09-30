@@ -5,12 +5,12 @@ const ROTAS = [
   [/^#\/pecas$/, "pecas"], [/^#\/pecas\/advogado$/, "advogado"], [/^#\/pecas\/(\d+)$/, "peca"], [/^#\/agenda$/, "agenda"],
   [/^#\/contratos$/, "contratos"], [/^#\/contratos\/(\d+)$/, "contrato"], [/^#\/precos$/, "precos"], [/^#\/propostas\/(\d+)$/, "proposta"],
   [/^#\/empresas$/, "empresas"], [/^#\/conta$/, "conta"], [/^#\/glossario$/, "glossario"], [/^#\/admin$/, "admin"],
-  [/^#\/relatorios$/, "relatorios"], [/^#\/arquivo$/, "arquivo"], [/^#\/lixeira$/, "lixeira"],
+  [/^#\/relatorios$/, "relatorios"], [/^#\/disputa$/, "disputa"], [/^#\/arquivo$/, "arquivo"], [/^#\/lixeira$/, "lixeira"],
 ];
 
 const NAV = [
   ["Antes da disputa", [["#/radar", "Radar de editais", "radar"], ["#/cofre", "Cofre de documentos", "cofre"]]],
-  ["Na disputa", [["#/precos", "Preços e propostas", "precos"], ["#/concorrentes", "Concorrentes", "concorrentes"], ["#/pecas", "Peças", "pecas"], ["#/agenda", "Agenda de prazos", "agenda"]]],
+  ["Na disputa", [["#/disputa", "Sala de disputa", "lance"], ["#/precos", "Preços e propostas", "precos"], ["#/concorrentes", "Concorrentes", "concorrentes"], ["#/pecas", "Peças", "pecas"], ["#/agenda", "Agenda de prazos", "agenda"]]],
   ["Depois da disputa", [["#/contratos", "Gestão de contratos", "contratos"], ["#/arquivo", "Arquivo de licitações", "arquivo"]]],
 ];
 

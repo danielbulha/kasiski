@@ -1,0 +1,65 @@
+{
+  "versao": 1,
+  "eixos": [
+    {"id": "oportunidades", "nome": "Oportunidades",
+     "baixa": "Sua empresa depende de achar editais por acaso. Um monitoramento diário por palavras-chave, CNAE e UF aumenta o volume de disputas certas sem aumentar a equipe.",
+     "recurso": {"nome": "Radar de licitações", "url": "/radar-licitacoes/"}},
+    {"id": "documentacao", "nome": "Documentação",
+     "baixa": "Documento vencido ou atestado insuficiente é a causa mais comum de inabilitação. Centralize certidões com controle de validade e organize o acervo de atestados por objeto.",
+     "recurso": {"nome": "Habilitação e cofre de documentos", "url": "/habilitacao/"}},
+    {"id": "estrategia", "nome": "Estratégia",
+     "baixa": "Sem critério de Go/No-Go e sem formação de preço antes da sessão, a empresa gasta esforço em disputas ruins e arrisca lances inexequíveis. Defina critérios e calcule o piso de lance antes de disputar.",
+     "recurso": {"nome": "Decisão Go / No-Go", "url": "/go-no-go/"}},
+    {"id": "concorrencia", "nome": "Concorrência",
+     "baixa": "Conhecer quem costuma vencer e analisar a habilitação do vencedor são as formas mais baratas de ganhar mais — inclusive por recurso.",
+     "recurso": {"nome": "Inteligência de concorrentes", "url": "/concorrentes/"}},
+    {"id": "contratos", "nome": "Contratos",
+     "baixa": "Reajuste perdido, prorrogação esquecida e pagamento atrasado corroem a margem do contrato ganho. Controle data-base, vigência, garantia e recebimentos com alertas.",
+     "recurso": {"nome": "Gestão de contratos", "url": "/gestao-contratos/"}}
+  ],
+  "perfil": [
+    {"id": "segmento", "texto": "Qual o principal segmento da sua empresa?", "opcoes": ["Obras e engenharia", "Serviços continuados (limpeza, vigilância, apoio)", "Fornecimento de bens", "Saúde", "Tecnologia da informação", "Educação e alimentação", "Outro"]},
+    {"id": "porte", "texto": "Qual o porte da empresa?", "opcoes": ["MEI / ME", "EPP", "Média", "Grande"]}
+  ],
+  "perguntas": [
+    {"id": "encontra", "eixo": "oportunidades", "texto": "Como sua empresa encontra licitações?", "opcoes": [
+      {"t": "Não procuramos: só quando alguém avisa", "p": 0}, {"t": "Olhamos portais de vez em quando", "p": 35},
+      {"t": "Buscamos toda semana nos portais", "p": 65}, {"t": "Monitoramento diário automatizado, com filtros", "p": 100}]},
+    {"id": "volume", "eixo": "oportunidades", "texto": "Quantas licitações sua empresa disputa por mês?", "opcoes": [
+      {"t": "Nenhuma ainda", "p": 0}, {"t": "1 ou 2", "p": 35}, {"t": "3 a 5", "p": 65}, {"t": "Mais de 5", "p": 100}]},
+    {"id": "sicaf", "eixo": "documentacao", "texto": "A empresa tem cadastro no SICAF (ou no cadastro do estado/município em que atua)?", "opcoes": [
+      {"t": "Não sei o que é", "p": 0}, {"t": "Não temos", "p": 15}, {"t": "Temos, mas está desatualizado", "p": 50}, {"t": "Temos e mantemos atualizado", "p": 100}]},
+    {"id": "certidoes", "eixo": "documentacao", "texto": "Como ficam as certidões de regularidade (federal, FGTS, trabalhista, estadual, municipal)?", "opcoes": [
+      {"t": "Tiramos quando o edital pede", "p": 10}, {"t": "Ficam numa pasta, sem controle de validade", "p": 45},
+      {"t": "Planilha com as datas de validade", "p": 75}, {"t": "Sistema com alerta antes de vencer", "p": 100}]},
+    {"id": "atestados", "eixo": "documentacao", "texto": "E os atestados de capacidade técnica?", "opcoes": [
+      {"t": "Não temos atestados", "p": 0}, {"t": "Poucos, que não cobrem nossos objetos", "p": 30},
+      {"t": "Cobrem parte dos objetos que disputamos", "p": 65}, {"t": "Acervo organizado por objeto e quantitativo", "p": 100}]},
+    {"id": "gonogo", "eixo": "estrategia", "texto": "Como vocês decidem se vão participar de uma licitação?", "opcoes": [
+      {"t": "Participamos de tudo que aparece", "p": 5}, {"t": "Conversa informal, caso a caso", "p": 35},
+      {"t": "Critérios definidos (aderência, margem, risco)", "p": 75}, {"t": "Processo Go/No-Go com registro do motivo e revisão", "p": 100}]},
+    {"id": "edital", "eixo": "estrategia", "texto": "Como é a leitura do edital?", "opcoes": [
+      {"t": "Lemos o resumo e o objeto", "p": 10}, {"t": "Lemos tudo, perto da sessão", "p": 40},
+      {"t": "Checklist próprio de habilitação e riscos", "p": 75}, {"t": "Análise estruturada com prazos de impugnação calculados", "p": 100}]},
+    {"id": "margem", "eixo": "estrategia", "texto": "Vocês calculam custo e margem antes de disputar?", "opcoes": [
+      {"t": "Não, decidimos o lance na hora", "p": 0}, {"t": "Fazemos uma conta rápida", "p": 35},
+      {"t": "Planilha de custos por item", "p": 70}, {"t": "Formação com BDI, tributos e piso de lance definido", "p": 100}]},
+    {"id": "pesquisa", "eixo": "concorrencia", "texto": "Vocês pesquisam os concorrentes?", "opcoes": [
+      {"t": "Nunca", "p": 0}, {"t": "Só descobrimos quem são na sessão", "p": 20},
+      {"t": "Às vezes, antes das disputas importantes", "p": 60}, {"t": "Sempre: histórico de vencedores e preços", "p": 100}]},
+    {"id": "recurso", "eixo": "concorrencia", "texto": "Quando perdem, analisam os documentos do vencedor?", "opcoes": [
+      {"t": "Não", "p": 0}, {"t": "Raramente", "p": 30}, {"t": "Nas disputas relevantes", "p": 65}, {"t": "Sempre, e recorremos quando cabe", "p": 100}]},
+    {"id": "reajuste", "eixo": "contratos", "texto": "Como vocês controlam reajuste, prorrogação e garantia dos contratos?", "opcoes": [
+      {"t": "Ainda não temos contratos públicos", "p": null}, {"t": "Não controlamos: lembramos quando dá", "p": 10},
+      {"t": "Planilha com as datas", "p": 60}, {"t": "Alertas automáticos antes de cada prazo", "p": 100}]},
+    {"id": "pagamentos", "eixo": "contratos", "texto": "E os pagamentos dos órgãos?", "opcoes": [
+      {"t": "Ainda não temos contratos públicos", "p": null}, {"t": "Esperamos o órgão pagar", "p": 15},
+      {"t": "Acompanhamos e cobramos por telefone/e-mail", "p": 55}, {"t": "Controle de atrasos e cobrança formal com correção", "p": 100}]}
+  ],
+  "niveis": [
+    {"min": 0, "id": "inicial", "nome": "Inicial", "texto": "A empresa está começando no mercado público. O maior ganho agora vem de organizar a documentação e encontrar as licitações certas com regularidade."},
+    {"min": 40, "id": "em_desenvolvimento", "nome": "Em desenvolvimento", "texto": "Já existe uma rotina, mas ela depende de pessoas e de memória. Processos simples de decisão, preço e controle de prazos devem elevar a taxa de sucesso."},
+    {"min": 60, "id": "estruturada", "nome": "Estruturada", "texto": "A empresa tem processo. O próximo salto vem de inteligência: concorrentes, preços praticados e dados para decidir melhor que os outros."},
+    {"min": 80, "id": "avancada", "nome": "Avançada", "texto": "Maturidade alta. O desafio é escala: mais disputas certas com a mesma equipe e automação do acompanhamento dos contratos."}
+  ]
+}

@@ -1,0 +1,382 @@
+"""Integração com o PNCP (Portal Nacional de Contratações Públicas) — APIs públicas, sem login.
+
+- Busca textual (a mesma do portal): https://pncp.gov.br/api/search/
+- API de consulta: https://pncp.gov.br/api/consulta/v1  (Swagger: /api/consulta/swagger-ui/index.html)
+- API do PNCP (arquivos, itens, resultados): https://pncp.gov.br/api/pncp/v1
+
+Os campos das respostas variam entre endpoints; por isso a normalização é tolerante.
+"""
+import logging
+import re
+from datetime import date, datetime, timedelta
+
+import requests
+
+from services.arquivos import texto_de_pdf_bytes
+
+log = logging.getLogger(__name__)
+BASE_BUSCA = "https://pncp.gov.br/api/search/"
+BASE_CONSULTA = "https://pncp.gov.br/api/consulta/v1"
+BASE_PNCP = "https://pncp.gov.br/api/pncp/v1"
+CAB = {"User-Agent": "Certame/1.0 (+contato do administrador)", "Accept": "application/json"}
+
+
+def _get(url, params=None, timeout=40):
+    r = requests.get(url, params=params, headers=CAB, timeout=timeout)
+    if r.status_code == 204:
+        return None
+    r.raise_for_status()
+    return r.json()
+
+
+def _data(v):
+    if not v:
+        return None
+    try:
+        return datetime.fromisoformat(str(v).replace("Z", "")[:19])
+    except ValueError:
+        return None
+
+
+def partes_controle(numero):
+    """'00394460000141-1-000123/2026' -> (cnpj, ano, sequencial)."""
+    m = re.match(r"(\d{14})-\d+-(\d+)/(\d{4})", numero or "")
+    if not m:
+        return None
+    return m.group(1), int(m.group(3)), int(m.group(2))
+
+
+def _normalizar(item):
+    """Unifica campos da busca textual e da API de consulta."""
+    orgao = item.get("orgaoEntidade") or {}
+    unidade = item.get("unidadeOrgao") or {}
+    numero = item.get("numeroControlePNCP") or item.get("numero_controle_pncp") or ""
+    cnpj_ano_seq = partes_controle(numero)
+    link = item.get("linkSistemaOrigem") or ""
+    url_pncp = ""
+    if cnpj_ano_seq:
+        c, a, s = cnpj_ano_seq
+        url_pncp = f"https://pncp.gov.br/app/editais/{c}/{a}/{s}"
+    return {
+        "numero_controle": numero,
+        "orgao": orgao.get("razaoSocial") or item.get("orgao_nome") or "",
+        "orgao_cnpj": orgao.get("cnpj") or item.get("orgao_cnpj") or "",
+        "objeto": item.get("objetoCompra") or item.get("description") or item.get("title") or "",
+        "modalidade": item.get("modalidadeNome") or item.get("modalidade_licitacao_nome") or "",
+        "uf": unidade.get("ufSigla") or item.get("uf") or "",
+        "municipio": unidade.get("municipioNome") or item.get("municipio_nome") or "",
+        "valor_estimado": item.get("valorTotalEstimado") or item.get("valor_global"),
+        "data_abertura": item.get("dataAberturaProposta") or item.get("data_inicio_vigencia"),
+        "data_encerramento": item.get("dataEncerramentoProposta") or item.get("data_fim_vigencia"),
+        # sessão pública: no PNCP, "abertura da proposta" é o início do recebimento (geralmente a publicação);
+        # a disputa acontece no fim do recebimento de propostas
+        "data_sessao": item.get("dataEncerramentoProposta") or item.get("dataAberturaProposta") or item.get("data_fim_vigencia"),
+        "portal_disputa": link,
+        "link": url_pncp or link,
+        "numero": item.get("numeroCompra") or item.get("numero") or "",
+    }
+
+
+def buscar_editais_abertos(palavras, ufs=None, paginas=2, max_termos=8):
+    """Editais recebendo propostas que contêm as palavras-chave (busca textual do PNCP).
+    palavras: texto separado por vírgula ou lista de termos."""
+    resultados = {}
+    if isinstance(palavras, (list, tuple)):
+        termos = [p.strip() for p in palavras if p and p.strip()] or [""]
+    else:
+        termos = [p.strip() for p in (palavras or "").split(",") if p.strip()] or [""]
+    for termo in termos[:max_termos]:
+        for pagina in range(1, paginas + 1):
+            params = {"q": termo, "tipos_documento": "edital", "ordenacao": "-data", "pagina": pagina,
+                      "tam_pagina": 20, "status": "recebendo_proposta"}
+            if ufs:
+                params["ufs"] = ufs
+            try:
+                dados = _get(BASE_BUSCA, params) or {}
+            except Exception as e:
+                log.warning("Busca PNCP falhou (%s): %s", termo, e)
+                break
+            itens = dados.get("items") or []
+            for it in itens:
+                n = _normalizar(it)
+                if n["numero_controle"]:
+                    n["termo"] = termo
+                    resultados[n["numero_controle"]] = n
+            if len(itens) < 20:
+                break
+    return list(resultados.values())
+
+
+def buscar_abertos_consulta(uf=None, modalidade=None, pagina=1):
+    """Alternativa pela API de consulta: contratações com proposta em aberto."""
+    params = {"dataFinal": (date.today() + timedelta(days=60)).strftime("%Y%m%d"), "pagina": pagina,
+              "tamanhoPagina": 50}
+    if uf:
+        params["uf"] = uf
+    if modalidade:
+        params["codigoModalidadeContratacao"] = modalidade
+    dados = _get(f"{BASE_CONSULTA}/contratacoes/proposta", params) or {}
+    return [_normalizar(i) for i in dados.get("data", [])]
+
+
+def detalhe(numero_controle):
+    partes = partes_controle(numero_controle)
+    if not partes:
+        return None
+    cnpj, ano, seq = partes
+    d = _get(f"{BASE_CONSULTA}/orgaos/{cnpj}/compras/{ano}/{seq}")
+    return _normalizar(d) if d else None
+
+
+def baixar_texto_edital(numero_controle):
+    """Compatibilidade: devolve só (texto, nome_arquivo)."""
+    d = baixar_edital(numero_controle)
+    return (d["texto"], d["nome"]) if d else (None, None)
+
+
+def _pdfs_do_arquivo(conteudo, nome):
+    """PDFs de um arquivo do PNCP: o próprio PDF ou os PDFs dentro de um ZIP (muitos órgãos publicam o edital zipado)."""
+    if conteudo[:4] == b"%PDF":
+        return [(nome, conteudo)]
+    if conteudo[:2] == b"PK":
+        import io
+        import zipfile
+        try:
+            with zipfile.ZipFile(io.BytesIO(conteudo)) as z:
+                itens = [n for n in z.namelist() if n.lower().endswith(".pdf") and not n.startswith("__MACOSX")]
+                itens.sort(key=lambda n: (0 if "edital" in n.lower() else 1, n))
+                return [(n.split("/")[-1], z.read(n)) for n in itens[:6]]
+        except Exception as e:
+            log.info("ZIP do PNCP ilegível: %s", e)
+    return []
+
+
+def arquivos_da_compra(numero_controle):
+    """Lista pública de arquivos da contratação no PNCP: [{titulo, tipo, url}]."""
+    partes = partes_controle(numero_controle)
+    if not partes:
+        return []
+    cnpj, ano, seq = partes
+    try:
+        lista = _get(f"{BASE_PNCP}/orgaos/{cnpj}/compras/{ano}/{seq}/arquivos") or []
+    except Exception as e:
+        log.warning("Lista de arquivos PNCP falhou: %s", e)
+        return []
+    return [{"titulo": a.get("titulo") or a.get("tipoDocumentoNome") or "Arquivo", "tipo": a.get("tipoDocumentoNome"),
+             "url": a.get("url") or a.get("uri")} for a in lista if (a.get("url") or a.get("uri"))]
+
+
+def baixar_edital(numero_controle):
+    """Baixa o edital publicado no PNCP (PDF solto ou dentro de ZIP). Devolve {texto, nome, conteudo, url} ou None.
+    Prefere o PDF com texto (para a análise); sem nenhum, devolve o primeiro PDF para consulta (texto vazio)."""
+    arquivos = arquivos_da_compra(numero_controle)
+    arquivos.sort(key=lambda a: 0 if "edital" in str(a.get("tipo") or a.get("titulo") or "").lower() else 1)
+    reserva = None
+    for a in arquivos[:8]:
+        try:
+            r = requests.get(a["url"], headers={"User-Agent": CAB["User-Agent"]}, timeout=90)
+            if r.status_code != 200:
+                continue
+            for nome, pdf in _pdfs_do_arquivo(r.content, a.get("titulo") or "edital"):
+                nome = nome if nome.lower().endswith(".pdf") else f"{nome}.pdf"
+                try:
+                    texto = texto_de_pdf_bytes(pdf)
+                except Exception:
+                    texto = ""
+                if len(texto) > 500:
+                    return {"texto": texto, "nome": nome, "conteudo": pdf, "url": a["url"]}
+                if reserva is None:
+                    reserva = {"texto": "", "nome": nome, "conteudo": pdf, "url": a["url"]}  # escaneado: serve para ler, não para a IA
+        except Exception as e:
+            log.warning("Download de arquivo PNCP falhou: %s", e)
+    return reserva
+
+
+def historico_fornecedor(cnpj, limite=20):
+    """Contratos e atas em que o CNPJ aparece (busca textual do PNCP)."""
+    saida = []
+    for tipo in ("contrato", "ata"):
+        try:
+            dados = _get(BASE_BUSCA, {"q": cnpj, "tipos_documento": tipo, "ordenacao": "-data",
+                                      "pagina": 1, "tam_pagina": limite}) or {}
+        except Exception as e:
+            log.warning("Histórico PNCP falhou: %s", e)
+            continue
+        for it in dados.get("items") or []:
+            saida.append({"tipo": tipo, "orgao": it.get("orgao_nome"), "objeto": it.get("description") or it.get("title"),
+                          "valor": it.get("valor_global"), "uf": it.get("uf"),
+                          "data": it.get("data_publicacao_pncp") or it.get("data_inicio_vigencia"),
+                          "numero_controle": it.get("numero_controle_pncp")})
+    return saida
+
+
+_DOC_RELEVANTE = re.compile(r"ata|julgament|habilita|recurs|resultado|decis|parecer|adjudica|homologa|relat[oó]rio|diligên|dilig", re.I)
+_DOC_IGNORAR = re.compile(r"\bedital\b|termo de refer|estudo t[eé]cnico|projeto b[aá]sico|minuta|aviso", re.I)
+
+
+def compra_do_contrato(numero_controle_contrato):
+    """'CNPJ-2-000140/2026' -> numero de controle da compra de origem ('CNPJ-1-000968/2026') ou None."""
+    try:
+        cnpj, _, resto = numero_controle_contrato.split("-")
+        seq, ano = resto.split("/")
+        d = _get(f"{BASE_PNCP}/orgaos/{cnpj}/contratos/{ano}/{int(seq)}") or {}
+        return d.get("numeroControlePncpCompra") or d.get("numeroControlePNCPCompra")
+    except Exception as e:
+        log.warning("Contrato PNCP %s sem compra de origem: %s", numero_controle_contrato, e)
+        return None
+
+
+def documentos_de_julgamento(numero_controle_compra, limite=3):
+    """Atas, julgamentos, decisões de recurso etc. publicados na compra (PDFs). Devolve [{titulo, tipo, url, conteudo, texto}]."""
+    partes = partes_controle(numero_controle_compra)
+    if not partes:
+        return []
+    cnpj, ano, seq = partes
+    try:
+        arquivos = _get(f"{BASE_PNCP}/orgaos/{cnpj}/compras/{ano}/{seq}/arquivos") or []
+    except Exception as e:
+        log.warning("Arquivos da compra %s indisponíveis: %s", numero_controle_compra, e)
+        return []
+    saida = []
+    for a in arquivos:
+        rotulo = f"{a.get('tipoDocumentoNome') or ''} {a.get('titulo') or ''}"
+        if not _DOC_RELEVANTE.search(rotulo) or _DOC_IGNORAR.search(rotulo):
+            continue
+        url = a.get("url") or a.get("uri")
+        if not url:
+            continue
+        try:
+            r = requests.get(url, headers={"User-Agent": CAB["User-Agent"]}, timeout=60)
+            if r.content[:4] != b"%PDF" or len(r.content) > 25 * 1024 * 1024:
+                continue
+            texto = texto_de_pdf_bytes(r.content)
+            if len(texto) < 200:
+                continue
+            saida.append({"titulo": (a.get("titulo") or a.get("tipoDocumentoNome") or "Documento")[:300],
+                          "tipo_pncp": a.get("tipoDocumentoNome"), "url": url, "conteudo": r.content, "texto": texto,
+                          "data": a.get("dataPublicacaoPncp")})
+        except Exception as e:
+            log.warning("Download de documento PNCP falhou: %s", e)
+        if len(saida) >= limite:
+            break
+    return saida
+
+
+# ---------------------------------------------------------------- vencedores de contratações anteriores
+def buscar_documentos(termo, tipo, limite=20, timeout=20, pagina=1, ufs=None):
+    """Busca textual do PNCP por tipo de documento ('contrato' ou 'ata'), mais recentes primeiro."""
+    params = {"q": termo, "tipos_documento": tipo, "ordenacao": "-data", "pagina": pagina, "tam_pagina": limite}
+    if ufs:
+        params["ufs"] = ",".join(ufs) if isinstance(ufs, (list, tuple)) else ufs
+    dados = _get(BASE_BUSCA, params, timeout=timeout) or {}
+    saida = []
+    for it in dados.get("items") or []:
+        saida.append({"tipo": tipo, "numero_controle": it.get("numero_controle_pncp") or it.get("numeroControlePNCP"),
+                      "numero_controle_compra": it.get("numero_controle_pncp_compra") or it.get("numeroControlePNCPCompra"),
+                      "orgao": it.get("orgao_nome"), "objeto": it.get("description") or it.get("title") or "",
+                      "valor": it.get("valor_global"), "uf": it.get("uf"), "municipio": it.get("municipio_nome"),
+                      "data": it.get("data_publicacao_pncp") or it.get("data_inicio_vigencia") or it.get("data_assinatura")})
+    return saida
+
+
+def _cnpj_fornecedor(d):
+    ni = re.sub(r"\D", "", str(d.get("niFornecedor") or d.get("ni_fornecedor") or ""))
+    return ni if len(ni) == 14 else None  # CPF (pessoa física) fica de fora
+
+
+def fornecedor_do_contrato(numero_controle_contrato, timeout=15):
+    """'CNPJ-2-000140/2026' -> {cnpj, nome, valor, objeto, data, orgao, uf} ou None."""
+    try:
+        cnpj, _, resto = numero_controle_contrato.split("-")[:3]
+        seq, ano = resto.split("/")
+        d = _get(f"{BASE_PNCP}/orgaos/{cnpj}/contratos/{ano}/{int(seq)}", timeout=timeout) or {}
+    except Exception as e:
+        log.info("Contrato PNCP %s indisponível: %s", numero_controle_contrato, e)
+        return None
+    ni = _cnpj_fornecedor(d)
+    if not ni:
+        return None
+    return {"cnpj": ni, "nome": d.get("nomeRazaoSocialFornecedor") or "", "valor": d.get("valorGlobal") or d.get("valorInicial"),
+            "objeto": d.get("objetoContrato") or "", "data": d.get("dataAssinatura") or d.get("dataPublicacaoPncp"),
+            "orgao": (d.get("orgaoEntidade") or {}).get("razaoSocial"), "uf": (d.get("unidadeOrgao") or {}).get("ufSigla")}
+
+
+def resultados_da_compra(numero_controle, max_itens=12, timeout=15):
+    """Resultado homologado por item de uma compra (atas de registro de preços, pregões):
+    [{numero_item, descricao, unidade, cnpj, nome, valor_unitario, quantidade, valor_total, data}]."""
+    partes = partes_controle(numero_controle)
+    if not partes:
+        return []
+    cnpj, ano, seq = partes
+    base = f"{BASE_PNCP}/orgaos/{cnpj}/compras/{ano}/{seq}/itens"
+    try:
+        itens = _get(base, {"pagina": 1, "tamanhoPagina": 50}, timeout=timeout) or []
+    except Exception as e:
+        log.info("Itens da compra %s indisponíveis: %s", numero_controle, e)
+        return []
+    if isinstance(itens, dict):
+        itens = itens.get("data") or []
+    saida = []
+    for it in [i for i in itens if i.get("temResultado", True)][:max_itens]:
+        try:
+            res = _get(f"{base}/{it.get('numeroItem')}/resultados", timeout=timeout) or []
+        except Exception:
+            continue
+        for r in res if isinstance(res, list) else []:
+            ni = _cnpj_fornecedor(r)
+            if not ni:
+                continue
+            vu = r.get("valorUnitarioHomologado")
+            saida.append({"numero_item": it.get("numeroItem"), "descricao": it.get("descricao") or it.get("materialOuServicoNome") or "",
+                          "unidade": it.get("unidadeMedida") or "", "cnpj": ni, "nome": r.get("nomeRazaoSocialFornecedor") or "",
+                          "valor_unitario": float(vu) if isinstance(vu, (int, float)) else None,
+                          "quantidade": r.get("quantidadeHomologada"), "valor_total": float(r.get("valorTotalHomologado") or 0),
+                          "data": r.get("dataResultado") or r.get("dataInclusao")})
+    return saida
+
+
+def vencedores_da_compra(numero_controle, max_itens=4, timeout=15):
+    """Fornecedores homologados nos itens de uma compra. Devolve [{cnpj, nome, valor}]."""
+    saida = {}
+    for r in resultados_da_compra(numero_controle, max_itens, timeout):
+        atual = saida.setdefault(r["cnpj"], {"cnpj": r["cnpj"], "nome": r["nome"], "valor": 0.0})
+        atual["valor"] += r["valor_total"]
+    return list(saida.values())
+
+
+# ---------------------------------------------------------------- acompanhamento da oportunidade
+def situacao_compra(numero_controle, timeout=20):
+    """Situação atual da compra no PNCP: {situacao, unidade_codigo, unidade_nome, data_abertura, data_encerramento}."""
+    partes = partes_controle(numero_controle)
+    if not partes:
+        return None
+    cnpj, ano, seq = partes
+    d = _get(f"{BASE_CONSULTA}/orgaos/{cnpj}/compras/{ano}/{seq}", timeout=timeout) or {}
+    un = d.get("unidadeOrgao") or {}
+    return {"situacao": d.get("situacaoCompraNome") or d.get("situacaoCompra") or "",
+            "unidade_codigo": str(un.get("codigoUnidade") or "") or None, "unidade_nome": un.get("nomeUnidade"),
+            "data_abertura": d.get("dataAberturaProposta"), "data_encerramento": d.get("dataEncerramentoProposta"),
+            "data_sessao": d.get("dataEncerramentoProposta") or d.get("dataAberturaProposta"),
+            "modalidade": d.get("modalidadeNome"), "valor_estimado": d.get("valorTotalEstimado"),
+            "valor_homologado": d.get("valorTotalHomologado")}
+
+
+def itens_da_compra(numero_controle, limite=50, timeout=20):
+    """Itens/lotes da compra: [{numero, descricao, quantidade, unidade, valor_unitario, valor_total, situacao, tem_resultado}]."""
+    partes = partes_controle(numero_controle)
+    if not partes:
+        return []
+    cnpj, ano, seq = partes
+    itens = _get(f"{BASE_PNCP}/orgaos/{cnpj}/compras/{ano}/{seq}/itens", {"pagina": 1, "tamanhoPagina": limite},
+                 timeout=timeout) or []
+    if isinstance(itens, dict):
+        itens = itens.get("data") or []
+    return [{"numero": i.get("numeroItem"), "descricao": i.get("descricao") or i.get("materialOuServicoNome"),
+             "quantidade": i.get("quantidade"), "unidade": i.get("unidadeMedida"),
+             "valor_unitario": i.get("valorUnitarioEstimado"), "valor_total": i.get("valorTotal"),
+             "situacao": i.get("situacaoCompraItemNome"), "tem_resultado": bool(i.get("temResultado"))} for i in itens]
+
+
+def contratos_do_orgao(cnpj_orgao, limite=15, timeout=20):
+    """Contratos mais recentes publicados pelo órgão (histórico de compras do órgão)."""
+    return buscar_documentos(cnpj_orgao, "contrato", limite, timeout=timeout)

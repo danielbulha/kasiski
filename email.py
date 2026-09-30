@@ -1,0 +1,129 @@
+"""Envio de e-mail transacional pelo Resend (https://resend.com/docs/api-reference/emails/send-email)."""
+import html
+import re
+import unicodedata
+
+import requests
+from flask import current_app
+
+from extensions import ErroAPI
+
+
+_FORMATO = re.compile(r"^(?:[^<>@\"]+ <[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+>|[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+)$")
+
+
+def remetente():
+    """EMAIL_REMETENTE limpo: tira espaços/quebras de linha nas pontas, aspas em volta, espaços
+    especiais (NBSP, zero-width) e sinais < > "parecidos" colados de outros apps."""
+    v = unicodedata.normalize("NFKC", current_app.config["EMAIL_REMETENTE"] or "")
+    v = re.sub(r"[\u200b-\u200d\ufeff]", "", v).replace("\u00a0", " ")
+    v = v.replace("‹", "<").replace("›", ">").replace("〈", "<").replace("〉", ">")
+    v = v.strip().strip("'\"“”‘’").strip()
+    v = re.sub(r"\s+", " ", v)
+    v = re.sub(r"\s*<\s*", " <", v).replace(" >", ">").strip()
+    m = re.match(r"^(.+?)\s+([^\s<>@]+@[^\s<>@]+)$", v)  # "Nome email@x" sem os sinais < >
+    if "<" not in v and m:
+        v = f"{m.group(1)} <{m.group(2)}>"
+    return v
+
+
+def remetente_valido():
+    return bool(_FORMATO.match(remetente()))
+
+
+def configurado():
+    return bool(current_app.config["RESEND_API_KEY"])
+
+
+def enviar(para, assunto, texto, html_corpo, cabecalhos=None):
+    if not configurado():
+        current_app.logger.warning("E-mail não enviado (RESEND_API_KEY vazia) para %s: %s", para, assunto)
+        return False
+    try:
+        r = requests.post("https://api.resend.com/emails", timeout=20, headers={
+            "Authorization": f"Bearer {current_app.config['RESEND_API_KEY']}", "Content-Type": "application/json"},
+            json={"from": remetente(), "to": [para], "subject": assunto,
+                  "text": texto, "html": html_corpo, **({"headers": cabecalhos} if cabecalhos else {})})
+    except requests.RequestException as ex:
+        current_app.logger.exception("Resend indisponível")
+        e = ErroAPI("Não conseguimos enviar o e-mail agora. Tente de novo em instantes.", 502, "email_falhou")
+        e.detalhe = f"sem conexão com o Resend: {ex}"
+        raise e
+    if r.status_code >= 400:
+        current_app.logger.error("Resend recusou o envio (%s): %s", r.status_code, r.text[:500])
+        e = ErroAPI("Não conseguimos enviar o e-mail agora. Tente de novo em instantes.", 502, "email_falhou")
+        e.detalhe = f"Resend respondeu {r.status_code}: {r.text[:500]}"
+        raise e
+    return True
+
+
+def enviar_lote(mensagens):
+    """Envia até 100 e-mails numa chamada (https://resend.com/docs/api-reference/emails/send-batch-emails).
+    mensagens = [{para, assunto, texto, html, cabecalhos}]. Devolve a lista de ids (mesma ordem). Levanta ErroAPI se falhar."""
+    if not configurado():
+        raise ErroAPI("Configure o RESEND_API_KEY para enviar e-mails.", 400, "email_nao_configurado")
+    corpo = [{"from": remetente(), "to": [m["para"]], "subject": m["assunto"], "text": m.get("texto") or "",
+              "html": m["html"], **({"headers": m["cabecalhos"]} if m.get("cabecalhos") else {})} for m in mensagens[:100]]
+    try:
+        r = requests.post("https://api.resend.com/emails/batch", timeout=60, json=corpo, headers={
+            "Authorization": f"Bearer {current_app.config['RESEND_API_KEY']}", "Content-Type": "application/json"})
+    except requests.RequestException as ex:
+        e = ErroAPI("Resend indisponível.", 502, "email_falhou")
+        e.detalhe = str(ex)
+        raise e
+    if r.status_code >= 400:
+        current_app.logger.error("Resend recusou o lote (%s): %s", r.status_code, r.text[:500])
+        e = ErroAPI(f"O Resend recusou o envio ({r.status_code}).", 502, "email_falhou")
+        e.detalhe = r.text[:500]
+        raise e
+    try:
+        return [x.get("id") for x in (r.json().get("data") or [])]
+    except ValueError:
+        return []
+
+
+def diagnostico(para):
+    """Envia um e-mail de teste e devolve a resposta crua do Resend (para o painel admin)."""
+    cfg = current_app.config
+    bruto = cfg["EMAIL_REMETENTE"] or ""
+    info = {"remetente": remetente(), "remetente_bruto": repr(bruto), "remetente_valido": remetente_valido(),
+            "remetente_limpo_diferente": remetente() != bruto, "chave_configurada": bool(cfg["RESEND_API_KEY"]),
+            "chave_inicio": (cfg["RESEND_API_KEY"][:5] + "…") if cfg["RESEND_API_KEY"] else None, "para": para}
+    if not cfg["RESEND_API_KEY"]:
+        return {**info, "ok": False, "resposta": "RESEND_API_KEY está vazia no servidor."}
+    try:
+        r = requests.post("https://api.resend.com/emails", timeout=20, headers={
+            "Authorization": f"Bearer {cfg['RESEND_API_KEY']}", "Content-Type": "application/json"},
+            json={"from": remetente(), "to": [para], "subject": "Teste de envio do Kasiski",
+                  "text": "Se você recebeu esta mensagem, o envio de e-mails do Kasiski está funcionando."})
+        return {**info, "ok": r.status_code < 400, "status": r.status_code, "resposta": r.text[:800]}
+    except requests.RequestException as ex:
+        return {**info, "ok": False, "resposta": f"sem conexão com o Resend: {ex}"}
+
+
+def enviar_codigo(para, nome, codigo):
+    n = html.escape((nome or "").split(" ")[0])
+    texto = (f"Olá, {nome}!\n\nSeu código de verificação do Kasiski é: {codigo}\n\n"
+             "Ele vale por 15 minutos. Se você não pediu este código, ignore este e-mail.")
+    corpo = f"""<div style="font-family:Inter,Segoe UI,Arial,sans-serif;max-width:480px;margin:0 auto;color:#071D2D">
+  <p style="font-size:18px;font-weight:800;margin:0 0 20px">Kasiski <span style="font-weight:500;font-size:12px;color:#4F6373;letter-spacing:.08em">PUBLIC MARKET INTELLIGENCE</span></p>
+  <p>Olá, {n}!</p><p>Use este código para confirmar seu e-mail e concluir o cadastro:</p>
+  <p style="font-size:34px;font-weight:800;letter-spacing:10px;background:#F4F3EF;border-radius:6px;padding:16px;text-align:center;margin:20px 0">{codigo}</p>
+  <p style="color:#4F6373;font-size:14px">O código vale por 15 minutos. Se você não pediu este código, ignore este e-mail: ninguém consegue entrar na sua conta sem ele.</p></div>"""
+    return enviar(para, f"{codigo} é o seu código de verificação do Kasiski", texto, corpo)
+
+
+def esc(v):
+    return html.escape(str(v or ""))
+
+
+def layout_marketing(titulo, corpo_html, botao=None, link=None, rodape_html="", descadastro=None):
+    """Modelo visual dos e-mails de marketing/onboarding (marca Kasiski, um único botão, link de descadastro)."""
+    btn = (f'<p style="margin:26px 0"><a href="{esc(link)}" style="background:#071D2D;color:#fff;text-decoration:none;'
+           f'padding:13px 22px;border-radius:6px;font-weight:700;display:inline-block">{esc(botao)}</a></p>') if botao and link else ""
+    sair = (f'<p style="color:#91A5B3;font-size:12px;margin-top:28px">Você recebe este e-mail porque usa o Kasiski. '
+            f'<a href="{esc(descadastro)}" style="color:#91A5B3">Não quero mais receber dicas por e-mail</a>.</p>') if descadastro else ""
+    return f"""<div style="font-family:Inter,Segoe UI,Arial,sans-serif;max-width:560px;margin:0 auto;color:#071D2D;line-height:1.55">
+  <p style="font-size:18px;font-weight:800;margin:0 0 22px;letter-spacing:.02em">KASISKI <span style="font-weight:500;font-size:11px;color:#91A5B3;letter-spacing:.2em">PUBLIC MARKET INTELLIGENCE</span></p>
+  <h1 style="font-size:21px;margin:0 0 14px">{esc(titulo)}</h1>
+  {corpo_html}{btn}{rodape_html}{sair}</div>"""

@@ -74,7 +74,7 @@ PASSOS = [("01", "Detectar", "Todo dia útil, o radar consulta o PNCP e separa o
           ("03", "Agir", "Você recebe a recomendação de participar ou não, os prazos na agenda e a minuta da peça pronta para revisão — esclarecimento, impugnação ou recurso.")]
 RECURSOS = [("Radar de editais", "Busca diária no PNCP com nota de aderência de 0 a 100 para cada edital encontrado.", "/radar-licitacoes/"),
             ("Análise do edital", "Resumo, checklist de habilitação, riscos e recomendação de participar, com a página de cada ponto.", "/analisar-edital/"),
-            ("Verificação cruzada", "Um modelo de IA analisa, outro de fornecedor diferente confere. O que não se confirma, você vê como não confirmado.", "/verificacao-cruzada/"),
+            ("DoubleCheck™", "Uma IA analisa, outra confere e você decide. Cada conclusão vem com a fonte, e as divergências ficam à vista.", "/doublecheck/"),
             ("Pipeline Go / No-Go", "Kanban da oportunidade, do edital identificado ao contrato ativo, com fit, risco e movimentação automática pelo PNCP.", "/go-no-go/"),
             ("Cofre de habilitação", "Certidões e atestados com controle de validade. Alerta antes de vencer, não depois.", "/habilitacao/"),
             ("Inteligência de concorrentes", "Possíveis concorrentes, dossiê do CNPJ, sanções no TCU e na CGU e análise da habilitação e da proposta do adversário.", "/concorrentes/"),
@@ -87,7 +87,7 @@ DUVIDAS = [("O Kasiski substitui um advogado?", "Não. As peças são minutas fu
            ("Qual a diferença entre o Kasiski e um buscador de licitações?", "Buscadores encontram editais; o Kasiski ajuda a decidir onde competir. Depois da busca vêm a aderência, a leitura do edital, a habilitação, o Go/No-Go, os preços, os concorrentes, a proposta, as peças, os prazos e o contrato — tudo no mesmo lugar."),
            ("Como funciona a proposta comercial com IA?", "A partir do Profissional, o Kasiski lê no edital o que a proposta precisa conter, ajuda a formar o preço com custos, BDI e tributos, compara com preços praticados e tabelas oficiais, avisa riscos de inexequibilidade e entrega a minuta em Word."),
            ("De onde vêm os dados?", "De fontes públicas oficiais: PNCP (editais, contratos e atas), Receita Federal, TCU e Portal da Transparência (sanções) e Compras.gov.br (preços praticados). Editais fora do PNCP podem ser enviados em PDF."),
-           ("Como a IA evita erros?", "Cada cláusula restritiva, risco ou falha de concorrente apontada por um modelo é conferida por um segundo modelo, de outro fornecedor. O resultado aparece ao lado de cada ponto, com a página do documento de origem."),
+           ("Como a IA evita erros?", "Com o KASISKI DoubleCheck™: cada exigência, cláusula restritiva, risco, falha de concorrente e peça gerada passa por um segundo modelo, de outro fornecedor, que confere de forma independente. O resultado aparece ao lado de cada ponto (confirmado, divergência ou revisão recomendada), com a página do documento de origem. Isso reduz o risco de erro, mas não o elimina: a decisão é sempre sua."),
            ("Funciona para dispensa e inexigibilidade?", "Sim. Nesses casos o sistema não aplica os prazos de pregão: calcula o prazo de divulgação do aviso de contratação direta e avalia se a hipótese legal está bem enquadrada."),
            ("Posso atender várias empresas?", "Sim, no plano Consultor: até 10 CNPJs na mesma conta, com cofre, radar e agenda separados por empresa e relatórios com a marca do seu escritório."),
            ("Meus documentos ficam separados de outras empresas?", "Sim. Cada conta só acessa as próprias empresas, editais e documentos."),
@@ -107,7 +107,7 @@ def previa():
             + _linha("CND federal conjunta", "Atende", "ok") + _linha("CRF do FGTS", "Atende", "ok")
             + _linha("CNDT", "Vencido", "erro") + _linha("Atestado de capacidade técnica", "Falta", "erro")
             + '<p class="s-previa-titulo">Cláusula restritiva</p><div class="s-previa-ponto"><b>Atestado de 100% da área licitada</b>'
-              '<span>Lei 14.133, art. 67, §2º · pág. 15</span><span>Verificação cruzada <em class="s-carimbo ok">Confirmado</em></span></div>'
+              '<span>Lei 14.133, art. 67, §2º · pág. 15</span><span class="s-dc-mini">DoubleCheck™ <em class="s-carimbo ok">Confirmado</em></span></div>'
               '<p class="s-previa-titulo">Prazos</p>' + _linha("Último dia para impugnar", "Em 4 dias", "aviso") + "</div></div>")
 
 
@@ -117,6 +117,7 @@ REDIRECIONA_APP = ('<script>(function(){var h=location.hash||"",q=location.searc
 
 
 def pg_home(pagina, ORG, SOFT):
+    import doublecheck
     f = C.PLANOS["free"]
     ta = f'<span data-free-analises>{f["analises"]}</span>'
     faq_ld = {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [
@@ -132,7 +133,7 @@ def pg_home(pagina, ORG, SOFT):
     corpo = f"""{REDIRECIONA_APP}
 <section class="s-heroi"><div class="s-heroi-texto"><p class="s-sobre">Buscadores encontram editais. O Kasiski ajuda a decidir onde competir.</p>
   <h1>Inteligência para vender ao poder público.</h1>
-  <p class="s-lead">O Kasiski monitora os editais publicados no PNCP, confere a habilitação da sua empresa, analisa concorrentes e redige impugnações e recursos — com cada conclusão da IA conferida por um segundo modelo.</p>
+  <p class="s-lead">O Kasiski monitora os editais publicados no PNCP, confere a habilitação da sua empresa, analisa concorrentes e redige impugnações e recursos — com cada conclusão da IA conferida por um segundo modelo pelo DoubleCheck™.</p>
   <div class="s-acoes"><a class="s-botao s-botao-grande" href="{cad}" data-cta="home_heroi">Criar conta grátis</a>
     <a class="s-botao s-botao-sec s-botao-grande" href="/diagnostico/" data-cta="home_diagnostico">Fazer o diagnóstico B2G</a></div>
   <p class="s-nota">Free para sempre · {ta} análise de edital por mês · experimente o Profissional por {C.TRIAL_DIAS} dias · sem cartão</p></div>
@@ -140,6 +141,7 @@ def pg_home(pagina, ORG, SOFT):
 <section class="s-secao s-faixa s-faixa-esq" id="como"><p class="s-sobre s-sobre-claro">Do ruído ao sinal</p>
   <h2>Milhares de editais por semana. Poucos fazem sentido para você.</h2><div class="s-grade3">{passos}</div></section>
 <section class="s-secao" id="recursos"><p class="s-sobre">Recursos</p><h2>Tudo o que a disputa exige, do edital ao contrato.</h2><div class="s-grade3">{recursos}</div></section>
+{doublecheck.secao_home()}
 <section class="s-secao s-secao-clara"><p class="s-sobre">Setores</p><h2>Regras gerais da Lei 14.133 e exigências de cada setor.</h2>
   <p class="s-lead">Além da habilitação padrão, a análise considera as exigências regulatórias do tipo de objeto e do segmento — como ANVISA na saúde, PNAE na educação, ART/RRT em obras e autorização da Polícia Federal na vigilância.</p>
   <div class="s-setores">{setores}</div></section>

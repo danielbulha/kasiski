@@ -10,7 +10,10 @@ V.painel = async (el) => {
       <div class="acoes">${multi ? `<label class="check"><input type="checkbox" id="todas" ${todas ? "checked" : ""}> Ver todas as empresas</label>` : ""}
       <a class="botao" href="#/radar">${icone("radar")} Ver radar</a></div></div>
     ${guia(`<p>O painel reúne o que exige atenção: prazos próximos, documentos vencendo e pagamentos atrasados.
-      O caminho natural é: <b>Radar</b> (encontrar editais) → <b>Editais</b> (analisar e decidir) → <b>Peças</b> e <b>Agenda</b> (agir no prazo) → <b>Contratos</b> (receber em dia).</p>`)}
+      O caminho natural é: <b>Radar</b> (encontrar editais) → <b>Oportunidades</b> (acompanhar, analisar e decidir) → <b>Peças</b> e <b>Agenda</b> (agir no prazo) → <b>Contratos</b> (receber em dia).</p>`)}
+    ${htmlPrimeirosPassos(p.primeiros_passos)}
+    ${p.doublecheck?.total ? `<section class="bloco dc-painel">${dcResumoHtml(p.doublecheck, { titulo: `DoubleCheck™ · ${fmt.num(p.doublecheck.total, 0)} itens verificados`, sub: `em ${p.doublecheck.analises} análise(s) e peça(s)` })}
+      ${p.doublecheck.divergencia + p.doublecheck.revisao ? `<p class="dc-destaque">O DoubleCheck identificou <b>${p.doublecheck.divergencia + p.doublecheck.revisao}</b> ponto(s) que pediam atenção antes de chegarem à sua equipe.</p>` : `<p class="dc-destaque">Todas as conclusões verificadas até aqui tiveram concordância entre os modelos.</p>`}</section>` : ""}
     <div class="acoes-rapidas">
       <a href="#/radar" class="acao-rapida"><span class="icone-caixa">${icone("radar")}</span><span>Buscar editais no radar</span></a>
       <a href="#" class="acao-rapida" data-acao="novo-edital"><span class="icone-caixa">${icone("editais")}</span><span>Novo edital</span></a>
@@ -38,7 +41,28 @@ V.painel = async (el) => {
     </div>`;
   const t = $("#todas", el);
   if (t) t.onchange = () => { sessionStorage.setItem("painel_todas", t.checked ? "1" : "0"); V.painel(el); };
+  const rt = $("[data-refazer-tour]", el); if (rt) rt.onclick = () => refazerTour();
+  const fpp = $("[data-fechar-pp]", el);
+  if (fpp) fpp.onclick = () => { try { localStorage.setItem(`kasiski_pp_${S.usuario.id}`, "1"); } catch { /* ok */ } $("#primeiros-passos", el).remove(); };
   $('[data-acao="novo-edital"]', el).onclick = (ev) => { ev.preventDefault(); modalNovoEdital(); };
   $('[data-acao="consultar-cnpj"]', el).onclick = (ev) => { ev.preventDefault(); modalNovoDossie(); };
   $('[data-acao="novo-prazo"]', el).onclick = (ev) => { ev.preventDefault(); modalNovoPrazo(); };
 };
+
+// Checklist do primeiro uso: marcado pelo que a conta já fez de verdade. Some quando tudo está feito ou se a pessoa fechar.
+function htmlPrimeirosPassos(passos) {
+  if (!passos?.length) return "";
+  let fechado = false;
+  try { fechado = localStorage.getItem(`kasiski_pp_${S.usuario.id}`) === "1"; } catch { /* ok */ }
+  const feitos = passos.filter((x) => x.feito).length;
+  if (fechado || feitos === passos.length) return "";
+  const prox = passos.find((x) => !x.feito);
+  return `<section class="bloco primeiros-passos" id="primeiros-passos" aria-labelledby="pp-titulo">
+    <div class="bloco-titulo"><h2 id="pp-titulo">Primeiros passos</h2><span class="fraco">${feitos} de ${passos.length}</span></div>
+    <div class="pp-barra" role="progressbar" aria-valuemin="0" aria-valuemax="${passos.length}" aria-valuenow="${feitos}" aria-label="Progresso dos primeiros passos"><i style="width:${Math.round((100 * feitos) / passos.length)}%"></i></div>
+    <ol class="pp-lista">${passos.map((x) => `<li class="${x.feito ? "feito" : x === prox ? "proximo" : ""}">
+      <span class="pp-marca" aria-hidden="true">${x.feito ? icone("ok", 16) : ""}</span>
+      ${x.feito ? `<span>${esc(x.titulo)}</span><span class="oculto-visual">(feito)</span>` : `<a href="${esc(x.link)}">${esc(x.titulo)}</a>${x === prox ? ` <small class="pp-agora">próximo</small>` : ""}`}</li>`).join("")}</ol>
+    <div class="acoes"><button class="botao texto pequeno" type="button" data-refazer-tour>Ver o tour de novo</button>
+      <button class="botao texto pequeno" type="button" data-fechar-pp>Não mostrar mais</button></div></section>`;
+}

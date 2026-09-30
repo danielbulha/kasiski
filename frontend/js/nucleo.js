@@ -230,7 +230,8 @@ const ROTULOS = {
     limpeza: "Limpeza e conservação", seguranca: "Segurança", obras: "Obras", outro: "Outro" },
   segmentosEmpresa: [["obras", "Obras"], ["servicos_comuns", "Serviços comuns"], ["servicos_continuados", "Serviços continuados (mão de obra)"],
     ["fornecimento", "Fornecimento de bens"], ["saude", "Saúde"], ["educacao", "Educação"], ["ti", "TI"],
-    ["alimentacao", "Alimentação"], ["transporte", "Transporte"], ["seguranca", "Segurança"], ["outro", "Outro"]],
+    ["alimentacao", "Alimentação"], ["transporte", "Transporte"], ["seguranca", "Segurança"], ["consultoria", "Consultoria"],
+    ["servicos_especializados", "Serviços técnicos especializados"], ["outro", "Outro"]],
 };
 
 function carimboStatus(mapa, chave) {
@@ -238,10 +239,8 @@ function carimboStatus(mapa, chave) {
   return v ? carimbo(v[0], v[1]) : carimbo(chave || "—", "neutro");
 }
 
-function revisorHtml(v) {
-  if (!v) return "";
-  const estado = v.confirmado === true ? carimbo("Confirmado", "ok") : v.confirmado === false ? carimbo("Não confirmado", "erro") : carimbo("Sem revisão", "neutro");
-  return `<div class="revisor">Verificação cruzada ${estado} ${v.modelo ? `<small>(${esc(v.modelo)})</small>` : ""} ${esc(v.comentario || "")}</div>`;
+function revisorHtml(v, primaria = {}) {
+  return v ? dcLinha(v, primaria) : ""; // KASISKI DoubleCheck™ (js/doublecheck.js)
 }
 
 // Marca tabelas com conteúdo além da largura visível para mostrar o gradiente de "arraste para o lado".

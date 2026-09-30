@@ -10,3 +10,5 @@
 /r/:t              /relatorio/?t=:t&utm_source=prospeccao&utm_medium=outbound&utm_campaign=relatorio 302
 /ferramentas/analisar-edital      /analisar-edital/        301
 /ferramentas/consultar-concorrente /consultar-concorrente/ 301
+/verificacao-cruzada   /doublecheck/  301
+/verificacao-cruzada/  /doublecheck/  301

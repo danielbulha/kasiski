@@ -218,7 +218,7 @@ function cartaoDocLic(d) {
       ${(a.sugestoes_peca || []).length ? `<h4>Peças sugeridas</h4>${a.sugestoes_peca.map((s) => `
         <div class="sug-peca">
           <div><b>${esc(NOME_PECA[s.peca] || s.peca)}: ${esc(s.tema || "")}</b> ${carimbo(ROTULOS.forca[s.forca]?.[0] || s.forca || "", ROTULOS.forca[s.forca]?.[1] || "neutro")}
-            ${s.verificacao ? carimbo(s.verificacao.confirmado ? "Confirmado" : s.verificacao.confirmado === false ? "Não confirmado" : "Sem verificação", s.verificacao.confirmado ? "ok" : s.verificacao.confirmado === false ? "aviso" : "neutro") : ""}
+            ${s.verificacao ? dcSelo(s.verificacao, { titulo: `${NOME_PECA[s.peca] || s.peca}: ${s.tema || ""}`, texto: s.descricao || "", pagina: s.pagina }, { compacto: true }) : ""}
             <p class="fraco">${esc(s.descricao || "")}${s.fundamento ? ` <i>${esc(s.fundamento)}</i>` : ""}${s.pagina ? ` · ${esc(s.pagina)}` : ""}${s.prazo ? ` · Prazo: ${esc(s.prazo)}` : ""}</p></div>
           <button class="botao pequeno" data-gerar-sug="${d.id}:${s.id}">Gerar ${esc((NOME_PECA[s.peca] || "peça").toLowerCase())}</button></div>`).join("")}`
         : `<p class="fraco">Nenhuma peça sugerida com base nesta ata.</p>`}

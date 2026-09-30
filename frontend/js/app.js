@@ -9,7 +9,7 @@ const ROTAS = [
 ];
 
 const NAV = [
-  ["Antes da disputa", [["#/radar", "Radar de editais", "radar"], ["#/editais", "Editais", "editais"], ["#/cofre", "Cofre de documentos", "cofre"]]],
+  ["Antes da disputa", [["#/radar", "Radar de editais", "radar"], ["#/cofre", "Cofre de documentos", "cofre"]]],
   ["Na disputa", [["#/precos", "Preços e propostas", "precos"], ["#/concorrentes", "Concorrentes", "concorrentes"], ["#/pecas", "Peças", "pecas"], ["#/agenda", "Agenda de prazos", "agenda"]]],
   ["Depois da disputa", [["#/contratos", "Gestão de contratos", "contratos"], ["#/arquivo", "Arquivo de licitações", "arquivo"]]],
 ];
@@ -18,6 +18,7 @@ function layout() {
   const opcoes = S.empresas.map((e) => `<option value="${e.id}" ${e.id === S.empresaId ? "selected" : ""}>${esc(e.razao_social)}</option>`).join("");
   let rota = location.hash.split("/").slice(0, 2).join("/");
   if (rota === "#/propostas") rota = "#/precos";
+  if (rota === "#/editais") rota = "#/oportunidades"; // a página completa da licitação faz parte de Oportunidades
   const link = ([h, t, ic], badge) => `<a href="${h}" class="${rota === h ? "ativo" : ""}">
     <span class="rotulo">${ic ? icone(ic, 17) : ""}${esc(t)}</span>${badge ? `<span class="contador">${badge}</span>` : ""}</a>`;
   const aviso = [];
@@ -89,6 +90,7 @@ async function navegar() {
   catch (e) { el.innerHTML = erroTela(e); }
   window.scrollTo(0, 0);
   requestAnimationFrame(marcarRolagem);
+  if (view !== "admin") setTimeout(verificarTour, 350); // primeiro acesso a cada plano: tour guiado
 }
 
 function ligarLayout() {
@@ -103,7 +105,7 @@ function ligarLayout() {
 document.addEventListener("click", (ev) => {
   const lateral = $("#lateral");
   if (!lateral || !lateral.classList.contains("aberta")) return;
-  if (lateral.contains(ev.target) || ev.target.closest("#abrir-menu")) return;
+  if (lateral.contains(ev.target) || ev.target.closest("#abrir-menu") || ev.target.closest(".tour-fundo")) return;
   lateral.classList.remove("aberta");
 });
 
@@ -120,9 +122,9 @@ function telaEntrada(cadastro) {
         <p style="color:var(--ciano);font-weight:600;font-size:.95rem;margin-bottom:6px">Encontre o padrão. Descubra a oportunidade.</p>
         <h1>Participe de licitações sem perder prazo nem documento.</h1>
         <p>O Kasiski é uma plataforma de inteligência para o mercado público: monitora editais no PNCP, confere sua
-        habilitação, aponta falhas dos concorrentes e redige impugnações e recursos. Cada conclusão da IA é conferida
-        por um segundo modelo antes de chegar a você.</p>
-        <div>${carimbo("Habilitação conferida", "neutro")}${carimbo("Prazo calculado", "neutro")}${carimbo("Verificação cruzada", "neutro")}</div>
+        habilitação, aponta falhas dos concorrentes e redige impugnações e recursos. Com o DoubleCheck™, cada conclusão da IA é conferida
+        por um segundo modelo antes de chegar a você: uma IA analisa, outra confere, você decide.</p>
+        <div>${carimbo("Habilitação conferida", "neutro")}${carimbo("Prazo calculado", "neutro")}${carimbo("DoubleCheck™", "neutro")}</div>
       </div>
       <small style="color:var(--linha-forte)">Lei 14.133/2021 · dados públicos do PNCP, Receita e CGU</small>
     </section>

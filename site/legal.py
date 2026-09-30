@@ -136,9 +136,11 @@ def termos_ia(E):
 <p>O Kasiski usa modelos de inteligência artificial de terceiros para ler documentos e gerar análises, sugestões e minutas. Estes termos explicam
 o que isso significa para você.</p>
 <h2>1. A IA pode errar</h2>
-<p>Modelos de linguagem podem omitir informações, interpretar mal cláusulas ou citar fundamentos de forma imprecisa. Por isso, o Kasiski submete
-cláusulas restritivas e riscos a uma verificação cruzada por um segundo modelo e mostra a página do edital de origem sempre que possível. Ainda assim,
-<b>confira os pontos relevantes no documento original</b> antes de decidir.</p>
+<p>Modelos de linguagem podem omitir informações, interpretar mal cláusulas ou citar fundamentos de forma imprecisa. Por isso, o Kasiski aplica o
+<b>KASISKI DoubleCheck™</b>: exigências, cláusulas restritivas, riscos, apontamentos sobre concorrentes e peças geradas passam por uma
+verificação cruzada por um segundo modelo, e a página do documento de origem aparece sempre que possível. As conclusões com o selo DoubleCheck
+passaram por esse protocolo automatizado, que <b>reduz o risco de inconsistências, mas não constitui garantia de ausência de erros</b>.
+Confira os pontos relevantes no documento original antes de decidir.</p>
 <h2>2. Não substitui assessoria jurídica</h2>
 <p>Análises, notas de participação, recomendações Go/No-Go e minutas de peças são apoio à decisão e não constituem parecer jurídico.
 Para casos relevantes, contrate a revisão por advogado disponível na plataforma ou seu próprio advogado.</p>

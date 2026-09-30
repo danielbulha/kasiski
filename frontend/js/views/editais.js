@@ -1,48 +1,10 @@
-// Lista de editais acompanhados pela empresa e cadastro de novo edital (PNCP ou upload).
-V.editais = async (el) => {
-  if (!S.empresaId) { el.innerHTML = exigirEmpresa(); return; }
-  const status = sessionStorage.getItem("editais_status") || "todos";
-  const lista = await api("GET", `/api/empresas/${S.empresaId}/editais${status === "todos" ? "" : `?status=${status}`}`);
-  el.innerHTML = `
-    <div class="cabecalho"><div><h1>Editais</h1><p>Editais acompanhados por ${esc(empresaAtual().razao_social)}</p></div>
-      <div class="acoes"><select id="filtro" aria-label="Filtrar por status">
-        <option value="todos" ${status === "todos" ? "selected" : ""}>Todos os status</option>
-        ${Object.entries(ROTULOS.statusEdital).map(([k, v]) => `<option value="${k}" ${status === k ? "selected" : ""}>${v}</option>`).join("")}
-        </select><button class="botao" id="novo">${icone("adicionar")} Novo edital</button></div></div>
-    ${guia(`<p>Um edital chega aqui pelo <a href="#/radar">radar</a> ou é cadastrado direto: pelo número de controle do PNCP
-      (formato CNPJ-1-sequencial/ano) ou enviando o PDF, para editais de portais sem integração com o PNCP.
-      Depois de cadastrado, use <b>Analisar edital</b> para a IA extrair os dados, conferir sua habilitação e apontar cláusulas restritivas.</p>`)}
-    <section class="bloco tabela-rolagem">
-      ${lista.length ? `${legendaFaixas(ROTULOS.statusEdital, "faixa-")}<table class="tabela-faixas"><thead><tr><th>Objeto</th><th>Órgão</th><th>Sessão</th><th>Valor</th><th>Status</th><th>Análise</th><th><span class="oculto-visual">Documento</span></th></tr></thead>
-        <tbody>${lista.map(linhaEdital).join("")}</tbody></table>` : vazio("Nenhum edital aqui", "Use o radar ou cadastre um edital para começar.")}
-    </section>`;
-  $("#filtro", el).onchange = (ev) => { sessionStorage.setItem("editais_status", ev.target.value); V.editais(el); };
-  $$("tr.clicavel", el).forEach((tr) => tr.onclick = (ev) => { if (ev.target.closest("[data-documento],[data-sem-linha]")) return; location.hash = `#/editais/${tr.dataset.id}`; });
-  $$("[data-documento]", el).forEach((b) => b.onclick = (ev) => { ev.stopPropagation(); abrirDocumentoEdital(b.dataset.documento, b); });
-  $$("[data-excluir-edital]", el).forEach((b) => b.onclick = (ev) => { ev.stopPropagation();
-    excluirParaLixeira({ url: `/api/editais/${b.dataset.excluirEdital}`, nome: "esta licitação", tipo: "edital", aviso: "Prazos, peças, propostas e documentos dela vão junto. ", depois: () => V.editais(el) }); });
-  $("#novo", el).onclick = () => modalNovoEdital();
-};
+// A lista de editais agora mora em Oportunidades (visão "Lista"): um só lugar para ver o que foi selecionado e o andamento.
+V.editais = async () => { sessionStorage.setItem("op_visao", "lista"); location.replace("#/oportunidades"); };
 
 // Legenda das faixas coloridas (a cor nunca é a única pista: o status também aparece escrito na linha)
 function legendaFaixas(rotulos, prefixo) {
   return `<div class="legenda-faixas" aria-hidden="true">${Object.entries(rotulos).map(([k, v]) =>
     `<span><i class="${prefixo}${k}"></i>${esc(v)}</span>`).join("")}</div>`;
-}
-
-function linhaEdital(e) {
-  const decisao = e.decisao ? carimboStatus(ROTULOS.decisao, e.decisao) : "";
-  return `<tr class="clicavel faixa-${esc(e.status || "acompanhando")}" data-id="${e.id}">
-    <td style="max-width:320px">${esc((e.objeto || "(sem objeto — analise para extrair)").slice(0, 160))}
-      ${e.tipo_objeto ? `<div style="margin-top:4px">${carimbo(ROTULOS.tipoObjeto[e.tipo_objeto] || e.tipo_objeto, "neutro")}${e.segmento && e.segmento !== "outro" ? " " + carimbo(ROTULOS.segmento[e.segmento] || e.segmento, "neutro") : ""}</div>` : ""}</td>
-    <td>${esc(e.orgao || "—")}</td>
-    <td>${fmt.dataHora(e.data_abertura)}</td>
-    <td>${fmt.moeda(e.valor_estimado)}</td>
-    <td>${carimbo(ROTULOS.statusEdital[e.status] || e.status, e.status === "ganho" ? "ok" : e.status === "perdido" ? "erro" : "neutro")}</td>
-    <td>${decisao || "<span class='fraco'>Não analisado</span>"}</td>
-    <td class="acoes-celula">${e.tem_documento ? `<button class="botao-icone" data-documento="${e.id}" title="Abrir o edital" aria-label="Abrir o documento do edital">${icone("olho", 17)}</button>` : ""}
-      ${e.link ? `<a class="botao-icone" href="${esc(e.link)}" target="_blank" rel="noopener" data-sem-linha title="Ver no PNCP" aria-label="Ver no PNCP">${icone("chevronDireita", 17)}</a>` : ""}
-      <button class="botao-icone" data-excluir-edital="${e.id}" data-sem-linha title="Excluir" aria-label="Excluir licitação">${icone("excluir", 17)}</button></td></tr>`;
 }
 
 function modalNovoEdital() {
@@ -89,6 +51,58 @@ function modalNovoEdital() {
 }
 function Error_(m) { return new Error(m); }
 
+// ---------------------------------------------------------------- datas da licitação (cronograma)
+// O PNCP traz só o início e o fim do envio de propostas, e o órgão às vezes cadastra errado: o edital é quem vale.
+function htmlAlertaDatas(a, compacto = false) {
+  if (!a) return "";
+  const cls = a.nivel === "divergencia" ? "aviso alerta-datas divergencia" : "aviso alerta-datas";
+  return `<div class="${cls}" role="status">
+    <div class="alerta-datas-txt"><b>${icone("alerta", 15)} ${esc(a.titulo)}</b>${compacto ? "" : `<span>${esc(a.texto || "")}</span>`}
+      ${!compacto && a.itens?.length ? `<ul>${a.itens.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>` : ""}</div>
+    <button class="botao pequeno" data-conferir-datas>Conferir e confirmar</button></div>`;
+}
+
+async function modalCronograma(edId, depois) {
+  let d;
+  try { d = await api("GET", `/api/editais/${edId}`); } catch (e) { avisarErro(e); return; }
+  const ed = d.edital, cr = ed.cronograma || {}, ev = cr.eventos || {}, rot = cr.rotulos || {}, fontes = cr.fontes || {};
+  const ordem = ["inicio_propostas", "fim_propostas", "sessao", "esclarecimento", "impugnacao"];
+  const valor = (iso) => (iso || "").slice(0, 16);
+  const linha = (k) => {
+    const e = ev[k] || {};
+    return `<tr><th scope="row"><label for="cr-${k}">${esc(rot[k] || k)}</label>${k === "sessao" ? " <span class='fraco'>(move todos os prazos)</span>" : ""}</th>
+      <td><input type="datetime-local" id="cr-${k}" data-ev="${k}" value="${esc(valor(e.data))}" data-orig="${esc(valor(e.data))}"></td>
+      <td class="cr-fonte">${e.fonte ? `${esc(fontes[e.fonte] || e.fonte)}${e.pagina ? ` · pág. ${esc(e.pagina)}` : ""}` : `<span class="fraco">${["esclarecimento", "impugnacao"].includes(k) ? "não fixada no edital: calculada pela lei (3 dias úteis antes da sessão)" : "não encontrada"}</span>`}
+        ${e.trecho ? `<small class="cr-trecho">“${esc(e.trecho)}”</small>` : ""}</td></tr>`;
+  };
+  const pn = cr.pncp || {};
+  const m = modal({ titulo: "Datas da licitação", largo: true, corpo: `
+    ${htmlAlertaDatas(ed.alerta_datas).replace(/<button[^]*?<\/button>/, "")}
+    <p class="fraco">Confira cada data no edital (e em erratas publicadas). As que você corrigir aqui valem sobre qualquer leitura automática,
+      e os prazos da agenda são refeitos na hora.</p>
+    <div><table class="cr-tabela"><thead><tr><th>Evento</th><th>Data e hora</th><th>De onde veio</th></tr></thead>
+      <tbody>${ordem.map(linha).join("")}</tbody></table></div>
+    ${pn.abertura || pn.encerramento ? `<p class="fraco cr-pncp">No cadastro do órgão no PNCP: início do envio de propostas ${fmt.dataHora(pn.abertura)} · fim do envio ${fmt.dataHora(pn.encerramento)}.</p>` : ""}
+    <p class="fraco">Esclarecimento e impugnação: quando o edital não fixa a data, o Kasiski calcula 3 dias úteis antes da sessão (Lei 14.133, art. 164).</p>
+    <div id="cr-erro"></div>`,
+    acoes: `${ed.tem_texto ? `<button class="botao texto" id="cr-reler">Ler de novo no edital</button>` : ""}
+      <button class="botao secundario" data-fechar>Cancelar</button><button class="botao" id="cr-ok">Salvar e confirmar datas</button>` });
+  const rel = $("#cr-reler", m);
+  if (rel) rel.onclick = () => ocupado(rel, "Lendo o edital…", async () => {
+    try { await api("POST", `/api/editais/${edId}/cronograma/reler`); m.fechar(); toast("Datas lidas de novo no edital. Confira.", "ok"); modalCronograma(edId, depois); if (depois) depois(); }
+    catch (e) { $("#cr-erro", m).innerHTML = erroTela(e); }
+  });
+  $("#cr-ok", m).onclick = () => ocupado($("#cr-ok", m), "Salvando…", async () => {
+    const datas = {};
+    $$("[data-ev]", m).forEach((i) => { if (i.value !== i.dataset.orig) datas[i.dataset.ev] = i.value || null; });
+    if (!$("#cr-sessao", m).value) { $("#cr-erro", m).innerHTML = `<div class="aviso erro">Informe a data e hora da sessão pública.</div>`; return; }
+    try {
+      await api("POST", `/api/editais/${edId}/cronograma`, { datas, confirmar: true });
+      m.fechar(); toast("Datas confirmadas. Prazos atualizados.", "ok"); if (depois) depois();
+    } catch (e) { $("#cr-erro", m).innerHTML = erroTela(e); }
+  });
+}
+
 // ---------------------------------------------------------------- detalhe do edital
 V.edital = async (el, id) => {
   const d = await api("GET", `/api/editais/${id}`);
@@ -98,6 +112,7 @@ V.edital = async (el, id) => {
     ["documentos", `Documentos e atas${d.qtd_documentos ? ` (${d.qtd_documentos})` : ""}`],
     ["concorrentes", `Concorrentes (${d.concorrentes.length})`], ["pecas", `Peças (${d.pecas.length})`]];
   el.innerHTML = `
+    <nav class="trilha" aria-label="Você está em"><a href="#/oportunidades/${ed.id}">${icone("chevronEsquerda", 14)} Oportunidades</a><span aria-hidden="true">/</span><span>${esc(ed.numero || ed.numero_controle || "Licitação")}</span></nav>
     <div class="capa">
       <div class="capa-topo"><div><div class="processo">${esc(ed.numero || ed.numero_controle || "Sem número")} · ${esc(ed.modalidade || "")}</div>
           <h1>${esc(ed.objeto || "Edital ainda sem objeto — clique em Analisar para extrair")}</h1></div>
@@ -107,7 +122,7 @@ V.edital = async (el, id) => {
           <button class="botao pequeno texto" id="excluir-edital" title="Excluir licitação">${icone("excluir", 14)} Excluir</button></div></div>
       <dl class="capa-campos">
         <div><dt>Órgão</dt><dd>${esc(ed.orgao || "—")}</dd></div>
-        <div><dt>${/dispensa|inexigib/i.test(ed.modalidade || "") ? "Publicação do aviso" : "Sessão pública"}</dt><dd>${fmt.dataHora(ed.data_abertura)}</dd></div>
+        <div><dt>${/dispensa|inexigib/i.test(ed.modalidade || "") ? "Publicação do aviso" : "Sessão pública"}</dt><dd>${fmt.dataHora(ed.data_abertura)} <button class="botao texto pequeno" data-conferir-datas title="Conferir e corrigir as datas">${ed.data_abertura ? "Conferir datas" : "Informar datas"}</button></dd></div>
         <div><dt>Valor estimado</dt><dd>${fmt.moeda(ed.valor_estimado)}</dd></div>
         <div><dt>Tipo de objeto</dt><dd><select id="tipo_objeto_ed" aria-label="Tipo de objeto">
           <option value="">Não classificado</option>
@@ -123,13 +138,15 @@ V.edital = async (el, id) => {
           <button class="botao pequeno texto" id="enviar-pdf-ed">${icone("upload", 14)} ${ed.nome_arquivo ? "Trocar PDF" : "Enviar PDF"}</button>
           ${ed.link ? ` <a href="${esc(ed.link)}" target="_blank" rel="noopener">Ver no PNCP</a>` : ""}${!ed.tem_documento && !ed.link ? "—" : ""}
           ${ed.nome_arquivo ? `<br><small class="fraco">${esc(ed.nome_arquivo)}</small>` : ""}</dd></div>
-      </dl></div>
+      </dl>${ed.data_abertura && !ed.alerta_datas && ed.cronograma?.confirmado ? `<p class="fraco cr-conferido">${icone("ok", 13)} Datas conferidas por ${esc(ed.cronograma.confirmado.por || "")} em ${fmt.dataHora(ed.cronograma.confirmado.em)} · <button class="botao texto pequeno" data-conferir-datas>rever</button></p>` : ""}</div>
+    ${htmlAlertaDatas(ed.alerta_datas)}
     <div class="abas" role="tablist">${abas.map(([k, t]) => `<button data-aba="${k}" class="${aba === k ? "ativa" : ""}">${t}</button>`).join("")}</div>
     <div id="painel-aba"></div>`;
   const ad = $("#abrir-doc", el); if (ad) ad.onclick = () => abrirDocumentoEdital(id, ad);
+  $$("[data-conferir-datas]", el).forEach((b) => b.onclick = () => modalCronograma(id, () => V.edital(el, id)));
   $("#enviar-pdf-ed", el).onclick = () => modalEditalSemDocumento(id, { erro: "Envie o edital em PDF (de preferência com texto selecionável) para guardar e analisar.", link: ed.link });
   $("#excluir-edital", el).onclick = () => excluirParaLixeira({ url: `/api/editais/${id}`, nome: "esta licitação", tipo: "edital",
-    aviso: "Prazos, peças, propostas e documentos dela vão junto. ", depois: () => { if (location.hash === `#/editais/${id}`) location.hash = "#/editais"; else V.edital(el, id); } });
+    aviso: "Prazos, peças, propostas e documentos dela vão junto. ", depois: () => { if (location.hash === `#/editais/${id}`) location.hash = "#/oportunidades"; else V.edital(el, id); } });
   $("#status", el).onchange = async (ev) => { await api("PATCH", `/api/editais/${id}`, { status: ev.target.value }); toast("Status atualizado.", "ok"); };
   $("#tipo_objeto_ed", el).onchange = async (ev) => { await api("PATCH", `/api/editais/${id}`, { tipo_objeto: ev.target.value }); toast("Tipo de objeto atualizado.", "ok"); };
   $("#segmento_ed", el).onchange = async (ev) => { await api("PATCH", `/api/editais/${id}`, { segmento: ev.target.value }); toast("Segmento atualizado.", "ok"); };
@@ -153,7 +170,7 @@ function painelAnalise(el, ed, analises, andamento) {
     </div>
     <div id="corpo-analise">${ultima ? htmlAnalise(ultima) : guia(`<p>A análise extrai os dados do edital, confere cada exigência de habilitação
       contra o <a href="#/cofre">cofre de documentos</a> da empresa, aponta cláusulas que restringem a competição e recomenda se vale a pena participar.
-      Cada cláusula restritiva e cada risco passam por uma segunda IA antes de aparecer aqui.</p>`)}</div>
+      Cada exigência, cláusula restritiva e risco passa pelo <b>DoubleCheck™</b>: uma IA analisa, outra confere e você vê o resultado de cada item.</p>`)}</div>
     <div id="possiveis-conc"></div>`;
   $("#analisar", el).onclick = async () => {
     try { acompanharAnalise(el, ed, await api("POST", `/api/editais/${ed.id}/analisar`)); }
@@ -180,23 +197,26 @@ function htmlAnalise(a) {
   return `
     <div class="relatorio-cabecalho"><strong>${esc(S.conta?.marca_relatorio || S.conta?.nome || "")}</strong><span>${new Date().toLocaleDateString("pt-BR")}</span></div>
     ${a.demonstracao ? `<div class="aviso info">Análise de demonstração — configure as chaves de IA para uma análise real deste edital.</div>` : ""}
+    ${dcResumoHtml(r.doublecheck, { titulo: "DoubleCheck™ desta análise", sub: "Uma IA analisa. Outra confere. Você decide." })}
     <div class="bloco"><div class="bloco-titulo"><h2>Recomendação</h2>${carimbo(rotulo, tipo, true)}</div>
       <p>${esc(r.resumo || "")}</p>${rec.justificativa ? `<p class="fraco">${esc(rec.justificativa)}</p>` : ""}
       ${r.beneficios_me_epp ? `<p><b>ME/EPP:</b> ${esc(r.beneficios_me_epp)}</p>` : ""}
       ${r.proximos_passos?.length ? `<p><b>Próximos passos:</b></p><ul>${r.proximos_passos.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>` : ""}</div>
 
     <div class="bloco"><h2>Checklist de habilitação</h2>
-      <div class="tabela-rolagem"><table><thead><tr><th>Exigência</th><th>Categoria</th><th>Pág.</th><th>Situação</th><th>Documento no cofre</th></tr></thead>
+      <div class="tabela-rolagem"><table><thead><tr><th>Exigência</th><th>Categoria</th><th>Pág.</th><th>Situação</th><th>Documento no cofre</th><th>DoubleCheck™</th></tr></thead>
       <tbody>${(r.checklist || []).map((c) => `<tr><td>${esc(c.exigencia)}${c.observacao ? `<div class="fraco" style="font-size:.85rem">${esc(c.observacao)}</div>` : ""}</td>
         <td>${esc(ROTULOS.categoriaDoc[c.categoria] || c.categoria || "")}</td><td>${esc(c.pagina || "—")}</td>
-        <td>${carimboStatus(ROTULOS.checklist, c.status)}</td><td>${esc(c.documento_cofre || "—")}</td></tr>`).join("")}</tbody></table></div>
+        <td>${carimboStatus(ROTULOS.checklist, c.status)}</td><td>${esc(c.documento_cofre || "—")}</td>
+        <td>${c.verificacao ? dcSelo(c.verificacao, { titulo: c.exigencia, texto: `Situação atribuída: ${ROTULOS.checklist[c.status]?.[0] || c.status || "—"}${c.documento_cofre ? ` · documento no cofre: ${c.documento_cofre}` : ""}`, pagina: c.pagina }, { compacto: true }) : `<span class="fraco">—</span>`}</td></tr>`).join("")}</tbody></table></div>
       ${(r.checklist || []).some((c) => c.status !== "atende") ? `<p class="nao-imprimir"><a href="#/cofre">Atualizar o cofre de documentos →</a></p>` : ""}</div>
 
     ${(r.checklist_setorial || []).length ? `<div class="bloco"><h2>Checklist setorial</h2>
       <p class="fraco">Exigências regulatórias próprias do tipo de objeto ou do setor (ex.: ANVISA, ART/RRT, PNAE) — não fazem parte da habilitação padrão da Lei 14.133.</p>
-      <div class="tabela-rolagem"><table><thead><tr><th>Exigência</th><th>Pág.</th><th>Situação</th><th>Fundamento</th></tr></thead>
+      <div class="tabela-rolagem"><table><thead><tr><th>Exigência</th><th>Pág.</th><th>Situação</th><th>Fundamento</th><th>DoubleCheck™</th></tr></thead>
       <tbody>${r.checklist_setorial.map((c) => `<tr><td>${esc(c.exigencia)}${c.observacao ? `<div class="fraco" style="font-size:.85rem">${esc(c.observacao)}</div>` : ""}</td>
-        <td>${esc(c.pagina || "—")}</td><td>${carimboStatus(ROTULOS.checklist, c.status)}</td><td>${esc(c.fundamento || "—")}</td></tr>`).join("")}</tbody></table></div></div>` : ""}
+        <td>${esc(c.pagina || "—")}</td><td>${carimboStatus(ROTULOS.checklist, c.status)}</td><td>${esc(c.fundamento || "—")}</td>
+        <td>${c.verificacao ? dcSelo(c.verificacao, { titulo: c.exigencia, texto: c.fundamento || "", pagina: c.pagina }, { compacto: true }) : `<span class="fraco">—</span>`}</td></tr>`).join("")}</tbody></table></div></div>` : ""}
 
     ${(r.clausulas_restritivas || []).length ? `<div class="bloco"><h2>Cláusulas potencialmente restritivas</h2>
       <p class="fraco">Selecione as que quer sustentar e gere a minuta de esclarecimento ou impugnação.</p>
@@ -207,7 +227,8 @@ function htmlAnalise(a) {
       <button class="botao nao-imprimir" id="gerar-peca-clausulas">Gerar peça com os selecionados</button></div>` : ""}
 
     ${(r.riscos || []).length ? `<div class="bloco"><h2>Riscos identificados</h2>
-      ${r.riscos.map((rk) => apontamentoHtml({ id: rk.id, titulo: rk.tema, gravidade: rk.nivel, pagina: rk.pagina, corpo: rk.descricao, verificacao: rk.verificacao, semSelecao: true })).join("")}</div>` : ""}`;
+      ${r.riscos.map((rk) => apontamentoHtml({ id: rk.id, titulo: rk.tema, gravidade: rk.nivel, pagina: rk.pagina, corpo: rk.descricao, verificacao: rk.verificacao, semSelecao: true })).join("")}</div>` : ""}
+    ${dcRodape()}`;
 }
 
 function apontamentoHtml({ id, titulo, gravidade, pagina, fundamento, corpo, verificacao, medida, semSelecao }) {
@@ -215,7 +236,7 @@ function apontamentoHtml({ id, titulo, gravidade, pagina, fundamento, corpo, ver
   return `<div class="apontamento ${gravidade}"><header><h4>${esc(titulo)}</h4>${carimbo(gLabel, gTipo)}</header>
     <p>${esc(corpo)}</p>
     <p class="fraco">${pagina ? `Pág. ${esc(pagina)} · ` : ""}${esc(fundamento || "")}${medida ? " · " + esc(medida) : ""}</p>
-    ${revisorHtml(verificacao)}
+    ${revisorHtml(verificacao, { titulo, texto: corpo, pagina, fonte: fundamento })}
     ${semSelecao ? "" : `<label class="selecionar"><input type="checkbox" class="sel-clausula" value="${id}"> Usar nesta peça</label>`}</div>`;
 }
 
@@ -272,7 +293,7 @@ function painelConcorrentesEdital(el, ed, analises) {
   el.innerHTML = `
     ${guia(`<p>Depois da sessão, baixe do portal da disputa a habilitação ou a proposta do concorrente que você quer questionar
       e envie aqui junto com o CNPJ dele. O Kasiski monta um dossiê público (Receita, sanções e histórico no PNCP), confronta o
-      documento com as exigências do edital e só mantém no parecer os apontamentos confirmados por uma segunda IA.</p>`)}
+      documento com as exigências do edital e só mantém no parecer os apontamentos confirmados pelo DoubleCheck™ (verificação por uma segunda IA).</p>`)}
     <section class="bloco"><div class="bloco-titulo"><h3>Nova análise de concorrente</h3></div>
       <form id="form-concorrente">
         <div class="linha-campos">
@@ -338,7 +359,7 @@ function abrirParecerConcorrente(a) {
       ${r.sugestoes.map((sg) => apontamentoHtml({ id: sg.id, titulo: `${({ recurso: "Recurso", contrarrazoes: "Contrarrazões", intencao_recurso: "Intenção de recorrer", pedido_diligencia: "Pedido de diligência", impugnacao: "Impugnação", representacao: "Representação" })[sg.peca] || sg.peca}: ${sg.tema}`,
         gravidade: sg.forca, fundamento: sg.fundamento, corpo: sg.argumento })).join("")}` : ""}
     ${r.usou_historico === false ? `<p class="fraco" style="margin-top:12px">Dica: monte o <a href="#/concorrentes/${a.concorrente_id}">dossiê completo</a> deste concorrente para a IA cruzar com inabilitações e documentos de outros certames.</p>` : ""}
-    ${(r.descartados || []).length ? `<details style="margin-top:10px"><summary class="fraco">${r.descartados.length} apontamento(s) descartado(s) pela verificação cruzada</summary>
+    ${(r.descartados || []).length ? `<details style="margin-top:10px"><summary class="fraco">${r.descartados.length} apontamento(s) descartado(s) pelo DoubleCheck™</summary>
       ${r.descartados.map((ap) => apontamentoHtml({ titulo: ap.tema, gravidade: ap.forca, corpo: ap.descricao, verificacao: ap.verificacao, semSelecao: true })).join("")}</details>` : ""}
     `, acoes: `<button class="botao secundario" data-fechar>Fechar</button>
       ${(r.apontamentos || []).length || (r.sugestoes || []).length ? `<button class="botao" id="usar-em-peca">Usar em recurso/contrarrazões</button>` : ""}`,

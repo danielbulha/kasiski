@@ -75,9 +75,23 @@ V.peca = async (el, id) => {
     ${emElaboracao ? `<div class="bloco">${vazio("O advogado está elaborando esta peça", "Quando ficar pronta, o texto aparece aqui e você recebe o parecer. Acompanhe em Elaboração com advogado.", `<a class="botao secundario" href="#/pecas/advogado">Ver meus pedidos</a>`)}</div>`
       : `<div class="bloco"><textarea class="editor" id="conteudo-peca">${esc(p.conteudo)}</textarea>
       <div class="acoes" style="margin-top:10px"><button class="botao" id="salvar-peca">Salvar alterações</button></div></div>`}
-    ${concluida ? `<div class="bloco"><h3>Parecer do advogado</h3><p>${esc(concluida.parecer)}</p></div>` : ""}`;
+    ${concluida ? `<div class="bloco"><h3>Parecer do advogado</h3><p>${esc(concluida.parecer)}</p></div>` : ""}
+    ${!emElaboracao ? `<section class="bloco" id="dc-peca">${htmlDoubleCheckPeca(p)}</section>` : ""}`;
+  const dcBox = $("#dc-peca", el);
+  const ligarDc = () => { const b = $("[data-dc-refazer]", dcBox); if (b) b.onclick = () => ocupado(b, "Conferindo…", async () => { const x = await api("POST", `/api/pecas/${id}/doublecheck`); dcBox.innerHTML = htmlDoubleCheckPeca(x); ligarDc(); acompanhar(); }); };
+  const acompanhar = () => {
+    clearTimeout(V.peca.t);
+    V.peca.t = setTimeout(async () => {
+      if (!document.body.contains(dcBox)) return;
+      const x = await api("GET", `/api/pecas/${id}`).catch(() => null);
+      if (!x) return;
+      dcBox.innerHTML = htmlDoubleCheckPeca(x); ligarDc();
+      if (x.doublecheck?.status === "processando") acompanhar();
+    }, 3000);
+  };
+  if (dcBox) { ligarDc(); if (p.doublecheck?.status === "processando") acompanhar(); }
   const bx = $("#baixar-peca", el);
-  if (bx) bx.onclick = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([$("#conteudo-peca", el).value], { type: "text/plain" })); a.download = p.titulo + ".txt"; a.click(); };
+  if (bx) bx.onclick = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([$("#conteudo-peca", el).value + (p.doublecheck?.status === "concluido" ? "\n\n---\nKASISKI DoubleCheck™ concluído. Esta peça passou pelo protocolo automatizado de verificação cruzada KASISKI. A revisão não substitui a avaliação profissional quando aplicável.\n" : "")], { type: "text/plain" })); a.download = p.titulo + ".txt"; a.click(); };
   const sv = $("#salvar-peca", el);
   if (sv) sv.onclick = (ev) => ocupado(ev.target, "Salvando…", async () => {
     await api("PATCH", `/api/pecas/${id}`, { conteudo: $("#conteudo-peca", el).value }); toast("Peça salva.", "ok");
@@ -87,6 +101,24 @@ V.peca = async (el, id) => {
   const pr = $("#pedir-revisao", el);
   if (pr) pr.onclick = () => modalRevisao(p, tipos.find((t) => t.codigo === p.tipo));
 };
+
+// DoubleCheck™ da minuta: o verificador procura erro factual, argumento sem suporte, referência errada e contradição
+const DC_TIPOS_ACHADO = { inconsistencia_factual: "Inconsistência factual", sem_suporte: "Argumento sem suporte", referencia_errada: "Referência a conferir",
+  contradicao: "Contradição", interpretacao_alternativa: "Interpretação alternativa", revisao_humana: "Revisão humana" };
+function htmlDoubleCheckPeca(p) {
+  const dc = p.doublecheck;
+  const cab = (extra = "") => `<div class="bloco-titulo"><h3 class="dc-titulo">${dcSimbolo(18)} DoubleCheck™ da minuta</h3>${extra}</div>`;
+  if (!dc) return `${cab(`<button class="botao pequeno secundario" data-dc-refazer>Rodar DoubleCheck</button>`)}<p class="fraco">Esta peça foi gerada antes do DoubleCheck. Rode a verificação antes de protocolar.</p>`;
+  if (dc.status === "processando") return `${cab()}<p class="carregando">O verificador independente está conferindo fatos, fundamentos e referências da minuta…</p>`;
+  const est = DC_ESTADOS[dc.estado] ? dc.estado : "revisao";
+  const e = DC_ESTADOS[est];
+  return `${cab(`<button class="botao pequeno texto" data-dc-refazer>${dc.status === "desatualizado" ? "Conferir a versão editada" : "Conferir de novo"}</button>`)}
+    ${dc.status === "desatualizado" ? `<div class="aviso info">A minuta foi editada depois da verificação. Rode o DoubleCheck de novo para conferir a versão atual.</div>` : ""}
+    <p><span class="dc-resultado dc-${est}">${e.marca} ${esc(est === "confirmado" ? "DoubleCheck™ concluído: nenhum ponto relevante" : e.titulo)}</span></p>
+    ${dc.resumo ? `<p>${esc(dc.resumo)}</p>` : ""}
+    ${(dc.achados || []).length ? `<ul class="dc-achados">${dc.achados.map((a) => `<li><b>${esc(DC_TIPOS_ACHADO[a.tipo] || a.tipo || "Ponto")}</b>${a.trecho ? ` <q>${esc(a.trecho)}</q>` : ""}<br>${esc(a.comentario || "")}</li>`).join("")}</ul>` : ""}
+    <p class="dc-aviso">Esta peça passou pelo protocolo automatizado de verificação cruzada KASISKI. A revisão não substitui a avaliação profissional quando aplicável.</p>`;
+}
 
 function modalRevisao(p, tipo) {
   const m = modal({

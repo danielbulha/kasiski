@@ -65,6 +65,8 @@ V.conta = async (el) => {
     <section class="bloco"><h2>Preferências</h2>
       <form id="form-pref">
         <label class="check"><input type="checkbox" name="modo_guiado" ${S.usuario.modo_guiado ? "checked" : ""}> Mostrar explicações do modo guiado em cada tela</label>
+        <p style="margin:10px 0 0"><button type="button" class="botao secundario pequeno" id="refazer-tour">Refazer o tour guiado</button>
+          <small class="fraco">Mostra de novo o passo a passo do sistema e do seu plano.</small></p>
         ${p.marca ? `<div class="campo" style="margin-top:12px"><label for="marca_rel">Nome do escritório nos relatórios</label>
           <input id="marca_rel" name="marca_relatorio" value="${esc(S.conta.marca_relatorio || "")}"></div>` : ""}
         <button class="botao" style="margin-top:12px" type="submit">Salvar preferências</button></form></section>
@@ -74,6 +76,7 @@ V.conta = async (el) => {
         <div class="campo"><label for="nova_senha">Nova senha</label><input id="nova_senha" name="nova_senha" type="password" minlength="8"></div>
         <button class="botao secundario" type="submit">Alterar</button></form>
       <div id="erro-senha"></div></section>`;
+  $("#refazer-tour", el).onclick = () => refazerTour();
   $("#form-pref", el).onsubmit = async (ev) => { ev.preventDefault(); await api("PATCH", "/api/conta", dadosForm(ev.target)); await carregarConta(); toast("Preferências salvas.", "ok"); };
   $("#form-senha", el).onsubmit = async (ev) => {
     ev.preventDefault();

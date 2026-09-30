@@ -47,6 +47,7 @@ V.oportunidades = async (el, abrirId) => {
   V.oportunidades.dados = d;
   const sinc = d.sincronizacao || {};
   const sincronizando = sinc.status === "sincronizando";
+  const visao = sessionStorage.getItem("op_visao") || "quadro";
   el.innerHTML = `
     <div class="cabecalho"><div><h1>Oportunidades</h1><p>${esc(empresaAtual()?.razao_social || "")} · pipeline do ciclo comercial das licitações</p></div>
       <div class="acoes">
@@ -65,14 +66,25 @@ V.oportunidades = async (el, abrirId) => {
         ${[...new Set(d.cartoes.map((c) => c.responsavel).filter(Boolean))].map((r) => `<option value="${esc(r)}" ${f.resp === r ? "selected" : ""}>${esc(r)}</option>`).join("")}
       </select>
       <label class="check"><input type="checkbox" id="op-saidas" ${f.saidas ? "checked" : ""}> Mostrar perdidas e desistências</label>
+      <div class="op-visao" role="group" aria-label="Forma de ver">
+        <button type="button" data-visao="quadro" aria-pressed="${visao === "quadro"}" class="${visao === "quadro" ? "ativa" : ""}">${icone("kanban", 14)} Quadro</button>
+        <button type="button" data-visao="lista" aria-pressed="${visao === "lista"}" class="${visao === "lista" ? "ativa" : ""}">${icone("editais", 14)} Lista</button></div>
       <span class="fraco op-sinc-info">${sinc.concluido_em ? `Última sincronização: ${fmt.dataHora(sinc.concluido_em + "Z")}${sinc.movidos ? ` · ${sinc.movidos} cartão(ões) movido(s)` : ""}` : ""}</span>
     </div>
-    <div class="kanban" id="kanban" aria-label="Quadro de oportunidades"></div>`;
-  desenharQuadro(el);
+    <div class="kanban" id="kanban" aria-label="Quadro de oportunidades" ${visao === "lista" ? "hidden" : ""}></div>
+    <section class="bloco tabela-rolagem" id="op-lista" ${visao === "quadro" ? "hidden" : ""}></section>`;
+  const desenhar = () => (sessionStorage.getItem("op_visao") || "quadro") === "lista" ? desenharLista(el) : desenharQuadro(el);
+  desenhar();
+  $$("[data-visao]", el).forEach((b) => b.onclick = () => {
+    sessionStorage.setItem("op_visao", b.dataset.visao);
+    $$("[data-visao]", el).forEach((x) => { x.classList.toggle("ativa", x === b); x.setAttribute("aria-pressed", x === b); });
+    $("#kanban", el).hidden = b.dataset.visao === "lista"; $("#op-lista", el).hidden = b.dataset.visao !== "lista";
+    desenhar();
+  });
   const rec = () => V.oportunidades(el);
-  let t; $("#op-q", el).oninput = (ev) => { clearTimeout(t); t = setTimeout(() => { f.q = ev.target.value; desenharQuadro(el); }, 200); };
-  $("#op-resp", el).onchange = (ev) => { f.resp = ev.target.value; desenharQuadro(el); };
-  $("#op-saidas", el).onchange = (ev) => { f.saidas = ev.target.checked; desenharQuadro(el); };
+  let t; $("#op-q", el).oninput = (ev) => { clearTimeout(t); t = setTimeout(() => { f.q = ev.target.value; desenhar(); }, 200); };
+  $("#op-resp", el).onchange = (ev) => { f.resp = ev.target.value; desenhar(); };
+  $("#op-saidas", el).onchange = (ev) => { f.saidas = ev.target.checked; desenhar(); };
   $("#op-novo", el).onclick = () => modalNovoEdital();
   $("#op-sinc", el).onclick = async (ev) => {
     try { await api("POST", `/api/empresas/${S.empresaId}/oportunidades/sincronizar`); ev.target.disabled = true; ev.target.textContent = "Sincronizando…"; acompanharSinc(el); }
@@ -114,13 +126,43 @@ function htmlCartao(c) {
     <div class="op-orgao">${esc(c.orgao || "Órgão não informado")}</div>
     <div class="op-objeto">${esc(c.objeto || "Objeto a extrair na análise")}</div>
     <div class="op-valor">${esc(moedaCurta(c.valor_estimado))}</div>
-    <div class="op-linha">Sessão: ${esc(sessaoCurta(c.data_abertura))}</div>
+    <div class="op-linha">Sessão: ${esc(sessaoCurta(c.data_abertura))}${c.alerta_datas ? ` <span class="op-conferir ${c.alerta_datas.nivel}" title="${esc(c.alerta_datas.titulo)}">${c.alerta_datas.nivel === "divergencia" ? "datas divergentes" : "confirmar datas"}</span>` : ""}</div>
     <div class="op-linha">Responsável: ${c.responsavel ? esc(c.responsavel) : `<span class="fraco">definir</span>`}</div>
     <div class="op-linha"><span class="op-fit ${classeFit}" title="${c.fit_fonte === "radar" ? "Nota do radar (ainda sem análise)" : "Aderência da habilitação + recomendação da IA"}">Fit: ${fit}</span>
       <span class="op-sep">|</span> Risco: ${c.risco ? `<span class="op-risco ${c.risco}">${RISCO_OP[c.risco][0]}</span>` : "—"}</div>
     ${prazo ? `<div class="op-prazo ${tipoPrazo}">${esc(prazo)}</div>` : ""}
     ${c.motivo_saida && ["perdida", "desistencia"].includes(c.etapa) ? `<div class="op-motivo">${esc(c.motivo_saida).slice(0, 140)}</div>` : ""}
   </article>`;
+}
+
+// Visão em lista (a antiga tela "Editais"): mesma base e mesmos filtros do quadro, ordenada pela sessão
+function desenharLista(el) {
+  const d = V.oportunidades.dados, f = V.oportunidades.filtro;
+  const saidas = new Set(d.saidas.map((e) => e.codigo));
+  const nomes = Object.fromEntries([...d.etapas, ...d.saidas].map((e) => [e.codigo, e.nome]));
+  const cartoes = filtrarCartoes(d.cartoes).filter((c) => f.saidas || !saidas.has(c.etapa))
+    .sort((a, b) => (a.data_abertura ? 0 : 1) - (b.data_abertura ? 0 : 1) || String(a.data_abertura).localeCompare(String(b.data_abertura)));
+  const box = $("#op-lista", el);
+  if (!cartoes.length) { box.innerHTML = vazio("Nenhuma licitação aqui", d.cartoes.length ? "Ajuste a busca ou os filtros." : "Use o radar ou o botão Novo edital para começar."); return; }
+  box.innerHTML = `<table class="op-tabela"><thead><tr><th>Licitação</th><th>Órgão</th><th>Etapa</th><th>Sessão</th><th>Valor</th><th>Fit</th><th>Responsável</th><th><span class="oculto-visual">Ações</span></th></tr></thead>
+    <tbody>${cartoes.map((c) => {
+      const [prazo, tipo] = prazoCartao(c);
+      return `<tr class="clicavel op-l-${saidas.has(c.etapa) ? "saida" : "ativa"}" data-linha="${c.id}" tabindex="0">
+        <td><b>${esc(tituloCartao(c))}</b><br><small class="fraco">${esc((c.objeto || "Objeto a extrair na análise").slice(0, 140))}</small></td>
+        <td>${esc(c.orgao || "—")}${c.uf ? `<br><small class="fraco">${esc([c.municipio, c.uf].filter(Boolean).join("/"))}</small>` : ""}</td>
+        <td>${esc(nomes[c.etapa] || c.etapa)}${c.decisao === "go" ? ` <span class="op-go">GO</span>` : ""}</td>
+        <td class="nowrap">${esc(sessaoCurta(c.data_abertura))}${prazo && PRE_DISPUTA_OP.includes(c.etapa) ? `<br><small class="op-prazo ${tipo}">${esc(prazo)}</small>` : ""}
+          ${c.alerta_datas ? `<br><span class="op-conferir ${c.alerta_datas.nivel}">${c.alerta_datas.nivel === "divergencia" ? "datas divergentes" : "confirmar datas"}</span>` : ""}</td>
+        <td class="nowrap">${esc(moedaCurta(c.valor_estimado))}</td>
+        <td>${c.fit === null || c.fit === undefined ? "—" : c.fit + "%"}</td>
+        <td>${c.responsavel ? esc(c.responsavel) : `<span class="fraco">definir</span>`}</td>
+        <td class="acoes-celula"><a class="botao-icone" href="#/editais/${c.id}" title="Ver todos os detalhes" aria-label="Ver todos os detalhes">${icone("chevronDireita", 17)}</a></td></tr>`;
+    }).join("")}</tbody></table>`;
+  const rec = () => V.oportunidades(el);
+  $$("[data-linha]", box).forEach((tr) => {
+    tr.onclick = (ev) => { if (ev.target.closest("a")) return; abrirOportunidade(Number(tr.dataset.linha), rec); };
+    tr.onkeydown = (ev) => { if (ev.key === "Enter") abrirOportunidade(Number(tr.dataset.linha), rec); };
+  });
 }
 
 function desenharQuadro(el) {
@@ -228,9 +270,10 @@ async function abrirOportunidade(id, aoMudar) {
     const mostrarDecisao = ["identificada", "em_analise", "decisao"].includes(c.etapa);
     const rec = ROTULOS.decisao[c.decisao_ia];
     gaveta.innerHTML = `
-      <header class="op-g-cab"><div><small class="fraco">${esc(ed.numero_controle || "Edital enviado por upload")}</small>
+      <header class="op-g-cab"><div><small class="fraco">${esc(ed.origem === "diario" ? "Aviso capturado em diário oficial" : ed.numero_controle || "Edital enviado por upload")}</small>
           <h2>${esc(tituloCartao(c))}</h2><p>${esc(c.orgao || "")}</p></div>
-        <button class="botao texto" data-fechar-gaveta aria-label="Fechar">Fechar</button></header>
+        <div class="op-g-cab-acoes"><a class="botao pequeno" href="#/editais/${ed.id}">Ver todos os detalhes ${icone("chevronDireita", 14)}</a>
+          <button class="botao texto" data-fechar-gaveta aria-label="Fechar">Fechar</button></div></header>
       <div class="op-g-controles">
         <div class="campo"><label for="g-etapa">Etapa</label><select id="g-etapa">${etapas.map((e) => `<option value="${e.codigo}" ${c.etapa === e.codigo ? "selected" : ""}>${esc(e.nome)}</option>`).join("")}</select></div>
         <div class="campo"><label for="g-resp">Responsável</label><select id="g-resp">
@@ -238,6 +281,7 @@ async function abrirOportunidade(id, aoMudar) {
           ${c.responsavel && !c.responsavel_id ? `<option value="t:${esc(c.responsavel)}" selected>${esc(c.responsavel)}</option>` : ""}
           <option value="__outro">Outra pessoa…</option></select></div>
       </div>
+      ${htmlAlertaDatas(ed.alerta_datas, true)}
       <div class="op-g-kpis">
         <div><span>Valor estimado</span><b>${ed.valor_estimado ? fmt.moeda(ed.valor_estimado) : "—"}</b></div>
         <div><span>Sessão</span><b>${esc(sessaoCurta(c.data_abertura))}</b>${prazo ? `<small>${esc(prazo)}</small>` : ""}</div>
@@ -251,8 +295,8 @@ async function abrirOportunidade(id, aoMudar) {
       <div class="abas op-g-abas" role="tablist">${[["geral", "Visão geral"], ["itens", "Itens e lotes"], ["documentos", "Documentos"], ["concorrentes", "Concorrentes"], ["orgao", "Órgão"], ["historico", "Movimentações"]]
         .map(([k, t]) => `<button role="tab" data-g-aba="${k}" class="${abaAtual === k ? "ativa" : ""}" aria-selected="${abaAtual === k}">${t}</button>`).join("")}</div>
       <div id="g-corpo"></div>
-      <footer class="op-g-rodape"><a class="botao secundario" href="#/editais/${ed.id}">Abrir edital completo</a>
-        ${ed.numero_controle ? `<button class="botao texto" data-sinc-um>Sincronizar com o PNCP</button>` : ""}
+      <footer class="op-g-rodape"><a class="botao" href="#/editais/${ed.id}">Ver todos os detalhes ${icone("chevronDireita", 14)}</a>
+        ${ed.numero_controle && ed.origem !== "diario" ? `<button class="botao texto" data-sinc-um>Sincronizar com o PNCP</button>` : ""}
         <span class="op-g-rodape-dir">${["perdida", "desistencia", "contrato_ativo"].includes(c.etapa) ? `<button class="botao texto" data-arquivar>${icone("arquivo", 14)} Mandar para o Arquivo</button>` : ""}
         <button class="botao texto" data-excluir-op>${icone("excluir", 14)} Excluir</button></span></footer>`;
     $("[data-fechar-gaveta]", gaveta).onclick = fechar;
@@ -298,6 +342,7 @@ async function abrirOportunidade(id, aoMudar) {
     });
     $$("[data-g-aba]", gaveta).forEach((b) => b.onclick = () => { sessionStorage.setItem("op_aba", b.dataset.gAba); desenhar(b.dataset.gAba); });
     corpoAba(abaAtual, $("#g-corpo", gaveta));
+    $$("[data-conferir-datas]", gaveta).forEach((b) => b.onclick = () => modalCronograma(ed.id, recarregar));
   }
 
   function corpoAba(abaAtual, el) {
@@ -316,7 +361,7 @@ async function abrirOportunidade(id, aoMudar) {
           ${campo("Garantia contratual", esc(a?.garantia_contrato))}
           ${campo("Link", ed.link ? `<a href="${esc(ed.link)}" target="_blank" rel="noopener">Ver no PNCP</a>` : "")}
         </dl><p><b>Objeto:</b> ${esc(ed.objeto || "—")}</p></section>
-        <section class="op-g-sec"><h3>Datas e prazos</h3>
+        <section class="op-g-sec"><h3>Datas e prazos <button class="botao texto pequeno" data-conferir-datas>Conferir datas</button></h3>
           ${o.prazos.length ? `<ul class="op-g-lista">${o.prazos.map((p) => `<li><b>${fmt.dataHora(p.data)}</b> — ${esc(p.titulo)}${p.concluido ? " <span class='fraco'>(concluído)</span>" : ""}</li>`).join("")}</ul>` : `<p class="fraco">Sem prazos cadastrados. Informe a data da sessão no edital para gerar os prazos de esclarecimento e impugnação.</p>`}</section>
         <section class="op-g-sec"><h3>Análise do edital</h3>
           ${a ? `<p>${esc(a.resumo || "")}</p>

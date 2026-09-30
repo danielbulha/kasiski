@@ -73,7 +73,7 @@ V.inicio = async (raiz) => {
         <div class="lp-recursos">
           ${recurso("radar", "Radar de editais", "Busca diária no PNCP com nota de aderência de 0 a 100 para cada edital encontrado.")}
           ${recurso("editais", "Análise do edital", "Resumo, checklist de habilitação, riscos e recomendação de participar, com a página de cada ponto.")}
-          ${recurso("ok", "Verificação cruzada", "Um modelo de IA analisa, outro de fornecedor diferente confere. O que não se confirma, você vê como não confirmado.")}
+          ${recurso("ok", "DoubleCheck™", "Uma IA analisa, outra confere, você decide. Cada conclusão vem com a fonte e as divergências ficam à vista.")}
           ${recurso("cofre", "Cofre de habilitação", "Certidões e atestados com controle de validade. Alerta antes de vencer, não depois.")}
           ${recurso("concorrentes", "Inteligência de concorrentes", "Dossiê público do CNPJ, sanções no TCU e na CGU e análise da habilitação e da proposta do adversário.")}
           ${recurso("pecas", "Gerador de peças", "Minutas de esclarecimento, impugnação, recurso, contrarrazões, reequilíbrio e defesa prévia.")}
@@ -219,7 +219,7 @@ function previaProduto() {
       ${linha("Atestado de capacidade técnica", "Falta", "erro")}
       <p class="lp-previa-titulo">Cláusula restritiva</p>
       <div class="lp-previa-ponto"><b>Atestado de 100% da área licitada</b><span>Lei 14.133, art. 67, §2º · pág. 15</span>
-        <span class="lp-previa-verif">Verificação cruzada ${carimbo("Confirmado", "ok")}</span></div>
+        <span class="lp-previa-verif">DoubleCheck™ ${carimbo("Confirmado", "ok")}</span></div>
       <p class="lp-previa-titulo">Prazos</p>
       ${linha("Último dia para impugnar", "Em 4 dias", "aviso")}
     </div>

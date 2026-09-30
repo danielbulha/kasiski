@@ -991,11 +991,14 @@ async function modalProspect(id, aoMudar) {
     <h3>Mensagens prontas</h3>
     <div class="roteiro"><div class="bloco-titulo"><b>E-mail de abordagem</b><span>
         <button class="botao pequeno texto" data-copiar="email">Copiar</button>
-        <a class="botao pequeno" id="pe-mailto" target="_blank" rel="noopener">Abrir no meu e-mail</a></span></div>
+        <a class="botao pequeno texto" id="pe-mailto" target="_blank" rel="noopener">Abrir no meu e-mail</a></span></div>
+      <p class="fraco" style="margin:4px 0 8px">De: <b>${esc(p.remetente || "")}</b> · as respostas chegam nessa caixa.</p>
       <div class="campo"><label for="pe-para">Para</label><select id="pe-para">${(p.contatos || []).map((c) => `<option value="${esc(c.valor)}" ${c.valor === p.email_sugerido ? "selected" : ""}>${esc(c.valor)}${c.verificado ? "" : " (sugerido)"}</option>`).join("") || `<option value="">sem e-mail — busque em outras bases</option>`}</select></div>
       <div class="campo"><label for="pe-assunto">Assunto</label><input id="pe-assunto" value="${esc(p.email_rascunho?.assunto || "")}"></div>
       <div class="campo"><label for="pe-corpo">Mensagem</label><textarea id="pe-corpo" rows="10">${esc(p.email_rascunho?.corpo || "")}</textarea></div>
-      <small class="fraco">O e-mail sai da sua própria caixa. Depois de enviar, marque a situação como "Contatado".</small></div>
+      <div class="acoes" style="margin-top:8px"><button class="botao" id="pe-enviar" ${p.status === "nao_contatar" ? "disabled" : ""}>${icone("chevronDireita", 15)} Enviar pelo Kasiski</button>
+        <small class="fraco">O Kasiski inclui no rodapé o link para a empresa não receber mais contatos (LGPD) e marca a situação como "Contatado".</small></div>
+      ${(p.emails_enviados || []).length ? `<div class="pe-historico"><b>Já enviados</b><ul class="rel-lista">${p.emails_enviados.slice().reverse().map((e) => `<li>${fmt.dataHora(e.em + "Z")} — para <b>${esc(e.para)}</b>: ${esc(e.assunto)} <small class="fraco">(${esc(e.por || "")})</small></li>`).join("")}</ul></div>` : ""}</div>
     <div class="roteiro"><div class="bloco-titulo"><b>LinkedIn: pedido de conexão</b><button class="botao pequeno texto" data-copiar="conexao">Copiar</button></div><p>${esc(r.linkedin_conexao)}</p></div>
     <div class="roteiro"><div class="bloco-titulo"><b>LinkedIn: mensagem após aceitar</b><button class="botao pequeno texto" data-copiar="mensagem">Copiar</button></div><p style="white-space:pre-line">${esc(r.linkedin_mensagem)}</p></div>
     <div class="roteiro"><b>Roteiro de telefone</b><ol>${r.telefone.map((x) => `<li>${esc(x)}</li>`).join("")}</ol></div>
@@ -1015,6 +1018,23 @@ async function modalProspect(id, aoMudar) {
   ["#pe-para", "#pe-assunto", "#pe-corpo"].forEach((q) => $(q, m).addEventListener("input", mailto));
   $("#pe-para", m).addEventListener("change", mailto); mailto();
   $("#pe-mailto", m).addEventListener("click", () => { if ($("#pe-st", m).value === "novo") $("#pe-st", m).value = "contatado"; });
+  $("#pe-enviar", m).onclick = async (ev) => {
+    const b = ev.currentTarget; // guardar antes do await: depois do evento, currentTarget vira null
+    const para = $("#pe-para", m).value, assunto = $("#pe-assunto", m).value.trim(), corpo = $("#pe-corpo", m).value.trim();
+    if (!para) { toast("Escolha o e-mail de destino (ou busque e-mails em outras bases).", "erro"); return; }
+    const sugerido = (p.contatos || []).find((c) => c.valor === para && !c.verificado);
+    if (!(await confirmar(`Enviar agora de ${p.remetente} para ${para}?${sugerido ? " Atenção: este endereço é uma sugestão não verificada." : ""}`, "Enviar e-mail"))) return;
+    const enviar = async (reenviar) => api("POST", `/api/admin/marketing/prospeccao/${id}/enviar-email`, { para, assunto, corpo, reenviar });
+    await ocupado(b, "Enviando…", async () => {
+      try { await enviar(false); }
+      catch (e) {
+        if (e.codigo !== "ja_enviado") { avisarErro(e); return; }
+        if (!(await confirmar(`${e.message}`, "Enviar mesmo assim"))) return;
+        try { await enviar(true); } catch (e2) { avisarErro(e2); return; }
+      }
+      toast(`E-mail enviado para ${para}.`, "ok"); m.fechar(); modalProspect(id, aoMudar); aoMudar();
+    });
+  };
   $("#pe-buscar-contatos", m).onclick = (ev) => ocupado(ev.currentTarget, "Consultando bases e o site da empresa…", async () => {
     try {
       const x = await api("POST", `/api/admin/marketing/prospeccao/${id}/contatos`);

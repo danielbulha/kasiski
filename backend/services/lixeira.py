@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from flask import current_app
 
 from extensions import ErroAPI, db
-from models import (Analise, AnaliseConcorrente, Concorrente, Contrato, Documento, DocumentoConcorrente, DocumentoLicitacao,
+from models import (Analise, AnaliseConcorrente, Concorrente, Contrato, Disputa, Documento, DocumentoConcorrente, DocumentoLicitacao,
                     Edital, Empresa, Movimento, Pagamento, Peca, PesquisaPreco, Prazo, Proposta, Revisao)
 
 log = logging.getLogger(__name__)
@@ -17,11 +17,11 @@ TIPOS = {
     "proposta": (Proposta, "Proposta comercial"), "documento": (Documento, "Documento do cofre"),
     "doc_licitacao": (DocumentoLicitacao, "Documento da licitação"), "doc_concorrente": (DocumentoConcorrente, "Documento de concorrente"),
     "analise_concorrente": (AnaliseConcorrente, "Análise de concorrente"), "pesquisa_preco": (PesquisaPreco, "Pesquisa de preços"),
-    "prazo": (Prazo, "Prazo da agenda"),
+    "prazo": (Prazo, "Prazo da agenda"), "disputa": (Disputa, "Sala de disputa"),
 }
 # o que vai junto para a lixeira (e volta junto) quando o principal é excluído
 CASCATA = {"edital": [(Prazo, "edital_id"), (Peca, "edital_id"), (Proposta, "edital_id"), (DocumentoLicitacao, "edital_id"),
-                      (AnaliseConcorrente, "edital_id")],
+                      (AnaliseConcorrente, "edital_id"), (Disputa, "edital_id")],
            "contrato": [(Prazo, "contrato_id")]}
 
 
@@ -46,6 +46,8 @@ def titulo(tipo, o):
         return getattr(o, "descricao", None) or getattr(o, "termo", None) or f"Pesquisa {o.id}"
     if tipo == "prazo":
         return o.titulo or f"Prazo {o.id}"
+    if tipo == "disputa":
+        return f"Disputa · item {o.item or '—'} · {(o.descricao or '')[:80]}".strip(" ·")
     return str(o.id)
 
 
@@ -94,6 +96,7 @@ def apagar(tipo, o):
         Analise.query.filter_by(edital_id=eid).delete()
         _q(AnaliseConcorrente).filter_by(edital_id=eid).delete(synchronize_session=False)
         _q(Prazo).filter_by(edital_id=eid).delete(synchronize_session=False)
+        _q(Disputa).filter_by(edital_id=eid).delete(synchronize_session=False)
         Movimento.query.filter_by(edital_id=eid).delete()
         _q(Peca).filter_by(edital_id=eid).update({"edital_id": None}, synchronize_session=False)
         _q(Proposta).filter_by(edital_id=eid).update({"edital_id": None}, synchronize_session=False)

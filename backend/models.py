@@ -1091,3 +1091,40 @@ def _sem_itens_da_lixeira(ctx):
         ctx.statement = ctx.statement.options(*[
             with_loader_criteria(m, lambda cls: cls.excluido_em.is_(None), include_aliases=True, track_closure_variables=False)
             for m in MODELOS_LIXEIRA])
+
+
+class Disputa(NaLixeira, db.Model):
+    """Sala de disputa: um item/lote de um pregão, com a estratégia de lances e o registro do que aconteceu.
+    O Kasiski calcula o próximo lance e os intervalos; o lance é dado pelo usuário no portal."""
+    id = db.Column(db.Integer, primary_key=True)
+    empresa_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=False, index=True)
+    edital_id = db.Column(db.Integer, db.ForeignKey("edital.id"), index=True)
+    item = db.Column(db.String(40))                # número do item ou do lote
+    descricao = db.Column(db.String(400))
+    portal = db.Column(db.String(30), default="comprasgov")   # comprasgov, bec, licitacoes_e, bll, portal_compras_publicas, outro
+    modo = db.Column(db.String(20), default="aberto")          # aberto, aberto_fechado, fechado_aberto
+    criterio = db.Column(db.String(20), default="menor_preco")  # menor_preco, maior_desconto
+    valor_referencia = db.Column(db.Float)          # estimado do edital (ou 100% para desconto)
+    lance_inicial = db.Column(db.Float)             # proposta inicial
+    preco_piso = db.Column(db.Float)                # limite: abaixo disso não vale a pena (menor preço) / desconto máximo
+    estrategia = db.Column(db.String(20), default="moderada")  # conservadora, moderada, agressiva, personalizada
+    decremento_tipo = db.Column(db.String(10), default="percentual")  # percentual, valor
+    decremento = db.Column(db.Float, default=1.0)
+    diferenca_minima = db.Column(db.Float)          # intervalo mínimo de diferença entre lances fixado no edital (em R$ ou p.p.)
+    intervalo_proprio_s = db.Column(db.Integer, default=20)
+    intervalo_outros_s = db.Column(db.Integer, default=3)
+    status = db.Column(db.String(20), default="preparando")    # preparando, em_disputa, encerrada
+    resultado = db.Column(db.String(20))            # vencedor, classificado, perdeu, desistiu
+    posicao = db.Column(db.Integer)
+    melhor_lance = db.Column(db.Float)              # melhor lance do mercado visto no portal
+    meu_ultimo = db.Column(db.Float)
+    meu_ultimo_em = db.Column(db.DateTime)
+    melhor_em = db.Column(db.DateTime)
+    lances = db.Column(db.JSON)                     # [{em, valor, tipo: meu|mercado, obs}]
+    analise = db.Column(db.JSON)                    # análise de lances com IA + DoubleCheck (services/analise_lances.py)
+    notas = db.Column(db.Text)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    atualizado_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+MODELOS_LIXEIRA = MODELOS_LIXEIRA + (Disputa,)  # o filtro da lixeira lê esta tupla a cada consulta

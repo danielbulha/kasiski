@@ -48,6 +48,8 @@ PLANOS = {
                  "precos": False, "propostas": False, "contratos": 0, "marca": False, "prioridade": False,
                  "radar_max": 0, "cofre_max": None, "oportunidades_max": None, "empresa_extra": None, "armazenamento_mb": 100},
 }
+for _p in PLANOS.values():  # sala de disputa: junto com as propostas comerciais (Profissional em diante)
+    _p.setdefault("disputa", _p["propostas"])
 ORDEM = ("free", "essencial", "profissional", "business", "consultor", "enterprise")
 VENDAVEIS = ("essencial", "profissional", "business", "consultor")      # checkout online
 PAGOS = ("essencial", "profissional", "business", "consultor", "enterprise")
@@ -198,7 +200,7 @@ def adicionar_creditos(conta, qtd, dias=None):
 
 
 # ---------------------------------------------------------------- limites
-NOMES_RECURSO = {"propostas": "a elaboração de propostas comerciais (disponível a partir do plano Profissional)",
+NOMES_RECURSO = {"disputa": "a sala de disputa de lances (disponível a partir do plano Profissional)", "propostas": "a elaboração de propostas comerciais (disponível a partir do plano Profissional)",
                  "analises": "análises de edital", "concorrentes": "análises de concorrentes",
                  "possiveis": "avaliações de possíveis concorrentes",
                  "pecas": "peças com IA", "precos": "a inteligência de preços (disponível a partir do plano Profissional)",

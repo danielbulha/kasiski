@@ -32,6 +32,37 @@ def consultar_cnpj(cnpj):
     return jsonify(d)
 
 
+@bp.get("/cnpj/<cnpj>/historico")
+@login_requerido
+def historico_cnpj(cnpj):
+    """Vitórias do CNPJ no PNCP (antes de salvar a empresa, para mostrar no cadastro)."""
+    c = limpar_cnpj(cnpj)
+    if not c or not cnpj_valido(c):
+        raise ErroAPI("CNPJ inválido.")
+    from services import historico_empresa
+    return jsonify(historico_empresa.montar(c, limite=30))
+
+
+@bp.get("/empresas/<int:eid>/historico")
+@login_requerido
+def historico_empresa_ver(eid):
+    e = empresa_da_conta(eid)
+    from services import historico_empresa
+    return jsonify(historico_empresa.da_empresa(e, atualizar=request.args.get("atualizar") == "1"))
+
+
+@bp.post("/empresas/<int:eid>/historico/cofre")
+@login_requerido
+def historico_para_cofre(eid):
+    """Guarda no cofre o PDF de contratos/atas do histórico (até 5 por vez)."""
+    e = empresa_da_conta(eid)
+    numeros = [str(n) for n in (dados().get("numeros") or []) if n][:5]
+    if not numeros:
+        raise ErroAPI("Escolha ao menos um contrato ou ata.")
+    from services import historico_empresa
+    return jsonify(historico_empresa.guardar_no_cofre(e, numeros, g.conta, antes_de_salvar=_limite_cofre))
+
+
 @bp.get("/empresas")
 @login_requerido
 def listar():
@@ -48,6 +79,8 @@ def _preencher(e, d):
         e.valor_min = para_float(d["valor_min"])
     if "valor_max" in d:
         e.valor_max = para_float(d["valor_max"])
+    if "radar_diarios" in d:
+        e.radar_diarios = d["radar_diarios"] in (True, "true", "on", "1", 1)
     e.ufs = ",".join(u.strip().upper()[:2] for u in (e.ufs or "").split(",") if u.strip())
 
 
@@ -99,9 +132,9 @@ def criar():
 def editar(eid):
     e = empresa_da_conta(eid)
     antes = (e.palavras_chave or "").strip()
-    escopo_antes = (e.segmentos, e.palavras_chave, e.ufs, e.valor_min, e.valor_max)
+    escopo_antes = (e.segmentos, e.palavras_chave, e.ufs, e.valor_min, e.valor_max, bool(e.radar_diarios))
     _preencher(e, dados())
-    if (e.segmentos, e.palavras_chave, e.ufs, e.valor_min, e.valor_max) != escopo_antes:
+    if (e.segmentos, e.palavras_chave, e.ufs, e.valor_min, e.valor_max, bool(e.radar_diarios)) != escopo_antes:
         # o radar passa a buscar outra coisa: some com as sugestões antigas ainda não avaliadas
         # (no Free, só quando ainda há busca disponível hoje; a mudança libera uma busca extra, uma vez por dia)
         from models import RadarItem

@@ -240,9 +240,9 @@ POR_DIVISAO = {
     "63": (["serviços de informação", "hospedagem de sistemas"], ["ti"]), "64": (["serviços financeiros"], ["servicos_comuns"]),
     "65": (["seguros"], ["servicos_comuns"]), "66": (["serviços financeiros"], ["servicos_comuns"]),
     "68": (["locação de imóveis", "administração de imóveis"], ["servicos_comuns"]),
-    "69": (["assessoria jurídica", "assessoria contábil"], ["servicos_comuns"]), "70": (["consultoria em gestão"], ["servicos_comuns"]),
-    "71": (["engenharia consultiva", "projetos de engenharia"], ["servicos_comuns"]), "72": (["pesquisa e desenvolvimento"], ["servicos_comuns"]),
-    "73": (["publicidade", "comunicação"], ["servicos_comuns"]), "74": (["serviços técnicos especializados"], ["servicos_comuns"]),
+    "69": (["assessoria jurídica", "assessoria contábil"], ["consultoria"]), "70": (["consultoria em gestão"], ["consultoria"]),
+    "71": (["engenharia consultiva", "projetos de engenharia"], ["servicos_especializados"]), "72": (["pesquisa e desenvolvimento"], ["servicos_especializados"]),
+    "73": (["publicidade", "comunicação"], ["servicos_comuns"]), "74": (["serviços técnicos especializados"], ["servicos_especializados"]),
     "75": (["serviços veterinários"], ["servicos_comuns"]), "77": (["locação de equipamentos", "locação de veículos"], ["fornecimento"]),
     "78": (["terceirização de mão de obra"], ["servicos_continuados"]), "79": (["agência de viagens", "passagens"], ["servicos_comuns"]),
     "80": (["vigilância", "segurança"], ["servicos_continuados", "seguranca"]), "81": (["limpeza", "conservação", "facilities"], ["servicos_continuados"]),
@@ -330,6 +330,9 @@ TERMOS_SEGMENTO = {
     "alimentacao": ["gêneros alimentícios", "fornecimento de refeições", "alimentação"],
     "transporte": ["locação de veículos", "transporte", "combustível", "manutenção de frota"],
     "seguranca": ["vigilância patrimonial", "segurança eletrônica", "monitoramento"],
+    "consultoria": ["consultoria", "assessoria técnica", "capacitação", "diagnóstico organizacional"],
+    # Lei 14.133, art. 6º, XVIII: estudos, projetos, pareceres, perícias, auditorias, fiscalização, treinamento...
+    "servicos_especializados": ["serviços técnicos especializados", "elaboração de projetos", "auditoria", "perícia"],
     "servicos_comuns": [], "fornecimento": [], "outro": [],
 }
 MAX_TERMOS_RADAR = 12

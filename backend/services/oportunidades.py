@@ -173,7 +173,7 @@ def sincronizar(ed, empresa):
     """Consulta o PNCP e movimenta o cartão conforme os eventos públicos. Devolve lista de movimentos feitos."""
     from services import pncp
     feitos = []
-    if not ed.numero_controle:
+    if not ed.numero_controle or ed.origem == "diario":
         if avancar_por_data(ed):
             feitos.append(ed.etapa)
         return feitos

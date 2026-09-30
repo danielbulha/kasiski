@@ -59,6 +59,39 @@ def radar_status(rid):
     return jsonify(item.to_dict())
 
 
+@bp.post("/empresas/<int:eid>/radar/descartar-lote")
+@login_requerido
+def radar_descartar_lote(eid):
+    """Descarta de uma vez os editais novos com aderência abaixo do corte (padrão: baixa, até 49).
+    Descartados não voltam nas próximas buscas; dá para restaurar pelo filtro Descartados."""
+    empresa_da_conta(eid)
+    d = dados()
+    try:
+        corte = max(1, min(100, int(d.get("abaixo") or 50)))
+    except (TypeError, ValueError):
+        corte = 50
+    q = RadarItem.query.filter_by(empresa_id=eid, status="novo")
+    cond = RadarItem.nota < corte
+    if d.get("sem_nota"):
+        cond = db.or_(cond, RadarItem.nota.is_(None))
+    itens = q.filter(cond).all()
+    for i in itens:
+        i.status = "descartado"
+    db.session.commit()
+    return jsonify({"qtd": len(itens), "ids": [i.id for i in itens]})
+
+
+@bp.post("/empresas/<int:eid>/radar/restaurar-lote")
+@login_requerido
+def radar_restaurar_lote(eid):
+    empresa_da_conta(eid)
+    ids = [int(x) for x in (dados().get("ids") or []) if str(x).isdigit()][:500]
+    n = RadarItem.query.filter(RadarItem.empresa_id == eid, RadarItem.id.in_(ids or [0]), RadarItem.status == "descartado") \
+        .update({"status": "novo"}, synchronize_session=False)
+    db.session.commit()
+    return jsonify({"qtd": n})
+
+
 @bp.post("/radar/<int:rid>/acompanhar")
 @login_requerido
 def radar_acompanhar(rid):
@@ -68,10 +101,30 @@ def radar_acompanhar(rid):
                          "oportunidades acompanhadas")
     item = RadarItem.query.get_or_404(rid)
     empresa_da_conta(item.empresa_id)
-    ed = _importar_pncp(item.empresa_id, item.numero_controle, item.dados, como="Capturada pelo radar do Kasiski (PNCP).")
+    if (item.dados or {}).get("fonte") == "diario":
+        ed = _importar_diario(item)
+    else:
+        ed = _importar_pncp(item.empresa_id, item.numero_controle, item.dados, como="Capturada pelo radar do Kasiski (PNCP).")
     item.status = "acompanhando"
     db.session.commit()
     return jsonify(ed.to_dict()), 201
+
+
+def _importar_diario(item):
+    """Aviso achado em diário oficial: vira oportunidade com o trecho do aviso; o PDF do edital vem do site do órgão."""
+    d = item.dados or {}
+    existente = Edital.query.filter_by(empresa_id=item.empresa_id, numero_controle=item.numero_controle).first()
+    if existente:
+        return existente
+    ed = Edital(empresa_id=item.empresa_id, origem="diario", numero_controle=item.numero_controle,
+                orgao=d.get("orgao"), objeto=d.get("objeto"), modalidade=d.get("modalidade"), uf=(d.get("uf") or "")[:2],
+                municipio=d.get("municipio"), link=d.get("link"))
+    db.session.add(ed)
+    db.session.flush()
+    from services import oportunidades
+    oportunidades.registrar_criacao(ed, f"Capturada pelo radar em diário oficial ({d.get('municipio') or ''}/{d.get('uf') or ''}, "
+                                        f"publicado em {d.get('data_publicacao') or 'data não informada'}). Envie o PDF do edital para analisar.")
+    return ed
 
 
 def _importar_pncp(empresa_id, numero_controle, base=None, como="Importada do PNCP."):

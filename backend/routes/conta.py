@@ -149,6 +149,12 @@ def login():
 @bp.get("/conta")
 @login_requerido
 def ver_conta():
+    if g.usuario.tour is None:
+        # quem já usava o Kasiski antes do tour não é interrompido; o tour aparece na próxima mudança de plano
+        # (e pode ser feito a qualquer momento em Plano e conta)
+        antigo = g.usuario.criado_em and g.usuario.criado_em < datetime.utcnow() - timedelta(days=2)
+        g.usuario.tour = {planos.efetivo(g.conta): "anterior"} if antigo else {}
+        db.session.commit()
     return jsonify({"usuario": g.usuario.to_dict(g.admin), "conta": g.conta.to_dict(),
                     "plano": planos.resumo(g.conta), "planos": planos.PLANOS,
                     "modo_demonstracao": llm.modo_demonstracao(),
@@ -162,6 +168,13 @@ def editar_conta():
     d = dados()
     if "modo_guiado" in d:
         g.usuario.modo_guiado = bool(d["modo_guiado"])
+    if isinstance(d.get("tour"), dict):  # {"planos": ["free", ...], "estado": "concluido"|"pulado"} ou {"reiniciar": true}
+        t = {} if d["tour"].get("reiniciar") else dict(g.usuario.tour or {})
+        if d["tour"].get("estado") in ("concluido", "pulado"):
+            for p in (d["tour"].get("planos") or [])[:8]:
+                if p in planos.ORDEM:
+                    t[p] = d["tour"]["estado"]
+        g.usuario.tour = t
     if "nome" in d and d["nome"].strip():
         g.usuario.nome = d["nome"].strip()
     if "marca_relatorio" in d:

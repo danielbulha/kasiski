@@ -90,6 +90,7 @@ class Usuario(db.Model):
     falhas_login = db.Column(db.Integer, default=0)
     bloqueado_ate = db.Column(db.DateTime)
     papel = db.Column(db.String(20))              # dono (gerencia equipe e assinatura) ou membro
+    tour = db.Column(db.JSON)                     # tour guiado por plano: {"free": "concluido"|"pulado"|"anterior", ...}
     conta = db.relationship("Conta")
 
     @property
@@ -98,7 +99,7 @@ class Usuario(db.Model):
 
     def to_dict(self, admin=False):
         return {"id": self.id, "nome": self.nome, "email": self.email, "modo_guiado": self.modo_guiado, "admin": admin,
-                "papel": self.papel or "dono"}
+                "papel": self.papel or "dono", "tour": self.tour or {}}
 
 
 class TrialCnpj(db.Model):
@@ -125,11 +126,14 @@ class Empresa(db.Model):
 
     oportunidades_sync = db.Column(db.JSON)  # {status, iniciado_em, concluido_em, movidos}
     radar_buscas = db.Column(db.JSON)  # plano Free: {"dia": "AAAA-MM-DD", "n": buscas no dia, "extra": bool, "desde": ISO da última busca}
+    historico_pncp = db.Column(db.JSON)  # vitórias da própria empresa no PNCP (services/historico_empresa.py), cache de 7 dias
+    radar_diarios = db.Column(db.Boolean, default=False)  # radar também nos diários oficiais municipais (services/diarios.py)
 
     def to_dict(self):
         return {"id": self.id, "razao_social": self.razao_social, "cnpj": self.cnpj, "porte": self.porte,
                 "cnaes": self.cnaes, "segmentos": self.segmentos, "palavras_chave": self.palavras_chave, "ufs": self.ufs,
-                "valor_min": self.valor_min, "valor_max": self.valor_max, "termos_radar": self._termos_radar()}
+                "valor_min": self.valor_min, "valor_max": self.valor_max, "termos_radar": self._termos_radar(),
+                "radar_diarios": bool(self.radar_diarios)}
 
     def _termos_radar(self):
         from services import cnae

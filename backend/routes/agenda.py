@@ -109,4 +109,28 @@ def painel():
         "pagamentos_atrasados": {"quantidade": len(atrasados), "valor": sum(p.valor or 0 for p in atrasados)},
         "contratos_ativos": Contrato.query.filter(Contrato.empresa_id.in_(ids),
                                                   (Contrato.fim.is_(None)) | (Contrato.fim >= date.today())).count(),
+        "primeiros_passos": _primeiros_passos(ids),
     })
+
+
+def _primeiros_passos(ids):
+    """Checklist do primeiro uso, marcado pelo que a conta já fez de verdade (não por cliques no tour)."""
+    import planos
+    from models import Analise, Empresa
+    ids = ids or [0]
+    emp = Empresa.query.filter(Empresa.id.in_(ids)).first()
+    eds = [e.id for e in Edital.query.filter(Edital.empresa_id.in_(ids)).with_entities(Edital.id)]
+    passos = [
+        ("empresa", "Cadastrar a empresa e os segmentos", "#/empresas", bool(emp and (emp.segmentos or emp.palavras_chave))),
+        ("radar", "Fazer a primeira busca no radar", "#/radar", RadarItem.query.filter(RadarItem.empresa_id.in_(ids)).first() is not None),
+        ("oportunidade", "Acompanhar um edital", "#/radar", bool(eds)),
+        ("analise", "Analisar um edital com a IA", "#/oportunidades",
+         bool(eds) and Analise.query.filter(Analise.edital_id.in_(eds), Analise.status == "concluida").first() is not None),
+        ("cofre", "Guardar um documento no cofre", "#/cofre",
+         Documento.query.filter(Documento.empresa_id.in_(ids), Documento.arquivo.isnot(None)).first() is not None),
+        ("datas", "Conferir as datas de uma licitação", "#/oportunidades",
+         any((e.cronograma or {}).get("confirmado") for e in Edital.query.filter(Edital.empresa_id.in_(ids)).limit(50))),
+    ]
+    if planos.dados_plano(g.conta).get("contratos"):
+        passos.append(("contrato", "Cadastrar um contrato", "#/contratos", bool(Contrato.query.filter(Contrato.empresa_id.in_(ids)).first())))
+    return [{"chave": c, "titulo": t, "link": l, "feito": f} for c, t, l, f in passos]

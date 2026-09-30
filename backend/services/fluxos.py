@@ -16,7 +16,8 @@ def _empresa_dict(e):
     from services import cnae
     nomes = {"obras": "obras", "servicos_comuns": "serviços comuns", "servicos_continuados": "serviços continuados com mão de obra",
              "fornecimento": "fornecimento de bens", "saude": "saúde", "educacao": "educação", "ti": "tecnologia da informação",
-             "alimentacao": "alimentação", "transporte": "transporte", "seguranca": "segurança", "outro": "outro"}
+             "alimentacao": "alimentação", "transporte": "transporte", "seguranca": "segurança", "consultoria": "consultoria",
+             "servicos_especializados": "serviços técnicos especializados (art. 6º, XVIII, da Lei 14.133)", "outro": "outro"}
     segs = [nomes.get(s.strip(), s.strip()) for s in (e.segmentos or "").split(",") if s.strip()]
     return {"razao_social": e.razao_social, "cnpj": e.cnpj, "porte": e.porte,
             "segmentos_escolhidos_pela_empresa": segs, "atuacao": e.palavras_chave,
@@ -399,6 +400,13 @@ def atualizar_radar(empresa, usar_ia=True, manual=True):
     if not termos:
         raise ErroAPI("Marque os segmentos de atuação ou cadastre palavras-chave da empresa para usar o radar.")
     encontrados = pncp.buscar_editais_abertos(termos, empresa.ufs or None, max_termos=cnae.MAX_TERMOS_RADAR)
+    if empresa.radar_diarios:  # diários oficiais municipais: chamamentos de OS e avisos fora do PNCP
+        from services import diarios
+        segs = {x.strip() for x in (empresa.segmentos or "").split(",")}
+        try:
+            encontrados += diarios.buscar(termos, empresa.ufs or None, organizacoes_sociais=bool(segs & {"saude", "educacao"}))
+        except Exception as e:
+            log.warning("Busca nos diários oficiais falhou: %s", e)
     from models import Conta
     cota = radar_cota(Conta.query.get(empresa.conta_id), empresa)
     q_exist = RadarItem.query.filter_by(empresa_id=empresa.id)

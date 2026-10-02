@@ -27,6 +27,7 @@ MODOS = {
 PORTAIS = {
     "comprasgov": ("Compras.gov.br", "https://www.gov.br/compras/pt-br"),
     "bec": ("BEC-SP", "https://www.bec.sp.gov.br/"),
+    "bbmnet": ("BBMNET (Bolsa Brasileira de Mercadorias)", "https://bbmnet.com.br/"),
     "licitacoes_e": ("Licitações-e (Banco do Brasil)", "https://www.licitacoes-e.com.br/"),
     "bll": ("BLL Compras", "https://bllcompras.com/"),
     "portal_compras_publicas": ("Portal de Compras Públicas", "https://www.portaldecompraspublicas.com.br/"),

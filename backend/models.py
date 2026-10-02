@@ -1128,3 +1128,20 @@ class Disputa(NaLixeira, db.Model):
 
 
 MODELOS_LIXEIRA = MODELOS_LIXEIRA + (Disputa,)  # o filtro da lixeira lê esta tupla a cada consulta
+
+
+class PropostaLance(db.Model):
+    """Aprovação humana de lance, sem integração transacional externa."""
+    __tablename__ = "proposta_lance"
+    id = db.Column(db.Integer, primary_key=True)
+    disputa_id = db.Column(db.Integer, db.ForeignKey("disputa.id"), nullable=False, index=True)
+    usuario_id = db.Column(db.Integer, nullable=False)
+    valor = db.Column(db.Numeric(16, 2), nullable=False)
+    criterio = db.Column(db.String(20), nullable=False)
+    estado = db.Column(db.String(24), nullable=False, default="pendente")
+    snapshot = db.Column(db.JSON, nullable=False)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    expira_em = db.Column(db.DateTime, nullable=False)
+    decidido_em = db.Column(db.DateTime)
+    confirmado_em = db.Column(db.DateTime)
+    observacao = db.Column(db.String(500))

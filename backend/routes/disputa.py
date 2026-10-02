@@ -20,7 +20,7 @@ CAMPOS_NUM = ("valor_referencia", "lance_inicial", "preco_piso", "decremento", "
 def _portal_do_edital(ed):
     t = (ed.portal_disputa or ed.link or "").lower()
     for chave, padrao in (("comprasgov", r"compras\.gov|comprasnet|gov\.br/compras"), ("bec", r"\bbec\b|bec\.sp"),
-                          ("licitacoes_e", r"licitacoes-e"), ("bll", r"\bbll\b"), ("portal_compras_publicas", r"portaldecompraspublicas")):
+                          ("licitacoes_e", r"licitacoes-e"), ("bbmnet", r"bbmnet|bolsa brasileira de mercadorias"), ("bll", r"\bbll\b"), ("portal_compras_publicas", r"portaldecompraspublicas")):
         if re.search(padrao, t):
             return chave
     return "comprasgov" if ed.numero_controle and not t else "outro"
@@ -208,3 +208,60 @@ def excluir(did):
     r = lixeira.enviar("disputa", d, g.usuario.nome)
     db.session.commit()
     return jsonify(r)
+
+@bp.post('/disputas/<int:did>/automacao/simular')
+@login_requerido
+def simular_automacao(did):
+    """Simula decisão, sem registrar ou enviar lances. Exige plano e titularidade."""
+    d = _disputa(did)
+    planos.exigir(g.conta, 'disputa')
+    x = dados()
+    from services.disputa_automacao import avaliar
+    # Nunca aceitar dados_atualizados do navegador como comprovação de feed real.
+    # Sem conector autenticado, a simulação permanece bloqueada para execução.
+    resultado = avaliar(d, fase_confirmada=bool(x.get('fase_confirmada')),
+                        dados_atualizados=False,
+                        autorizacao=bool(x.get('autorizacao')))
+    return jsonify(resultado)
+
+@bp.get('/disputas/automacao/capacidades')
+@login_requerido
+def capacidades_automacao():
+    return jsonify({'monitoramento_real': False, 'envio_real': False,
+                    'simulacao': True, 'conectores_transacionais_autorizados': [],
+                    'mensagem': 'O KASISKI não envia lances reais nesta versão.'})
+
+
+# Fluxo semiautomático: aprovação de proposta e lançamento MANUAL no portal.
+# Nenhum endpoint desta seção transmite lances externos.
+@bp.post("/disputas/<int:did>/semiautomatico/propor")
+@login_requerido
+def semi_propor(did):
+    from services.disputa_semi import propor
+    d = _disputa(did)
+    planos.exigir(g.conta, "disputa")
+    return jsonify(propor(d, g.usuario.id, dados())), 201
+
+@bp.get("/disputas/<int:did>/semiautomatico/propostas")
+@login_requerido
+def semi_listar(did):
+    from services.disputa_semi import listar
+    d = _disputa(did)
+    planos.exigir(g.conta, "disputa")
+    return jsonify({"propostas": listar(d)})
+
+@bp.post("/disputas/<int:did>/semiautomatico/<int:pid>/decidir")
+@login_requerido
+def semi_decidir(did, pid):
+    from services.disputa_semi import decidir
+    d = _disputa(did)
+    planos.exigir(g.conta, "disputa")
+    x = dados()
+    return jsonify(decidir(d, pid, g.usuario.id, x.get("acao"), x.get("observacao")))
+
+
+@bp.get("/disputas/portais/capacidades")
+@login_requerido
+def capacidades_portais():
+    from services.disputa_portais import PORTAIS
+    return jsonify({"portais": PORTAIS, "aviso": "Aprovação no KASISKI não transmite lances; execução manual no portal até autorização formal de API transacional."})

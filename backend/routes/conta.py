@@ -6,7 +6,8 @@ from flask import Blueprint, current_app, g, jsonify
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import planos
-from auth import admin_requerido, eh_admin, gerar_token, gerar_token_verificacao, login_requerido, usuario_do_token_verificacao
+from auth import (admin_requerido, contas_do_usuario, eh_admin, gerar_token, gerar_token_verificacao, login_requerido,
+                  usuario_do_token_verificacao)
 from extensions import ErroAPI, db
 from models import Conta, Revisao, UsoIA, Usuario
 from routes import dados, para_data, para_float
@@ -178,7 +179,8 @@ def _dados_conta():
         antigo = g.usuario.criado_em and g.usuario.criado_em < datetime.utcnow() - timedelta(days=2)
         g.usuario.tour = {planos.efetivo(g.conta): "anterior"} if antigo else {}
         db.session.commit()
-    return jsonify({"usuario": g.usuario.to_dict(g.admin), "conta": g.conta.to_dict(),
+    usuario = {**g.usuario.to_dict(g.admin), "papel": g.papel}   # papel na conta ativa
+    return jsonify({"usuario": usuario, "conta": g.conta.to_dict(), "contas": contas_do_usuario(g.usuario),
                     "plano": planos.resumo(g.conta), "planos": planos.PLANOS,
                     "modo_demonstracao": llm.modo_demonstracao(),
                     "cobranca": {"online": bool(current_app.config["MP_ACCESS_TOKEN"]),
@@ -228,22 +230,24 @@ def iniciar_teste():
 
 # ---------------------------------------------------------------- equipe (usuários da conta)
 def _dono():
-    if g.usuario.papel not in (None, "dono") and not g.admin:
+    if g.papel not in (None, "dono") and not g.admin:
         raise ErroAPI("Só o responsável pela conta pode gerenciar a equipe.", 403)
 
 
 @bp.get("/conta/equipe")
 @login_requerido
 def equipe():
-    from models import Convite
-    membros = Usuario.query.filter_by(conta_id=g.conta.id).order_by(Usuario.id).all()
+    from models import Convite, MembroConta
+    membros = [(u, u.papel or "dono") for u in Usuario.query.filter_by(conta_id=g.conta.id).order_by(Usuario.id)]
+    membros += [(Usuario.query.get(m.usuario_id), m.papel or "membro")
+                for m in MembroConta.query.filter_by(conta_id=g.conta.id).order_by(MembroConta.id)]
     convites = Convite.query.filter(Convite.conta_id == g.conta.id, Convite.aceito_em.is_(None),
                                     Convite.expira_em > datetime.utcnow()).order_by(Convite.id.desc()).all()
-    return jsonify({"membros": [{"id": u.id, "nome": u.nome, "email": u.email, "papel": u.papel or "dono",
+    return jsonify({"membros": [{"id": u.id, "nome": u.nome, "email": u.email, "papel": papel,
                                  "ultimo_acesso": u.ultimo_acesso.isoformat() if u.ultimo_acesso else None, "voce": u.id == g.usuario.id}
-                                for u in membros],
+                                for u, papel in membros if u],
                     "convites": [c.to_dict() for c in convites], "limite": planos.dados_plano(g.conta).get("usuarios"),
-                    "posso_gerenciar": g.usuario.papel in (None, "dono")})
+                    "posso_gerenciar": g.papel in (None, "dono")})
 
 
 @bp.post("/conta/equipe/convites")
@@ -258,9 +262,11 @@ def convidar():
         raise ErroAPI("Informe um e-mail válido.")
     if email in current_app.config["ADMIN_EMAILS"]:
         raise ErroAPI("Este e-mail não pode ser convidado. Fale com o suporte.")
+    from models import MembroConta
     existente = Usuario.query.filter_by(email=email).first()
-    if existente:
-        raise ErroAPI("Este e-mail já tem uma conta no Kasiski. Peça para a pessoa usar outro e-mail ou fale com o suporte.")
+    if existente and (existente.conta_id == g.conta.id or
+                      MembroConta.query.filter_by(conta_id=g.conta.id, usuario_id=existente.id).first()):
+        raise ErroAPI("Esta pessoa já faz parte da equipe.")
     Convite.query.filter(Convite.conta_id == g.conta.id, Convite.email == email, Convite.aceito_em.is_(None)).delete()
     planos.exigir(g.conta, "usuarios")
     c = Convite(conta_id=g.conta.id, email=email, token=secrets.token_urlsafe(32), convidado_por=g.usuario.id,
@@ -300,9 +306,16 @@ def cancelar_convite(cid):
 @login_requerido
 def remover_membro(uid):
     _dono()
+    from models import MembroConta
+    m = MembroConta.query.filter_by(conta_id=g.conta.id, usuario_id=uid).first()
+    if m:  # tem conta própria: sai só desta equipe, a conta dela continua
+        db.session.delete(m)
+        db.session.commit()
+        return jsonify({"ok": True})
     u = Usuario.query.filter_by(id=uid, conta_id=g.conta.id).first_or_404()
     if u.id == g.usuario.id or u.papel == "dono":
         raise ErroAPI("O responsável pela conta não pode ser removido.")
+    MembroConta.query.filter_by(usuario_id=u.id).delete()
     db.session.delete(u)
     db.session.commit()
     return jsonify({"ok": True})
@@ -314,7 +327,8 @@ def ver_convite(token):
     c = Convite.query.filter_by(token=token[:60]).first()
     if not c or c.aceito_em or not c.expira_em or c.expira_em < datetime.utcnow():
         raise ErroAPI("Convite inválido ou expirado. Peça um novo convite a quem convidou você.", 404)
-    return jsonify({"email": c.email, "conta": Conta.query.get(c.conta_id).nome})
+    return jsonify({"email": c.email, "conta": Conta.query.get(c.conta_id).nome,
+                    "ja_cadastrado": Usuario.query.filter_by(email=c.email).first() is not None})
 
 
 @bp.post("/auth/convite/<token>")
@@ -325,16 +339,17 @@ def aceitar_convite(token):
         raise ErroAPI("Convite inválido ou expirado. Peça um novo convite a quem convidou você.", 404)
     d = dados()
     nome, senha = (d.get("nome") or "").strip(), d.get("senha") or ""
-    if not nome:
-        raise ErroAPI("Informe seu nome.")
-    if len(senha) < 8:
-        raise ErroAPI("A senha precisa ter pelo menos 8 caracteres.")
-    if Usuario.query.filter_by(email=c.email).first():
-        raise ErroAPI("Este e-mail já tem uma conta no Kasiski. Entre com sua senha.")
     conta = Conta.query.get(c.conta_id)
     ativos, _ = planos.contar_usuarios(conta)
     if ativos >= (planos.dados_plano(conta).get("usuarios") or 1):
         raise ErroAPI("A equipe desta conta já está no limite de usuários do plano. Avise quem convidou você.", 402)
+    existente = Usuario.query.filter_by(email=c.email).first()
+    if existente:
+        return _entrar_na_equipe(c, existente, senha)
+    if not nome:
+        raise ErroAPI("Informe seu nome.")
+    if len(senha) < 8:
+        raise ErroAPI("A senha precisa ter pelo menos 8 caracteres.")
     # Só o link que chegou por e-mail prova o endereço; link copiado por quem convidou pede o código depois.
     u = Usuario(conta_id=c.conta_id, nome=nome[:200], email=c.email, senha_hash=generate_password_hash(senha),
                 papel="membro", email_verificado=bool(c.enviado_email), modo_guiado=True)
@@ -344,6 +359,24 @@ def aceitar_convite(token):
     if not u.verificado and verificacao.exigida():
         return _pedir_verificacao(u, primeiro=True), 201
     return jsonify({"token": gerar_token(u), "usuario": u.to_dict(eh_admin(u))}), 201
+
+
+def _entrar_na_equipe(c, u, senha):
+    """Quem já tem conta no Kasiski entra na equipe com a própria senha: continua com um único login e passa a
+    trocar entre a conta dela e a desta equipe."""
+    from models import MembroConta
+    ip = _limite_ip("login_falha", current_app.config["LOGIN_FALHAS_IP"], 15,
+                    "Muitas tentativas de login a partir desta rede. Aguarde 15 minutos e tente de novo.")
+    if not check_password_hash(u.senha_hash, senha):
+        _registrar_ip("login_falha", ip)
+        raise ErroAPI("Senha incorreta. Use a senha da sua conta no Kasiski.", 401)
+    if u.conta_id != c.conta_id and not MembroConta.query.filter_by(conta_id=c.conta_id, usuario_id=u.id).first():
+        db.session.add(MembroConta(conta_id=c.conta_id, usuario_id=u.id, papel="membro"))
+    c.aceito_em = datetime.utcnow()
+    db.session.commit()
+    if not u.verificado and verificacao.exigida():
+        return _pedir_verificacao(u)
+    return jsonify({"token": gerar_token(u), "usuario": u.to_dict(eh_admin(u)), "conta_id": c.conta_id}), 201
 
 
 # ---------------------------------------------------------------- administrador
@@ -392,6 +425,14 @@ def admin_contas():
         saida.append({**c.to_dict(), "usuarios": [u.email for u in usuarios],
                       "custo_ia_total_usd": round(float(custo or 0), 4), "uso": planos.resumo(c)["uso"]})
     return jsonify(saida)
+
+
+@bp.delete("/admin/contas/<int:cid>")
+@admin_requerido
+def admin_excluir_conta(cid):
+    """Exclusão definitiva da conta, com usuários, dados e arquivos (ver services/contas.py)."""
+    from services import contas
+    return jsonify({"ok": True, **contas.excluir(Conta.query.get_or_404(cid), g.usuario)})
 
 
 @bp.patch("/admin/contas/<int:cid>")

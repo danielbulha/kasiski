@@ -3,6 +3,7 @@ const S = {
   token: localStorage.getItem("certame_token"),
   usuario: null, conta: null, plano: null, planos: {}, demo: false,
   empresas: [], empresaId: Number(localStorage.getItem("certame_empresa")) || null,
+  contaId: Number(localStorage.getItem("kasiski_conta")) || null,   // conta ativa (a própria ou de uma equipe)
 };
 const V = {}; // views registradas pelos arquivos em js/views
 
@@ -155,6 +156,7 @@ async function ocupado(botao, texto, fn) {
 async function api(metodo, caminho, corpo) {
   const opt = { method: metodo, headers: {} };
   if (S.token) opt.headers.Authorization = "Bearer " + S.token;
+  if (S.token && S.contaId) opt.headers["X-Kasiski-Conta"] = String(S.contaId);
   if (corpo instanceof FormData) opt.body = corpo;
   else if (corpo !== undefined) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(corpo); }
   let r;
@@ -172,6 +174,7 @@ async function api(metodo, caminho, corpo) {
   const ct = r.headers.get("content-type") || "";
   if (!ct.includes("json")) { if (!r.ok) throw new Error(`Erro ${r.status} no servidor.`); return r; }
   const d = await r.json();
+  if (r.status === 403 && d.codigo === "conta_sem_acesso") { trocarConta(null); }   // saiu da equipe: volta para a própria conta
   if (!r.ok) { const e = new Error(d.erro || "Não foi possível concluir a operação."); e.status = r.status; e.codigo = d.codigo; e.dados = d; throw e; }
   return d;
 }
@@ -186,15 +189,22 @@ async function baixar(caminho, nome) {
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
+function trocarConta(id) {
+  S.contaId = id || null;
+  try { id ? localStorage.setItem("kasiski_conta", id) : localStorage.removeItem("kasiski_conta"); localStorage.removeItem("certame_empresa"); } catch { /* segue */ }
+  S.empresaId = null; S.usuario = null;   // recarrega a conta e as empresas na próxima navegação
+}
+
 function sair(destino = "#/") {
   localStorage.removeItem("certame_token");
-  S.token = null; S.usuario = null;
+  try { localStorage.removeItem("kasiski_conta"); } catch { /* segue */ }
+  S.token = null; S.usuario = null; S.contaId = null;
   location.hash = destino;
 }
 
 async function carregarConta() {
   const d = await api("GET", "/api/conta");
-  Object.assign(S, { usuario: d.usuario, conta: d.conta, plano: d.plano, planos: d.planos, demo: d.modo_demonstracao,
+  Object.assign(S, { usuario: d.usuario, conta: d.conta, contas: d.contas || [], plano: d.plano, planos: d.planos, demo: d.modo_demonstracao,
     cobranca: d.cobranca || { online: false, anual_meses_pagos: 10 } });
   S.empresas = await api("GET", "/api/empresas");
   if (!S.empresas.find((e) => e.id === S.empresaId)) S.empresaId = S.empresas[0]?.id || null;

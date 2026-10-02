@@ -72,9 +72,9 @@ def salas_do_vinculo(v):
                                 Disputa.excluido_em.is_(None)).order_by(Disputa.id).all()
 
 
-def gerar_codigo(disputa, usuario):
+def gerar_codigo(disputa, usuario, conta_id):
     codigo = "".join(secrets.choice(_ALFABETO) for _ in range(8))
-    v = VinculoExtensao(conta_id=usuario.conta_id, usuario_id=usuario.id, disputa_id=disputa.id,
+    v = VinculoExtensao(conta_id=conta_id, usuario_id=usuario.id, disputa_id=disputa.id,
                         codigo_hash=_hash(codigo), codigo_expira_em=_agora() + timedelta(minutes=CODIGO_MIN),
                         token_versao_usuario=usuario.token_versao or 0)
     db.session.add(v)
@@ -115,9 +115,14 @@ def vinculo_do_token(cabecalho):
     v = VinculoExtensao.query.filter_by(token_hash=_hash(cabecalho[9:].strip())).first()
     u = Usuario.query.get(v.usuario_id) if v else None
     if not v or v.revogado_em or not v.token_expira_em or v.token_expira_em < _agora() or not u \
-            or (u.token_versao or 0) != (v.token_versao_usuario or 0):
+            or (u.token_versao or 0) != (v.token_versao_usuario or 0) or not _acesso(u, v.conta_id):
         raise ErroAPI("A conexão da extensão expirou. Gere um novo código na sala de disputa.", 401, "extensao_desconectada")
     return v
+
+
+def _acesso(u, conta_id):
+    from auth import tem_acesso
+    return tem_acesso(u, conta_id)   # saiu da equipe: a extensão para de enviar
 
 
 def revogar(v):

@@ -152,7 +152,11 @@ async function modalConta(id, aoSalvar) {
       ${c.cobrancas.map((x) => `<tr><td>${fmt.data(x.pago_em || x.criado_em)}</td><td>${esc(x.descricao || "")}${x.origem === "manual" ? " <small>(manual)</small>" : ""}</td>
         <td>${esc(ROTULO_MEIO[x.meio] || x.meio || "—")}</td><td>${fmt.moeda(x.valor)}</td><td>${carimboStatus(ROTULO_COBRANCA, x.status)}</td></tr>`).join("")}</tbody></table></div>`
       : `<p class="fraco">Nenhum pagamento registrado.</p>`}
-    ${c.mp_assinatura_id ? `<p class="fraco" style="margin-top:8px">Assinatura no Mercado Pago: ${esc(c.mp_assinatura_id)}</p>` : ""}`,
+    ${c.mp_assinatura_id ? `<p class="fraco" style="margin-top:8px">Assinatura no Mercado Pago: ${esc(c.mp_assinatura_id)}</p>` : ""}
+    <div class="zona-perigo"><h3>Excluir conta</h3>
+      <p class="fraco">Apaga de vez a conta, os ${c.exclusao?.usuarios ?? 0} usuário(s), as ${c.exclusao?.empresas ?? 0} empresa(s) e todos os editais, documentos,
+        contratos, salas de disputa e arquivos. Os pagamentos ficam no histórico financeiro. Não tem volta.</p>
+      <button class="botao perigo" type="button" id="excluir-conta">${icone("excluir", 14)} Excluir conta</button></div>`,
   });
   const salvar = async (extra = {}) => {
     const d = { ...dadosForm($("#form-crm", m)), ...extra };
@@ -162,6 +166,16 @@ async function modalConta(id, aoSalvar) {
   };
   $("#form-crm", m).onsubmit = (ev) => { ev.preventDefault(); salvar(); };
   $("#estender-trial", m).onclick = () => salvar({ estender_trial_dias: 7 });
+  $("#excluir-conta", m).onclick = async () => {
+    const x = c.exclusao || {};
+    const msg = `Excluir definitivamente a conta "${c.nome}"? Serão apagados ${x.usuarios ?? 0} usuário(s), ${x.empresas ?? 0} empresa(s) e todos os `
+      + `dados e arquivos${x.membros_de_outras_contas ? `; ${x.membros_de_outras_contas} pessoa(s) de outras contas perdem o acesso a esta equipe` : ""}. Esta ação não pode ser desfeita.`;
+    if (!(await confirmar(msg, "Excluir conta"))) return;
+    await ocupado($("#excluir-conta", m), "Excluindo…", async () => {
+      try { await api("DELETE", `/api/admin/contas/${id}`); m.fechar(); toast(`Conta "${c.nome}" excluída.`, "ok"); aoSalvar(); }
+      catch (e) { avisarErro(e); }
+    });
+  };
 }
 
 // ---------------------------------------------------------------- funil

@@ -37,6 +37,8 @@ function layout() {
   <div class="app">
     <aside class="lateral" id="lateral">
       <a class="marca" href="#/painel">${simboloMarca(34)}<span class="texto"><strong>${esc(CERTAME.NOME)}</strong><span>public market intelligence</span></span></a>
+      ${(S.contas || []).length > 1 ? `<div class="seletor-empresa"><label for="sel-conta">Conta</label>
+        <select id="sel-conta">${S.contas.map((c) => `<option value="${c.id}" ${c.id === S.conta?.id ? "selected" : ""}>${esc(c.nome)}${c.propria ? " (minha)" : ""}</option>`).join("")}</select></div>` : ""}
       ${S.empresas.length ? `<div class="seletor-empresa"><label for="sel-empresa">Empresa</label>
         <select id="sel-empresa">${opcoes}</select></div>` : ""}
       <nav class="nav-grupo">${link(["#/painel", "Painel", "painel"])}${link(["#/oportunidades", "Oportunidades", "kanban"])}${link(["#/relatorios", "Relatórios", "relatorio"])}</nav>
@@ -78,7 +80,11 @@ async function navegar() {
   }
   if (!S.token) { location.hash = "#/entrar"; return; }
   if (!S.usuario) {
-    try { await carregarConta(); } catch (e) { raiz.innerHTML = `<div style="padding:40px">${erroTela(e)}</div>`; return; }
+    try { await carregarConta(); }
+    catch (e) {
+      if (e.codigo === "conta_sem_acesso") { try { await carregarConta(); e = null; } catch (e2) { e = e2; } }   // já voltou para a própria conta
+      if (e) { raiz.innerHTML = `<div style="padding:40px">${erroTela(e)}</div>`; return; }
+    }
   }
   let view = null, params = [];
   for (const [re, nome] of ROTAS) { const m = hash.match(re); if (m) { view = nome; params = m.slice(1); break; } }
@@ -96,6 +102,12 @@ async function navegar() {
 function ligarLayout() {
   const sel = $("#sel-empresa");
   if (sel) sel.onchange = () => { S.empresaId = Number(sel.value); localStorage.setItem("certame_empresa", S.empresaId); navegar(); };
+  const selConta = $("#sel-conta");
+  if (selConta) selConta.onchange = () => {
+    const c = S.contas.find((x) => x.id === Number(selConta.value));
+    trocarConta(c?.propria ? null : c?.id);
+    location.hash = "#/painel"; navegar();
+  };
   $("#sair").onclick = () => sair();
   $("#abrir-menu").onclick = () => $("#lateral").classList.toggle("aberta");
   $$("#lateral a").forEach((a) => a.addEventListener("click", () => $("#lateral").classList.remove("aberta")));
@@ -271,8 +283,11 @@ async function telaConvite(raiz, token) {
   try { c = await api("GET", `/api/auth/convite/${encodeURIComponent(token || "")}`); }
   catch (e) { corpo.innerHTML = `${erroTela(e)}<p><a href="#/entrar">Ir para o login</a></p>`; return; }
   corpo.innerHTML = `<form id="form-convite" novalidate><h2>Entrar na equipe ${esc(c.conta)}</h2><p class="fraco">Convite para ${esc(c.email)}.</p><div id="erro-convite"></div>
-    <div class="campo"><label for="cv-nome">Seu nome</label><input id="cv-nome" name="nome" required autocomplete="name"></div>
-    <div class="campo"><label for="cv-senha">Crie uma senha</label><input id="cv-senha" name="senha" type="password" minlength="8" required autocomplete="new-password"><small>Mínimo de 8 caracteres.</small></div>
+    ${c.ja_cadastrado ? `<p>Você já tem conta no Kasiski com este e-mail. Entre com a sua senha: a sua conta continua a mesma e você passa a
+      trocar entre ela e a equipe ${esc(c.conta)} pelo seletor de conta.</p>
+      <div class="campo"><label for="cv-senha">Sua senha do Kasiski</label><input id="cv-senha" name="senha" type="password" required autocomplete="current-password"></div>`
+    : `<div class="campo"><label for="cv-nome">Seu nome</label><input id="cv-nome" name="nome" required autocomplete="name"></div>
+    <div class="campo"><label for="cv-senha">Crie uma senha</label><input id="cv-senha" name="senha" type="password" minlength="8" required autocomplete="new-password"><small>Mínimo de 8 caracteres.</small></div>`}
     <button class="botao" style="width:100%" type="submit">Entrar na equipe</button></form>`;
   $("#form-convite").onsubmit = async (ev) => {
     ev.preventDefault();
@@ -283,6 +298,7 @@ async function telaConvite(raiz, token) {
           location.hash = "#/verificar";
           return;
         }
+        if (d.conta_id) trocarConta(d.conta_id);   // já abre na conta da equipe
         entrarComToken(d.token, false); }
       catch (e) { $("#erro-convite").innerHTML = erroTela(e); }
     });

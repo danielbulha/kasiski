@@ -6,7 +6,7 @@ import jwt
 from flask import current_app, g, request
 
 from extensions import ErroAPI, db
-from models import Usuario
+from models import Conta, MembroConta, Usuario
 
 
 def gerar_token(usuario):
@@ -64,11 +64,39 @@ def login_requerido(f):
         if not usuario.verificado and verificacao.exigida():
             raise ErroAPI("Confirme seu e-mail para continuar.", 401, "email_nao_verificado")
         g.usuario = usuario
-        g.conta = usuario.conta
+        g.conta, g.papel = conta_ativa(usuario)
         g.admin = eh_admin(usuario)
         _registrar_acesso(usuario)
         return f(*args, **kwargs)
     return wrapper
+
+
+def conta_ativa(usuario):
+    """Conta em que a pessoa está trabalhando: a própria ou outra cuja equipe ela integra (cabeçalho X-Kasiski-Conta).
+    Devolve (conta, papel nela)."""
+    pedida = (request.headers.get("X-Kasiski-Conta") or "").strip()
+    if pedida.isdigit() and int(pedida) != usuario.conta_id:
+        m = MembroConta.query.filter_by(conta_id=int(pedida), usuario_id=usuario.id).first()
+        conta = Conta.query.get(m.conta_id) if m else None
+        if not conta:
+            raise ErroAPI("Você não faz parte desta conta. Voltando para a sua conta.", 403, "conta_sem_acesso")
+        return conta, m.papel or "membro"
+    return usuario.conta, usuario.papel or "dono"
+
+
+def tem_acesso(usuario, conta_id):
+    """A pessoa ainda pode trabalhar nesta conta (é a dela ou faz parte da equipe)."""
+    return usuario.conta_id == conta_id or MembroConta.query.filter_by(conta_id=conta_id, usuario_id=usuario.id).first() is not None
+
+
+def contas_do_usuario(usuario):
+    """Contas a que a pessoa tem acesso, a própria primeiro (para o seletor de conta do aplicativo)."""
+    saida = [{"id": usuario.conta_id, "nome": usuario.conta.nome, "papel": usuario.papel or "dono", "propria": True}]
+    for m in MembroConta.query.filter_by(usuario_id=usuario.id).order_by(MembroConta.id):
+        c = Conta.query.get(m.conta_id)
+        if c:
+            saida.append({"id": c.id, "nome": c.nome, "papel": m.papel or "membro", "propria": False})
+    return saida
 
 
 def admin_requerido(f):
@@ -88,4 +116,4 @@ def _registrar_acesso(usuario):
     if not usuario.ultimo_acesso or agora - usuario.ultimo_acesso > timedelta(hours=1):
         usuario.ultimo_acesso = agora
         db.session.commit()
-    planos.verificar_vencimento(usuario.conta)
+    planos.verificar_vencimento(g.conta)

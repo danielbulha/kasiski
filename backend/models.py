@@ -1041,6 +1041,18 @@ class Prospect(db.Model):
         return d
 
 
+class MembroConta(db.Model):
+    """Pessoa com conta própria que também faz parte da equipe de outra conta (mesmo e-mail, um único login).
+    A conta "de casa" continua em Usuario.conta_id; aqui ficam as outras contas a que ela tem acesso."""
+    __tablename__ = "membro_conta"
+    __table_args__ = (db.UniqueConstraint("conta_id", "usuario_id"),)
+    id = db.Column(db.Integer, primary_key=True)
+    conta_id = db.Column(db.Integer, db.ForeignKey("conta.id"), nullable=False, index=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey("usuario.id"), nullable=False, index=True)
+    papel = db.Column(db.String(20), default="membro")
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 class Convite(db.Model):
     """Convite para entrar na equipe da conta (limite de usuários do plano)."""
     id = db.Column(db.Integer, primary_key=True)

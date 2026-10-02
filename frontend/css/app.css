@@ -201,6 +201,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--oficio); ou
 .botao:disabled { opacity: .6; cursor: wait; }
 .botao.secundario { background: #fff; color: var(--oficio); }
 .botao.secundario:hover { background: var(--oficio-claro); }
+.zona-perigo { margin-top: 26px; padding: 14px 16px; border: 1px solid var(--carimbo); border-radius: var(--raio); background: var(--carimbo-claro); }
+.zona-perigo h3 { margin: 0 0 4px; color: var(--carimbo); }
 .botao.perigo { background: #fff; color: var(--carimbo); border-color: var(--carimbo); }
 .botao.pequeno { padding: 5px 10px; font-size: .82rem; }
 .botao.pequeno svg { width: 15px; height: 15px; }

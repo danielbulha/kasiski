@@ -26,7 +26,8 @@
     const agora = new Date().toISOString(), eventos = [];
     for (const x of lido.itens) {
       const antes = anterior.get(x.item) || {};
-      for (const [campo, tipo] of [["melhor_lance", "melhor_lance"], ["meu_lance", "meu_lance"], ["posicao", "posicao"]]) {
+      // o seu lance primeiro: quando ele vira o melhor, o "melhor valor" igual não é registrado como lance do mercado
+      for (const [campo, tipo] of [["meu_lance", "meu_lance"], ["melhor_lance", "melhor_lance"], ["posicao", "posicao"]]) {
         if (x[campo] !== null && x[campo] !== undefined && x[campo] !== antes[campo]) eventos.push({ id: id(), tipo, item: x.item, valor: x[campo], visto_em: agora });
       }
       if (x.fase && x.fase !== antes.fase) eventos.push({ id: id(), tipo: "fase", item: x.item, texto: x.fase, visto_em: agora });

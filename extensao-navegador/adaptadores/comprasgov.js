@@ -1,21 +1,24 @@
 // Adaptador do Compras.gov.br: onde ficam, na tela da sala de disputa do fornecedor, os dados que a extensão lê.
 //
-// PREENCHER com a página real: ainda não temos uma cópia da sala de disputa logada, então os seletores abaixo
-// estão vazios e a extensão fica em "aguardando configuração" (não envia nada). Para preencher, use o botão
-// "Copiar estrutura da página" no popup da extensão durante uma sessão (os números saem mascarados) ou salve a
-// página e envie ao time do Kasiski. Se o portal mudar o layout, só este arquivo precisa ser atualizado.
+// Seletores levantados no código público do aplicativo do portal (Angular, comprasnet-web, out/2026): componentes
+// app-disputa-fornecedor / app-disputa-fornecedor-itens e os atributos data-test que o próprio portal usa nos testes
+// (valor-geral, valor-fornec, situacao-item, tempo-restante). Ainda NÃO foram conferidos numa sala de disputa real:
+// confira com o botão "Copiar estrutura da página" na primeira sessão. Se o portal mudar o layout, só este arquivo
+// precisa ser atualizado.
 const SELETORES_COMPRASGOV = {
-  sala: "",          // elemento que só existe na sala de disputa (evita ler outras telas do portal)
-  item: "",          // cada bloco/linha de item ou lote na sala
-  itemNumero: "",    // dentro do bloco do item: número do item
-  melhorLance: "",   // dentro do bloco do item: melhor lance (valor ou desconto)
-  meuLance: "",      // dentro do bloco do item: o seu último lance
-  posicao: "",       // dentro do bloco do item: sua posição/classificação
-  fase: "",          // dentro do bloco do item (ou na página): situação da disputa (aberta, prorrogação, encerrada...)
-  mensagem: "",      // cada mensagem do pregoeiro/sistema
-  mensagemHora: "",  // dentro da mensagem: data/hora
-  mensagemTexto: "", // dentro da mensagem: texto
-  mensagemItem: "",  // dentro da mensagem (opcional): item a que a mensagem se refere
+  sala: "app-disputa-fornecedor",                                          // só existe na sala de disputa do fornecedor
+  item: "app-disputa-fornecedor-itens .cp-itens-disputa",                  // cada item/grupo na lista da disputa
+  itemNumero: "app-identificacao-item .dots > span:not(.text-uppercase):not(.pr-1)",  // número do item
+  melhorLance: '[data-test="valor-geral"]',                                // "Melhor valor"
+  meuLance: '[data-test="valor-fornec"]',                                  // "Meu valor"
+  situacao: "i.fa-thumbs-up, i.fa-thumbs-down, i.fa-hand-paper",           // ganhando / perdendo / empatado (no title)
+  posicao: "",                                                             // o portal mostra a situação, não a posição
+  fase: '[data-test="situacao-item"]',                                     // fase do item (aberto para lances, encerrado...)
+  tempo: '[data-test="tempo-restante"]',                                   // contagem do item
+  mensagem: ".cp-mensagens-compra",                                        // cada mensagem do chat da compra
+  mensagemHora: ".mensagens-data",
+  mensagemTexto: ".mensagens-texto",
+  mensagemItem: "",                                                        // o chat da compra não separa por item
 };
 
 const AdaptadorComprasGov = {
@@ -32,13 +35,19 @@ const AdaptadorComprasGov = {
     if (!document.querySelector(s.sala)) return null;
     const dentro = (raiz, sel) => (sel ? raiz.querySelector(sel) : null);
     const faseGeral = s.fase ? Kasiski.texto(document.querySelector(s.fase)) : "";
-    const itens = [...document.querySelectorAll(s.item)].map((b) => ({
-      item: Kasiski.texto(dentro(b, s.itemNumero)),
-      melhor_lance: Kasiski.valorBR(Kasiski.texto(dentro(b, s.melhorLance))),
-      meu_lance: Kasiski.valorBR(Kasiski.texto(dentro(b, s.meuLance))),
-      posicao: Kasiski.valorBR(Kasiski.texto(dentro(b, s.posicao))),
-      fase: Kasiski.texto(dentro(b, s.fase)) || faseGeral,
-    })).filter((x) => x.item);
+    const itens = [...document.querySelectorAll(s.item)].map((b) => {
+      const icone = dentro(b, s.situacao);
+      const situacao = icone ? (icone.getAttribute("title") || (icone.classList.contains("fa-thumbs-up") ? "Ganhando"
+        : icone.classList.contains("fa-thumbs-down") ? "Perdendo" : "Empatado")) : "";
+      const fase = Kasiski.texto(dentro(b, s.fase)) || faseGeral;
+      return {
+        item: Kasiski.texto(dentro(b, s.itemNumero)),
+        melhor_lance: Kasiski.valorBR(Kasiski.texto(dentro(b, s.melhorLance))),
+        meu_lance: Kasiski.valorBR(Kasiski.texto(dentro(b, s.meuLance))),
+        posicao: s.posicao ? Kasiski.valorBR(Kasiski.texto(dentro(b, s.posicao))) : null,   // ganhando/perdendo vai na fase
+        fase: [fase, situacao].filter(Boolean).join(" · "),
+      };
+    }).filter((x) => x.item);
     const mensagens = s.mensagem ? [...document.querySelectorAll(s.mensagem)].map((m) => ({
       item: Kasiski.texto(dentro(m, s.mensagemItem)),
       hora: Kasiski.texto(dentro(m, s.mensagemHora)),

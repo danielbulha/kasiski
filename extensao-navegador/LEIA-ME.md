@@ -20,19 +20,30 @@ Os dados são "lidos da tela do portal", não uma confirmação oficial. O usuá
 ## Arquivos
 - `manifest.json` — Manifest V3. Permissões: `storage`, a API do Kasiski e a sala do Compras.gov.br.
 - `config.js` — endereço da API (troque para `http://127.0.0.1:5000` ao testar com o backend local).
-- `adaptadores/comprasgov.js` — **onde ficam os dados na página**. Os seletores ainda estão vazios: falta uma
-  cópia da sala de disputa logada. Enquanto vazios, a extensão mostra "aguardando configuração" e não envia nada.
+- `adaptadores/comprasgov.js` — **onde ficam os dados na página**. Seletores levantados no código público do
+  aplicativo do portal (componentes `app-disputa-fornecedor*` e atributos `data-test` como `valor-geral`,
+  `valor-fornec`, `situacao-item`). Ainda precisam ser conferidos numa sala real.
 - `observador.js` — compara as leituras e gera os eventos; inclui "Copiar estrutura da página (sem números)".
 - `background.js` — guarda a conexão, junta os eventos e envia à API (tenta de novo se a rede cair).
 - `popup.html` / `popup.js` — conectar, ver o estado e desconectar.
 
-## Configurar o adaptador do Compras.gov.br
-1. Instale a extensão em modo desenvolvedor (abaixo) e abra uma sala de disputa (ou de teste) no Compras.gov.br.
-2. No ícone da extensão, clique em **Copiar estrutura da página (sem números)**. Todos os dígitos viram `9` e e-mails
-   são omitidos; revise o conteúdo (nomes de empresas podem aparecer) antes de enviar ao time do Kasiski.
-3. Preencha `SELETORES_COMPRASGOV` com os seletores CSS de cada informação.
-4. Confirme o endereço da sala em `manifest.json` (`content_scripts.matches`). O valor atual,
-   `https://cnetmobile.estaleiro.serpro.gov.br/comprasnet-web/*`, precisa ser conferido com a URL real da sala.
+## Adaptador do Compras.gov.br
+A sala do fornecedor fica em `https://cnetmobile.estaleiro.serpro.gov.br/comprasnet-web/seguro/fornecedor/disputa`
+(aplicativo Angular, atualizado por websocket). O que a extensão lê em cada item (`.cp-itens-disputa`):
+
+| Dado | Onde |
+|---|---|
+| Número do item | `app-identificacao-item .dots > span` |
+| Melhor valor | `[data-test="valor-geral"]` |
+| Meu valor | `[data-test="valor-fornec"]` |
+| Fase | `[data-test="situacao-item"]` |
+| Ganhando / perdendo / empatado | ícone `fa-thumbs-up` / `fa-thumbs-down` / `fa-hand-paper` (texto no `title`) |
+| Tempo restante | `[data-test="tempo-restante"]` |
+| Mensagens do chat | `.cp-mensagens-compra` (`.mensagens-texto`, `.mensagens-data`) |
+
+O portal mostra "ganhando/perdendo", não a posição numérica: essa situação vai junto com a fase.
+**Conferir na primeira sessão real:** abra a sala, clique em **Copiar estrutura da página (sem números)** no ícone
+da extensão e compare com a tabela. Se o portal mudar, só `adaptadores/comprasgov.js` precisa ser atualizado.
 
 ## Instalar em modo desenvolvedor
 Chrome/Edge → `chrome://extensions` → ative **Modo do desenvolvedor** → **Carregar sem compactação** → escolha esta pasta.

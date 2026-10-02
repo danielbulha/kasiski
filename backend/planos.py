@@ -224,7 +224,8 @@ def uso_mes(conta, recurso):
 
 def contar_usuarios(conta):
     from models import Convite, Usuario
-    ativos = Usuario.query.filter_by(conta_id=conta.id).count()
+    from models import MembroConta
+    ativos = Usuario.query.filter_by(conta_id=conta.id).count() + MembroConta.query.filter_by(conta_id=conta.id).count()
     pendentes = Convite.query.filter(Convite.conta_id == conta.id, Convite.aceito_em.is_(None),
                                      Convite.expira_em > datetime.utcnow()).count()
     return ativos, pendentes

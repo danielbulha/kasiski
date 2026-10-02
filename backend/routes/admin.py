@@ -128,6 +128,8 @@ def crm_detalhe(cid):
     linha["uso_recursos"] = {r: n for r, n in db.session.query(UsoIA.recurso, db.func.count(UsoIA.id))
                              .filter(UsoIA.conta_id == cid).group_by(UsoIA.recurso).all()}
     linha["mp_assinatura_id"] = c.mp_assinatura_id
+    from services import contas
+    linha["exclusao"] = contas.resumo(c)   # o que some junto, para a confirmação
     return jsonify(linha)
 
 

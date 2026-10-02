@@ -18,7 +18,7 @@ bp = Blueprint("extensao", __name__, url_prefix="/api")
 def gerar_codigo(did):
     d = _disputa(did)
     planos.exigir(g.conta, "disputa")
-    return jsonify(X.gerar_codigo(d, g.usuario)), 201
+    return jsonify(X.gerar_codigo(d, g.usuario, g.conta.id)), 201
 
 
 @bp.get("/disputas/<int:did>/extensao")

@@ -244,6 +244,11 @@ def iniciar_agendador(app):
                 except Exception:
                     log.exception("Falha no ciclo de automações")
                 try:
+                    from services import backup
+                    backup.automatico()
+                except Exception:
+                    log.exception("Falha no backup automático")
+                try:
                     from services import newsletter
                     feito = newsletter.ciclo()
                     if feito:

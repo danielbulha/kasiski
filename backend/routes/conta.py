@@ -228,6 +228,36 @@ def iniciar_teste():
     return jsonify({"trial_fim": fim.isoformat(), "plano": planos.resumo(g.conta)})
 
 
+# ---------------------------------------------------------------- backup dos dados da conta (no computador do cliente)
+@bp.get("/conta/exportar")
+@login_requerido
+def exportar_dados():
+    """Zip com todos os dados e arquivos da conta ativa (services/exportacao.py). Só o responsável pela conta."""
+    import os
+    import tempfile
+    from models import UsoPublico
+    from services import exportacao
+    _dono()
+    minutos = current_app.config["EXPORTACAO_INTERVALO_MIN"]
+    chave = f"conta:{g.conta.id}"
+    if UsoPublico.query.filter(UsoPublico.tipo == "exportacao", UsoPublico.email == chave,
+                               UsoPublico.criado_em >= datetime.utcnow() - timedelta(minutes=minutos)).first():
+        raise ErroAPI(f"Você acabou de gerar um backup. Aguarde {minutos} minutos para gerar outro.", 429, "limite_exportacao")
+    from services import backup
+    backup.limpar_temporarios(tempfile.gettempdir())
+    fd, tmp = tempfile.mkstemp(suffix=".zip")
+    os.close(fd)
+    try:
+        exportacao.gerar(g.conta, tmp)
+    except Exception:
+        os.remove(tmp)
+        raise
+    db.session.add(UsoPublico(tipo="exportacao", email=chave))   # só conta para o limite o backup que deu certo
+    db.session.commit()
+    nome = re.sub(r"[^\w-]+", "-", g.conta.nome or "conta").strip("-").lower()[:40] or "conta"
+    return backup.enviar_temporario(tmp, f"kasiski-backup-{nome}-{datetime.utcnow():%Y-%m-%d}.zip")
+
+
 # ---------------------------------------------------------------- equipe (usuários da conta)
 def _dono():
     if g.papel not in (None, "dono") and not g.admin:

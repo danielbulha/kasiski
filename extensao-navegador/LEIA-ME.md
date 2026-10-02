@@ -45,8 +45,37 @@ O portal mostra "ganhando/perdendo", não a posição numérica: essa situação
 **Conferir na primeira sessão real:** abra a sala, clique em **Copiar estrutura da página (sem números)** no ícone
 da extensão e compare com a tabela. Se o portal mudar, só `adaptadores/comprasgov.js` precisa ser atualizado.
 
-## Instalar em modo desenvolvedor
+## Publicar na Chrome Web Store (para o botão "Instalar extensão")
+O Chrome só instala extensões vindas da loja. Depois de publicada, o botão **Instalar extensão** do Kasiski abre a página
+dela na loja e o usuário clica em "Usar no Chrome".
+
+1. Gere o pacote: `python3 empacotar.py` → `dist/kasiski-sala-de-disputa-<versão>.zip` (sem os endereços de teste local).
+2. Crie a conta de desenvolvedor em https://chrome.google.com/webstore/devconsole com o e-mail da empresa
+   (taxa única de US$ 5) e verifique o e-mail de contato.
+3. **Novo item** → envie o .zip. Preencha:
+   - **Descrição:** o que ela faz e, em destaque, que *não envia lances, não clica e não preenche nada no portal*.
+   - **Ícone 128×128:** `icones/icone-128.png`. **Capturas de tela:** 1280×800 da sala do Kasiski com a extensão conectada.
+   - **Finalidade única:** "Mostrar no Kasiski os dados da sala de disputa do Compras.gov.br aberta pelo usuário."
+   - **Justificativa das permissões:**
+     `storage`: guardar a conexão com o Kasiski durante a sessão do navegador.
+     Acesso a `cnetmobile.estaleiro.serpro.gov.br/comprasnet-web`: ler a sala de disputa aberta pelo usuário.
+     Acesso a `app.kasiski.com.br`: avisar o Kasiski que a extensão está instalada e conectar com um clique.
+     Acesso à API do Kasiski: enviar os dados lidos para a sala do usuário.
+   - **Código remoto:** não usa.
+   - **Dados do usuário:** marca "conteúdo do site" (valores e mensagens da sala); não vende nem transfere a terceiros.
+   - **Política de privacidade:** URL da página de privacidade do Kasiski, com um parágrafo sobre a extensão.
+   - **Visibilidade:** "Não listado" (só quem tem o link instala) ou "Público".
+4. Envie para revisão (costuma levar de alguns dias a algumas semanas).
+5. Publicada, copie o endereço da página da extensão para `EXTENSAO_URL_CHROME` em `frontend/js/config.js` e publique o
+   aplicativo. Para o Edge, o mesmo .zip vai em https://partner.microsoft.com/dashboard/microsoftedge → `EXTENSAO_URL_EDGE`.
+
+## Instalar em modo desenvolvedor (testes)
 Chrome/Edge → `chrome://extensions` → ative **Modo do desenvolvedor** → **Carregar sem compactação** → escolha esta pasta.
+
+## Conexão com um clique
+`ponte-kasiski.js` roda só em `app.kasiski.com.br`: marca `<html data-kasiski-extensao="versão">` e, quando o usuário
+clica em **Conectar a extensão**, recebe da página o código gerado pelo próprio usuário logado e conecta sem digitar.
+Uma extensão recém-instalada só aparece para a página depois que ela é recarregada (botão **Já instalei**).
 
 ## Backend
 - `POST /api/disputas/<id>/extensao/codigo` (login) — gera o código.

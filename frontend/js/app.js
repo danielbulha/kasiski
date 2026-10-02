@@ -277,7 +277,13 @@ async function telaConvite(raiz, token) {
   $("#form-convite").onsubmit = async (ev) => {
     ev.preventDefault();
     await ocupado(ev.target.querySelector("button"), "Entrando…", async () => {
-      try { const d = await api("POST", `/api/auth/convite/${encodeURIComponent(token)}`, dadosForm(ev.target)); document.body.classList.remove("publico"); entrarComToken(d.token, false); }
+      try { const d = await api("POST", `/api/auth/convite/${encodeURIComponent(token)}`, dadosForm(ev.target)); document.body.classList.remove("publico");
+        if (d.verificacao_pendente) {  // convite aceito por link copiado: confirma o e-mail com o código
+          try { sessionStorage.setItem("kasiski_verificacao", JSON.stringify({ token: d.token_verificacao, email: d.email, novo: d.novo_cadastro, aviso: d.aviso })); } catch { /* segue */ }
+          location.hash = "#/verificar";
+          return;
+        }
+        entrarComToken(d.token, false); }
       catch (e) { $("#erro-convite").innerHTML = erroTela(e); }
     });
   };

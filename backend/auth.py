@@ -10,7 +10,8 @@ from models import Usuario
 
 
 def gerar_token(usuario):
-    payload = {"uid": usuario.id, "exp": datetime.utcnow() + timedelta(hours=current_app.config["TOKEN_HORAS"])}
+    payload = {"uid": usuario.id, "tv": usuario.token_versao or 0,
+               "exp": datetime.utcnow() + timedelta(hours=current_app.config["TOKEN_HORAS"])}
     return jwt.encode(payload, current_app.config["SECRET_KEY"], algorithm="HS256")
 
 
@@ -36,7 +37,8 @@ def usuario_do_token_verificacao(token):
 
 
 def eh_admin(usuario):
-    return usuario.email.lower() in current_app.config["ADMIN_EMAILS"]
+    """Admin = e-mail da lista ADMIN_EMAILS E endereço confirmado (senão bastaria cadastrar o e-mail do admin)."""
+    return usuario.verificado and usuario.email.lower() in current_app.config["ADMIN_EMAILS"]
 
 
 def login_requerido(f):
@@ -56,6 +58,8 @@ def login_requerido(f):
         usuario = Usuario.query.get(dados.get("uid"))
         if not usuario:
             raise ErroAPI("Usuário não encontrado.", 401)
+        if (dados.get("tv") or 0) != (usuario.token_versao or 0):  # senha trocada depois do login
+            raise ErroAPI("Sua sessão expirou. Entre novamente.", 401)
         from services import verificacao
         if not usuario.verificado and verificacao.exigida():
             raise ErroAPI("Confirme seu e-mail para continuar.", 401, "email_nao_verificado")

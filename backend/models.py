@@ -90,6 +90,7 @@ class Usuario(db.Model):
     falhas_login = db.Column(db.Integer, default=0)
     bloqueado_ate = db.Column(db.DateTime)
     papel = db.Column(db.String(20))              # dono (gerencia equipe e assinatura) ou membro
+    token_versao = db.Column(db.Integer, default=0)  # muda ao trocar a senha: derruba os logins antigos
     tour = db.Column(db.JSON)                     # tour guiado por plano: {"free": "concluido"|"pulado"|"anterior", ...}
     conta = db.relationship("Conta")
 
@@ -1050,6 +1051,7 @@ class Convite(db.Model):
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
     expira_em = db.Column(db.DateTime)
     aceito_em = db.Column(db.DateTime)
+    enviado_email = db.Column(db.Boolean)   # só o link entregue por e-mail prova que a pessoa é dona do endereço
 
     def to_dict(self):
         return {"id": self.id, "email": self.email, "criado_em": _iso(self.criado_em), "expira_em": _iso(self.expira_em),

@@ -93,6 +93,8 @@ class Config:
     # cabeçalho com o IP real do visitante, gravado pelo proxy na frente da API (Render = Cloudflare)
     IP_CABECALHO = os.getenv("IP_CABECALHO", "CF-Connecting-IP")
     LOGIN_FALHAS_IP = int(os.getenv("LOGIN_FALHAS_IP", "20"))          # senhas erradas por IP a cada 15 min
+    LOGIN_FALHAS_CONTA_IP = int(os.getenv("LOGIN_FALHAS_CONTA_IP", "5"))      # senhas erradas numa conta, por IP, a cada 15 min
+    LOGIN_FALHAS_CONTA_HORA = int(os.getenv("LOGIN_FALHAS_CONTA_HORA", "30"))  # na conta, de todos os IPs, por hora
     CADASTROS_IP_HORA = int(os.getenv("CADASTROS_IP_HORA", "5"))       # contas novas por IP a cada hora
     CODIGOS_IP_HORA = int(os.getenv("CODIGOS_IP_HORA", "15"))          # reenvios/verificações de código por IP a cada hora
     AUTOMACOES_ATIVAS = os.getenv("AUTOMACOES_ATIVAS", "sim").lower() in ("sim", "1", "true")

@@ -75,7 +75,7 @@ function cartaoDisputa(x) {
       <div><small>${esc(s.mensagem || "")}</small>${s.proximo !== null && s.proximo !== undefined ? `<strong>${fmtLance(s.proximo, crit)}</strong>` : ""}</div>
       ${s.proximo !== null && s.proximo !== undefined ? `<div class="ds-prox-acoes"><span class="ds-espera" data-espera="${s.espera_s || 0}" aria-live="polite"></span>
         <button class="botao pequeno secundario" data-copiar-lance="${s.proximo}">Copiar</button>
-        <button class="botao pequeno" data-dei="${s.proximo}">Dei este lance</button></div>` : ""}</div>
+        <button class="botao pequeno secundario" data-semi="${s.proximo}">Revisar lance</button><button class="botao pequeno" data-dei="${s.proximo}">Dei este lance</button></div>` : ""}</div>
     ${barra}
     ${resumoAnaliseLances(x)}
     <form class="ds-registro" data-registro="${x.id}"><label class="oculto-visual" for="ds-v-${x.id}">Valor do lance</label>
@@ -136,6 +136,23 @@ function ligarCartoesDisputa(el) {
       if (v === null) { toast("Digite o valor do lance.", "erro"); $("input", f).focus(); return; }
       registrar(Number(f.dataset.registro), v, tipo);
     };
+  });
+  $$('[data-semi]', el).forEach((b) => b.onclick = async () => {
+    const id = Number(b.closest('[data-disputa]').dataset.disputa);
+    const x = V.disputa.lista.find(y => y.id === id);
+    const digitado = prompt('Revisar valor do lance sugerido (a confirmação NÃO envia ao portal):', String(b.dataset.semi).replace('.', ','));
+    if (digitado === null) return;
+    const valor = valorBR(digitado);
+    if (valor === null) { toast('Valor inválido.', 'erro'); return; }
+    try {
+      const proposta = await api('POST', `/api/disputas/${id}/semiautomatico/propor`, {valor});
+      const ok = await confirmar(`Confirmar proposta de ${fmtLance(valor, x.criterio)}? Esta aprovação NÃO envia o lance ao portal. Abra o portal e efetue o lance manualmente.`, 'Aprovar proposta');
+      const decisao = await api('POST', `/api/disputas/${id}/semiautomatico/${proposta.id}/decidir`, {acao: ok ? 'aprovar' : 'rejeitar'});
+      if (decisao.estado === 'aprovada') {
+        toast('Proposta aprovada. Envie o lance no portal oficial e depois registre aqui em "Dei este lance".', 'ok');
+        if (x.portal_url) window.open(x.portal_url, '_blank', 'noopener');
+      } else toast('Proposta rejeitada. Nenhum lance foi enviado.');
+    } catch (e) { avisarErro(e); }
   });
   $$("[data-dei]", el).forEach((b) => b.onclick = () => registrar(Number(b.closest("[data-disputa]").dataset.disputa), Number(b.dataset.dei), "meu"));
   $$("[data-copiar-lance]", el).forEach((b) => b.onclick = () => {

@@ -23,6 +23,10 @@ window.CERTAME = {
     LINKEDIN_PARTNER_ID: "10945985", // LinkedIn Insight Tag (número) — só usado se não houver GTM
     META_PIXEL_ID: "",       // Meta Pixel (número) — só usado se não houver GTM
   },
+  // Extensão "Kasiski — Sala de Disputa": endereço da página na Chrome Web Store (e na loja do Edge) depois de publicada.
+  // Vazio = o botão "Instalar extensão" avisa que ela está em publicação.
+  EXTENSAO_URL_CHROME: "",
+  EXTENSAO_URL_EDGE: "",
   // Cloudflare Turnstile (anti-robô nas ferramentas gratuitas). Preencha junto com TURNSTILE_SECRET no Render.
   TURNSTILE_SITEKEY: "",
 };

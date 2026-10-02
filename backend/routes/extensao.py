@@ -36,6 +36,14 @@ def desconectar(did):
 
 
 # ---------------------------------------------------------------- lado da extensão (token próprio)
+@bp.get("/extensao/adaptadores")
+def adaptadores():
+    """Público: a extensão baixa daqui onde ler cada portal, sem precisar de nova versão na loja."""
+    r = jsonify(X.adaptadores())
+    r.headers["Cache-Control"] = "public, max-age=900"
+    return r
+
+
 @bp.post("/extensao/vincular")
 def vincular():
     from routes.conta import _limite_ip, _registrar_ip

@@ -1,8 +1,11 @@
 // Observa a sala de disputa aberta pelo usuário e manda ao Kasiski só o que MUDOU na tela.
 // Não clica, não preenche e não envia nada ao portal: apenas lê o texto visível.
-(() => {
-  const adaptador = window.KasiskiAdaptador;
-  if (!adaptador) return;
+(async () => {
+  // configuração do portal desta página (o background baixa do Kasiski e guarda; sem rede, usa a que vem na extensão)
+  let portal = null;
+  try { portal = await chrome.runtime.sendMessage({ tipo: "adaptador", url: location.href }); } catch { /* extensão recarregada */ }
+  if (!portal?.id) return;
+  const adaptador = KasiskiMotor.criar(portal);
   const anterior = new Map();              // item -> último estado lido
   const mensagensVistas = new Set();
   let agendado = null, ultimoStatus = "";

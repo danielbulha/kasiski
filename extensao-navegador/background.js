@@ -5,6 +5,24 @@ importScripts("config.js");
 let fila = [], enviando = false, timer = null;
 const statusAbas = {};   // aba -> {lendo, motivo, portal, url, em}
 
+// Onde ler cada portal: baixado do Kasiski (só dados) e guardado por 1 h; sem rede, a cópia que vem na extensão.
+async function adaptadores() {
+  const { adaptadores: guardado } = await chrome.storage.local.get("adaptadores");
+  if (guardado && Date.now() - guardado.em < 60 * 60 * 1000) return guardado.dados;
+  try {
+    const r = await fetch(KASISKI_API + "/api/extensao/adaptadores");
+    const dados = r.ok ? await r.json() : null;
+    if (Array.isArray(dados?.portais)) { await chrome.storage.local.set({ adaptadores: { em: Date.now(), dados } }); return dados; }
+  } catch { /* sem rede: segue */ }
+  if (guardado) return guardado.dados;
+  return (await fetch(chrome.runtime.getURL("adaptadores/padrao.json"))).json();
+}
+
+async function portalDaUrl(url) {
+  const { portais } = await adaptadores();
+  return portais.find((p) => (p.enderecos || []).some((e) => url.startsWith(e))) || null;
+}
+
 async function conexao() { return (await chrome.storage.session.get("conexao")).conexao || null; }
 async function salvarConexao(c) { c ? await chrome.storage.session.set({ conexao: c }) : await chrome.storage.session.remove("conexao"); }
 
@@ -57,6 +75,7 @@ chrome.runtime.onMessage.addListener((msg, remetente, responder) => {
       marcar();
       return {};
     }
+    if (msg.tipo === "adaptador") return await portalDaUrl(String(msg.url || ""));
     if (msg.tipo === "estado") {
       return { conexao: await conexao(), abas: statusAbas };
     }

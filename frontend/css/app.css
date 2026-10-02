@@ -1034,6 +1034,7 @@ body.op-gaveta-aberta { overflow: hidden; }
 .ds-ext.on { border-left-color: var(--visto); background: var(--visto-claro); }
 .ds-ext-msg { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--tinta); }
 .ds-ext-cod { font: 700 1.8rem/1.2 ui-monospace, monospace; letter-spacing: 4px; text-align: center; margin: 8px 0; }
+.ds-ext-manual { margin-top: 12px; } .ds-ext-manual summary { cursor: pointer; color: var(--grafite); font-size: .9rem; }
 .ds-ext-lista { max-height: 220px; overflow-y: auto; padding-left: 18px; font-size: .9rem; }
 .ds-ia { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; background: var(--ciano-claro); border-radius: 6px; padding: 6px 10px; font-size: .85rem; }
 .al-sugestoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin: 12px 0; }

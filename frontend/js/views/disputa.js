@@ -86,7 +86,7 @@ function cartaoDisputa(x) {
       ${ed ? `<a href="#/oportunidades/${ed.id}">Oportunidade</a>` : ""}
       <button class="botao texto pequeno" data-analise-ds="${x.id}">${dcSimbolo(12)} Análise de lances</button>
       <button class="botao texto pequeno" data-estrategia="${x.id}">Estratégia</button>
-      ${!encerrada && x.portal === "comprasgov" ? `<button class="botao texto pequeno" data-extensao="${x.id}">${x.extensao?.conectada ? "Extensão conectada" : "Conectar extensão"}</button>` : ""}
+      ${!encerrada && x.portal && x.portal !== "outro" ? `<button class="botao texto pequeno" data-extensao="${x.id}">${x.extensao?.conectada ? "Extensão conectada" : "Conectar extensão"}</button>` : ""}
       ${!encerrada ? `<button class="botao texto pequeno" data-encerrar="${x.id}">Encerrar</button>` : ""}
       <button class="botao texto pequeno" data-excluir-ds="${x.id}">${icone("excluir", 13)}</button></footer>
     ${(x.lances || []).length ? `<details class="ds-hist"><summary>Histórico (${x.lances.length})</summary><ol>${x.lances.slice().reverse().slice(0, 20).map((l) => `<li><span>${new Date(l.em + "Z").toLocaleTimeString("pt-BR")}</span>
@@ -420,7 +420,10 @@ async function acompanharExtensao(el) {
 }
 
 async function modalExtensao(id, el) {
-  const m = modal({ titulo: "Extensão do navegador · Compras.gov.br", corpo: `<div id="ext-corpo"><p class="carregando">Carregando…</p></div>` });
+  const x0 = V.disputa.lista.find((y) => y.id === id) || {};
+  const portal = x0.portal_nome || "portal";
+  const lePortal = V.disputa.cfg?.portais?.[x0.portal]?.extensao;
+  const m = modal({ titulo: `Extensão do navegador · ${portal}`, corpo: `<div id="ext-corpo"><p class="carregando">Carregando…</p></div>` });
   const corpo = $("#ext-corpo", m);
   const recarregar = async () => { const x = await api("GET", `/api/disputas/${id}`).catch(() => null); if (x) atualizarCartaoDisputa(el, x); };
   const esperarConexao = async () => {
@@ -433,16 +436,27 @@ async function modalExtensao(id, el) {
   async function desenhar() {
     let e;
     try { e = await api("GET", `/api/disputas/${id}/extensao`); } catch (err) { corpo.innerHTML = erroTela(err); return; }
-    corpo.innerHTML = `<p>A extensão <b>lê</b> a sala de disputa do Compras.gov.br que você abriu no navegador e atualiza esta sala sozinha:
-        melhor lance, seu lance, posição, fase e mensagens do pregoeiro. <b>Ela não envia lances</b>, não clica e não preenche nada no portal.</p>
+    corpo.innerHTML = `<p>A extensão <b>lê</b> a sala de disputa do ${esc(portal)} que você abriu no navegador e atualiza esta sala sozinha:
+        melhor lance, seu lance, fase e mensagens do pregoeiro. <b>Ela não envia lances</b>, não clica e não preenche nada no portal.</p>
+      ${lePortal ? "" : `<div class="aviso info">A leitura do ${esc(portal)} ainda está sendo configurada. Conecte a extensão, abra a sala de disputa e,
+        no ícone da extensão, clique em <b>Copiar estrutura da página</b> e envie ao suporte do Kasiski. Assim liberamos a leitura deste portal.</div>`}
       ${e.conectada ? `<div class="aviso ok">Conectada${e.ultima_leitura_em ? ` · última leitura às ${new Date(e.ultima_leitura_em + "Z").toLocaleTimeString("pt-BR")}` : " · aguardando a primeira leitura"}.
           Vale até ${fmt.dataHora(e.expira_em + "Z")}.</div>
         <button class="botao secundario" data-ext-sair>Desconectar a extensão</button>`
-        : `<ol><li>Instale a extensão Kasiski no Chrome ou no Edge.</li><li>Gere o código abaixo e digite no ícone da extensão.</li>
-          <li>Abra a sala de disputa no Compras.gov.br normalmente, com o seu login.</li></ol>
-          <div id="ext-codigo"></div><button class="botao" data-ext-codigo>Gerar código de conexão</button>`}
+        : extensaoInstalada() ? `<div class="aviso info">Extensão instalada neste navegador (versão ${esc(extensaoInstalada())}).</div>
+          <button class="botao" data-ext-auto>Conectar a extensão</button>
+          <p class="fraco">Depois, abra a sala de disputa no ${esc(portal)} normalmente, com o seu login.</p>
+          <details class="ds-ext-manual"><summary>Conectar com código</summary><div id="ext-codigo"></div>
+            <button class="botao secundario pequeno" data-ext-codigo>Gerar código de conexão</button></details>`
+        : `<ol><li>Instale a extensão Kasiski no Chrome ou no Edge.</li><li>Volte aqui e clique em <b>Conectar a extensão</b>.</li>
+          <li>Abra a sala de disputa no ${esc(portal)} normalmente, com o seu login.</li></ol>
+          ${urlLojaExtensao() ? `<a class="botao" href="${esc(urlLojaExtensao())}" target="_blank" rel="noopener">Instalar extensão</a>
+            <button class="botao secundario" data-ext-recarregar>Já instalei</button>`
+            : `<div class="aviso info">A extensão está em publicação na loja do Chrome. Enquanto isso, peça o arquivo de instalação ao suporte do Kasiski.</div>`}
+          <details class="ds-ext-manual"><summary>Já tenho a extensão: conectar com código</summary><div id="ext-codigo"></div>
+            <button class="botao secundario pequeno" data-ext-codigo>Gerar código de conexão</button></details>`}
       ${e.mensagens.length ? `<h3 class="al-h">Mensagens lidas na sala oficial</h3><ul class="ds-ext-lista">${e.mensagens.map((x) => `<li><small>${fmt.dataHora(x.recebido_em + "Z")}</small> ${esc(x.texto)}</li>`).join("")}</ul>` : ""}
-      <p class="fraco">Os valores vêm da tela do portal, não de uma confirmação oficial. Antes de lançar, confira sempre na sala do Compras.gov.br.
+      <p class="fraco">Os valores vêm da tela do portal, não de uma confirmação oficial. Antes de lançar, confira sempre na sala do ${esc(portal)}.
         Use a extensão só se as regras do portal permitirem.</p>`;
     const g = $("[data-ext-codigo]", corpo);
     if (g) g.onclick = () => ocupado(g, "Gerando…", async () => {
@@ -454,8 +468,42 @@ async function modalExtensao(id, el) {
         esperarConexao();
       } catch (err) { avisarErro(err); }
     });
+    const auto = $("[data-ext-auto]", corpo);
+    if (auto) auto.onclick = () => ocupado(auto, "Conectando…", async () => {
+      try {
+        const r = await api("POST", `/api/disputas/${id}/extensao/codigo`);
+        const resp = await pedirExtensao({ tipo: "conectar", codigo: r.codigo }, 15000);
+        if (resp?.tipo === "conectado") { toast("Extensão conectada.", "ok"); desenhar(); recarregar(); return; }
+        $("details.ds-ext-manual", corpo).open = true;
+        $("#ext-codigo", corpo).innerHTML = `<div class="aviso erro">${esc(resp?.erro || "A extensão não respondeu.")} Digite o código no ícone da extensão:</div>
+          <p class="ds-ext-cod">${esc(r.codigo)}</p>`;
+        esperarConexao();
+      } catch (err) { avisarErro(err); }
+    });
+    const rec = $("[data-ext-recarregar]", corpo);
+    if (rec) rec.onclick = () => location.reload();   // a extensão só passa a "enxergar" a página depois de recarregar
     const s = $("[data-ext-sair]", corpo);
     if (s) s.onclick = async () => { try { await api("DELETE", `/api/disputas/${id}/extensao`); toast("Extensão desconectada.", "ok"); desenhar(); recarregar(); } catch (err) { avisarErro(err); } };
   }
   desenhar();
+}
+
+// Ponte com a extensão (ponte-kasiski.js): ela marca <html data-kasiski-extensao="versão"> e responde por postMessage.
+function extensaoInstalada() { return document.documentElement.dataset.kasiskiExtensao || ""; }
+
+function urlLojaExtensao() {
+  const edge = /\bEdg\//.test(navigator.userAgent);
+  return (edge && CERTAME.EXTENSAO_URL_EDGE) || CERTAME.EXTENSAO_URL_CHROME || CERTAME.EXTENSAO_URL_EDGE || "";
+}
+
+function pedirExtensao(msg, prazo = 10000) {
+  return new Promise((ok) => {
+    const fim = setTimeout(() => { window.removeEventListener("message", ouvir); ok(null); }, prazo);
+    function ouvir(ev) {
+      if (ev.source !== window || ev.data?.fonte !== "kasiski-extensao" || ev.data.tipo === "presente") return;
+      clearTimeout(fim); window.removeEventListener("message", ouvir); ok(ev.data);
+    }
+    window.addEventListener("message", ouvir);
+    window.postMessage({ fonte: "kasiski-app", ...msg }, location.origin);
+  });
 }

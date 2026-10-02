@@ -1147,3 +1147,41 @@ class PropostaLance(db.Model):
     decidido_em = db.Column(db.DateTime)
     confirmado_em = db.Column(db.DateTime)
     observacao = db.Column(db.String(500))
+
+
+class VinculoExtensao(db.Model):
+    """Extensão do navegador ligada a uma sala de disputa. Ela lê a sala oficial aberta pelo usuário e envia o que
+    aparece na tela (lances, posição, fase, mensagens). Não envia lances ao portal. Guardamos só o hash do código
+    de vínculo e do token; o token vale para os eventos das salas desta licitação, não para o resto do sistema."""
+    __tablename__ = "vinculo_extensao"
+    id = db.Column(db.Integer, primary_key=True)
+    conta_id = db.Column(db.Integer, nullable=False, index=True)
+    usuario_id = db.Column(db.Integer, nullable=False)
+    disputa_id = db.Column(db.Integer, db.ForeignKey("disputa.id"), nullable=False, index=True)
+    codigo_hash = db.Column(db.String(64), index=True)
+    codigo_expira_em = db.Column(db.DateTime)
+    token_hash = db.Column(db.String(64), unique=True, index=True)
+    token_expira_em = db.Column(db.DateTime)
+    token_versao_usuario = db.Column(db.Integer, default=0)   # troca de senha do usuário derruba a extensão
+    revogado_em = db.Column(db.DateTime)
+    ultimo_evento_em = db.Column(db.DateTime)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class EventoDisputa(db.Model):
+    """O que a extensão leu na tela da sala oficial. Fonte: tela do portal, não confirmação oficial."""
+    __tablename__ = "evento_disputa"
+    __table_args__ = (db.UniqueConstraint("disputa_id", "chave"),)
+    id = db.Column(db.Integer, primary_key=True)
+    disputa_id = db.Column(db.Integer, db.ForeignKey("disputa.id"), nullable=False, index=True)
+    vinculo_id = db.Column(db.Integer, index=True)
+    chave = db.Column(db.String(64), nullable=False)    # id do evento gerado pela extensão (reenvio não duplica)
+    tipo = db.Column(db.String(20), nullable=False)     # melhor_lance, meu_lance, posicao, fase, mensagem
+    valor = db.Column(db.Float)
+    texto = db.Column(db.String(1000))
+    visto_em = db.Column(db.DateTime)                   # relógio do navegador
+    recebido_em = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    def to_dict(self):
+        return {"id": self.id, "tipo": self.tipo, "valor": self.valor, "texto": self.texto,
+                "visto_em": _iso(self.visto_em), "recebido_em": _iso(self.recebido_em)}

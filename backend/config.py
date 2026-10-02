@@ -25,6 +25,11 @@ class Config:
 
     UPLOAD_DIR = os.getenv("UPLOAD_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads"))
     MAX_CONTENT_LENGTH = 40 * 1024 * 1024  # 40 MB por upload
+    # Backups do banco (services/backup.py): pasta ao lado dos uploads, um por dia, guardando os últimos BACKUP_DIAS
+    BACKUP_DIR = os.getenv("BACKUP_DIR", os.path.join(os.path.dirname(UPLOAD_DIR.rstrip("/")), "backups"))
+    BACKUP_DIAS = int(os.getenv("BACKUP_DIAS", "14"))
+    BACKUP_AUTOMATICO = os.getenv("BACKUP_AUTOMATICO", "sim").lower() in ("sim", "1", "true")
+    EXPORTACAO_INTERVALO_MIN = int(os.getenv("EXPORTACAO_INTERVALO_MIN", "10"))   # backup do cliente: 1 a cada N min
 
     # Endereços separados por vírgula. A barra final é ignorada (o navegador nunca envia).
     CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*")

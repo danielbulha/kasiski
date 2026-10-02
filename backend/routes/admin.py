@@ -392,6 +392,53 @@ def exportar_logs():
     return current_app.response_class("\n".join(linhas), mimetype="text/plain; charset=utf-8")
 
 
+@bp.get("/backups")
+@admin_requerido
+def backups():
+    from services import backup
+    return jsonify({"backups": backup.listar(), "automatico": current_app.config["BACKUP_AUTOMATICO"],
+                    "dias": current_app.config["BACKUP_DIAS"]})
+
+
+@bp.post("/backups")
+@admin_requerido
+def backup_agora():
+    """Backup do banco agora (fica guardado no servidor, junto dos automáticos)."""
+    import os
+    from services import backup
+    caminho = backup.criar_backup_banco()
+    return jsonify({"nome": os.path.basename(caminho), "bytes": os.path.getsize(caminho)}), 201
+
+
+@bp.get("/backups/<nome>")
+@admin_requerido
+def baixar_backup(nome):
+    from flask import send_file
+    from services import backup
+    caminho = backup.caminho_seguro(nome)
+    if not caminho:
+        raise ErroAPI("Backup não encontrado.", 404)
+    return send_file(caminho, as_attachment=True, download_name=nome, mimetype="application/zip")
+
+
+@bp.get("/backup-completo")
+@admin_requerido
+def backup_completo():
+    """Banco + todos os arquivos, gerado na hora para baixar e guardar fora do servidor."""
+    import os
+    import tempfile
+    from services import backup
+    backup.limpar_temporarios(backup.pasta())
+    fd, tmp = tempfile.mkstemp(suffix=".zip", dir=backup.pasta())
+    os.close(fd)
+    try:
+        backup.criar_backup_completo(tmp)
+    except Exception:
+        os.remove(tmp)
+        raise
+    return backup.enviar_temporario(tmp, f"kasiski-completo-{datetime.utcnow():%Y-%m-%d-%H%M}.zip")
+
+
 @bp.get("/armazenamento")
 @admin_requerido
 def armazenamento_visao():

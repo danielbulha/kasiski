@@ -62,6 +62,11 @@ V.conta = async (el) => {
       <thead><tr><th>Data</th><th>Descrição</th><th>Forma</th><th>Valor</th><th>Situação</th></tr></thead>
       <tbody>${cobrancas.map((c) => `<tr><td>${fmt.data(c.pago_em || c.criado_em)}</td><td>${esc(c.descricao || "")}</td>
         <td>${esc(ROTULO_MEIO[c.meio] || c.meio || "—")}</td><td>${fmt.moeda(c.valor)}</td><td>${carimboStatus(ROTULO_COBRANCA, c.status)}</td></tr>`).join("")}</tbody></table></div></section>` : ""}
+    ${["dono", null, undefined].includes(S.usuario?.papel) ? `<section class="bloco"><h2>Backup dos seus dados</h2>
+      <p>Baixe um .zip com tudo o que está na sua conta: empresas, editais, documentos, contratos, prazos, peças, propostas e salas de disputa
+        (em JSON e em planilhas que abrem no Excel) e os arquivos que você enviou. Guarde no seu computador.</p>
+      <button class="botao secundario" id="exportar-dados">${icone("baixar", 14)} Baixar backup dos meus dados</button>
+      <p class="fraco" style="margin-top:6px">Senhas e dados internos de pagamento não são incluídos.</p></section>` : ""}
     <section class="bloco"><h2>Preferências</h2>
       <form id="form-pref">
         <label class="check"><input type="checkbox" name="modo_guiado" ${S.usuario.modo_guiado ? "checked" : ""}> Mostrar explicações do modo guiado em cada tela</label>
@@ -77,6 +82,11 @@ V.conta = async (el) => {
         <button class="botao secundario" type="submit">Alterar</button></form>
       <div id="erro-senha"></div></section>`;
   $("#refazer-tour", el).onclick = () => refazerTour();
+  const exp = $("#exportar-dados", el);
+  if (exp) exp.onclick = () => ocupado(exp, "Gerando o backup…", async () => {
+    try { await baixar("/api/conta/exportar", `kasiski-backup-${new Date().toISOString().slice(0, 10)}.zip`); toast("Backup baixado. Guarde o arquivo no seu computador.", "ok"); }
+    catch (e) { avisarErro(e); }
+  });
   $("#form-pref", el).onsubmit = async (ev) => { ev.preventDefault(); await api("PATCH", "/api/conta", dadosForm(ev.target)); await carregarConta(); toast("Preferências salvas.", "ok"); };
   $("#form-senha", el).onsubmit = async (ev) => {
     ev.preventDefault();

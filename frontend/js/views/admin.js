@@ -20,7 +20,7 @@ V.admin = async (el) => {
   el.innerHTML = `
     <div class="cabecalho"><h1>Administração</h1><button class="botao pequeno secundario" id="teste-email">Testar envio de e-mail</button></div>
     <div class="abas" role="tablist">
-      ${[["crm", "Clientes e testes"], ["marketing", "Marketing"], ["funil", "Funil de conversão"], ["receitas", "Receitas"], ["faturamento", "Notas fiscais"], ["tabelas", "Tabelas de preços"], ["revisoes", "Pedidos de advogado"], ["atendimento", "Atendimento"], ["planos", "Planos e margem"], ["logs", "Logs de erros"], ["armazenamento", "Armazenamento"]]
+      ${[["crm", "Clientes e testes"], ["marketing", "Marketing"], ["funil", "Funil de conversão"], ["receitas", "Receitas"], ["faturamento", "Notas fiscais"], ["tabelas", "Tabelas de preços"], ["revisoes", "Pedidos de advogado"], ["atendimento", "Atendimento"], ["planos", "Planos e margem"], ["logs", "Logs de erros"], ["armazenamento", "Armazenamento"], ["backups", "Backups"]]
         .map(([k, t]) => `<button role="tab" data-a-aba="${k}" class="${aba === k ? "ativa" : ""}" aria-selected="${aba === k}">${t}</button>`).join("")}
     </div>
     <div id="painel-admin"><p class="carregando">Carregando…</p></div>`;
@@ -53,6 +53,7 @@ V.admin = async (el) => {
     else if (aba === "tabelas") await abaTabelasAdmin(painel);
     else if (aba === "logs") await abaLogs(painel);
     else if (aba === "armazenamento") await abaArmazenamento(painel);
+    else if (aba === "backups") await abaBackups(painel);
     else if (aba === "planos") await abaPlanosAdmin(painel);
     else if (aba === "atendimento") await abaAtendimento(painel);
     else desenharRevisoes(painel, await api("GET", "/api/admin/revisoes"));
@@ -1095,6 +1096,34 @@ async function abaArmazenamento(el) {
   });
 }
 
+
+// ---------------------------------------------------------------- backups do sistema (services/backup.py)
+async function abaBackups(el) {
+  const d = await api("GET", "/api/admin/backups");
+  el.innerHTML = `<section class="bloco"><div class="bloco-titulo"><h2>Backup completo</h2></div>
+      <p>Banco de dados <b>e</b> todos os arquivos enviados (PDFs), num único .zip. Baixe e guarde fora do servidor — no seu computador ou num drive —
+        pelo menos uma vez por semana: é a cópia que protege contra a perda do servidor.</p>
+      <button class="botao" id="bk-completo">${icone("baixar", 14)} Baixar backup completo</button>
+      <p class="fraco" style="margin-top:8px">Pode levar alguns minutos, conforme o volume de arquivos.</p></section>
+    <section class="bloco"><div class="bloco-titulo"><h2>Backups do banco no servidor</h2><button class="botao pequeno secundario" id="bk-agora">Fazer backup agora</button></div>
+      <p class="fraco">${d.automatico ? `Automático: um por dia, guardando os últimos ${d.dias}.` : "Backup automático desligado (BACKUP_AUTOMATICO)."}
+        Ficam no mesmo disco do servidor: servem para desfazer exclusões e erros de dados, não para a perda do servidor.</p>
+      ${d.backups.length ? `<div class="tabela-rolagem"><table><thead><tr><th>Arquivo</th><th>Data</th><th>Tamanho</th><th></th></tr></thead>
+        <tbody>${d.backups.map((b) => `<tr><td><code>${esc(b.nome)}</code></td><td>${fmt.dataHora(b.criado_em + "Z")}</td><td>${tamanho(b.bytes)}</td>
+          <td><button class="botao texto pequeno" data-bk="${esc(b.nome)}">Baixar</button></td></tr>`).join("")}</tbody></table></div>`
+        : `<p class="fraco">Nenhum backup ainda. O primeiro automático sai no próximo ciclo do servidor.</p>`}
+      <p class="fraco" style="margin-top:10px">Para restaurar: na pasta <code>backend</code>, com <code>DATABASE_URL</code> apontando para um banco <b>novo e vazio</b>,
+        rode <code>python scripts/restaurar_backup.py arquivo.zip</code> (com <code>--arquivos</code> para o backup completo). Depois troque o banco do serviço no Render.</p></section>`;
+  $("#bk-completo", el).onclick = (ev) => ocupado(ev.target, "Gerando…", async () => {
+    try { await baixar("/api/admin/backup-completo", `kasiski-completo-${new Date().toISOString().slice(0, 10)}.zip`); toast("Backup completo baixado.", "ok"); }
+    catch (e) { avisarErro(e); }
+  });
+  $("#bk-agora", el).onclick = (ev) => ocupado(ev.target, "Fazendo backup…", async () => {
+    try { const r = await api("POST", "/api/admin/backups"); toast(`Backup gravado: ${r.nome} (${tamanho(r.bytes)}).`, "ok"); abaBackups(el); }
+    catch (e) { avisarErro(e); }
+  });
+  $$("[data-bk]", el).forEach((b) => b.onclick = () => baixar(`/api/admin/backups/${encodeURIComponent(b.dataset.bk)}`, b.dataset.bk).catch(avisarErro));
+}
 
 // ---------------------------------------------------------------- planos: custo de IA, margem e transição da tabela antiga
 async function abaPlanosAdmin(el) {

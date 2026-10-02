@@ -90,6 +90,8 @@ class Config:
     TURNSTILE_SECRET = os.getenv("TURNSTILE_SECRET", "")                      # Cloudflare Turnstile (opcional)
     # ------------------------------------------------------------ automações de e-mail (onboarding/trial)
     # limites por IP (anti-abuso), contados no banco para valer entre os processos do servidor
+    # cabeçalho com o IP real do visitante, gravado pelo proxy na frente da API (Render = Cloudflare)
+    IP_CABECALHO = os.getenv("IP_CABECALHO", "CF-Connecting-IP")
     LOGIN_FALHAS_IP = int(os.getenv("LOGIN_FALHAS_IP", "20"))          # senhas erradas por IP a cada 15 min
     CADASTROS_IP_HORA = int(os.getenv("CADASTROS_IP_HORA", "5"))       # contas novas por IP a cada hora
     CODIGOS_IP_HORA = int(os.getenv("CODIGOS_IP_HORA", "15"))          # reenvios/verificações de código por IP a cada hora

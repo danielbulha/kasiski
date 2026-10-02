@@ -19,9 +19,22 @@ log = logging.getLogger(__name__)
 _cache_concorrente = {}  # cnpj -> (quando, dados) — consulta pública repetida no mesmo dia não bate nas APIs de novo
 
 
+def ip_cliente():
+    """IP real do visitante. O 1º valor do X-Forwarded-For vem do próprio cliente (pode ser inventado e burlaria os
+    limites por IP); em produção vale o cabeçalho que o Cloudflare do Render sobrescreve (CF-Connecting-IP) e, na
+    falta dele, o último salto do X-Forwarded-For, acrescentado pelo proxy do Render."""
+    if current_app.config.get("PRODUCAO"):
+        cf = (request.headers.get(current_app.config["IP_CABECALHO"]) or "").strip()
+        if cf:
+            return cf
+        saltos = [x.strip() for x in (request.headers.get("X-Forwarded-For") or "").split(",") if x.strip()]
+        if saltos:
+            return saltos[-1]
+    return request.remote_addr or ""
+
+
 def ip_hash():
-    bruto = (request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
-    return hashlib.sha256(f"{bruto}|{current_app.config['SECRET_KEY']}".encode()).hexdigest()[:40]
+    return hashlib.sha256(f"{ip_cliente()}|{current_app.config['SECRET_KEY']}".encode()).hexdigest()[:40]
 
 
 def exigir_humano(d):
@@ -34,7 +47,7 @@ def exigir_humano(d):
     token = d.get("cf-turnstile-response") or d.get("turnstile") or ""
     try:
         r = requests.post("https://challenges.cloudflare.com/turnstile/v0/siteverify", timeout=10,
-                          data={"secret": segredo, "response": token, "remoteip": request.remote_addr})
+                          data={"secret": segredo, "response": token, "remoteip": ip_cliente()})
         if not r.json().get("success"):
             raise ErroAPI("Confirme que você não é um robô e tente de novo.", 400, "captcha")
     except requests.RequestException:

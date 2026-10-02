@@ -80,7 +80,11 @@ V.conta = async (el) => {
   $("#form-pref", el).onsubmit = async (ev) => { ev.preventDefault(); await api("PATCH", "/api/conta", dadosForm(ev.target)); await carregarConta(); toast("Preferências salvas.", "ok"); };
   $("#form-senha", el).onsubmit = async (ev) => {
     ev.preventDefault();
-    try { await api("PATCH", "/api/conta", dadosForm(ev.target)); ev.target.reset(); toast("Senha alterada.", "ok"); }
+    try {
+      const r = await api("PATCH", "/api/conta", dadosForm(ev.target));
+      if (r.token) { S.token = r.token; localStorage.setItem("certame_token", r.token); } // os logins antigos deixam de valer
+      ev.target.reset(); toast("Senha alterada. As sessões em outros aparelhos foram encerradas.", "ok");
+    }
     catch (e) { $("#erro-senha", el).innerHTML = erroTela(e); }
   };
   $$("[data-ciclo]", el).forEach((b) => b.onclick = () => { V.conta.ciclo = b.dataset.ciclo; V.conta(el); });

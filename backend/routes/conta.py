@@ -45,8 +45,9 @@ def registro():
     db.session.add(conta)
     db.session.flush()
     exigir = verificacao.exigida()
+    admin = email in current_app.config["ADMIN_EMAILS"]
     u = Usuario(conta_id=conta.id, nome=nome, email=email, senha_hash=generate_password_hash(senha), papel="dono",
-                modo_guiado=d.get("perfil") != "experiente", email_verificado=not exigir)
+                modo_guiado=d.get("perfil") != "experiente", email_verificado=not (exigir or admin))
     db.session.add(u)
     db.session.flush()
     from services import marketing
@@ -149,6 +150,10 @@ def login():
 @bp.get("/conta")
 @login_requerido
 def ver_conta():
+    return _dados_conta()
+
+
+def _dados_conta():
     if g.usuario.tour is None:
         # quem já usava o Kasiski antes do tour não é interrompido; o tour aparece na próxima mudança de plano
         # (e pode ser feito a qualquer momento em Plano e conta)
@@ -187,8 +192,11 @@ def editar_conta():
         if len(d["nova_senha"]) < 8:
             raise ErroAPI("A nova senha precisa ter pelo menos 8 caracteres.")
         g.usuario.senha_hash = generate_password_hash(d["nova_senha"])
+        g.usuario.token_versao = (g.usuario.token_versao or 0) + 1   # encerra as sessões abertas em outros aparelhos
+        db.session.commit()
+        return jsonify({**_dados_conta().get_json(), "token": gerar_token(g.usuario)})
     db.session.commit()
-    return ver_conta()
+    return _dados_conta()
 
 
 # ---------------------------------------------------------------- teste do Profissional (a conta segue no Free)
@@ -230,6 +238,8 @@ def convidar():
     email = (dados().get("email") or "").strip().lower()
     if not re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+$", email):
         raise ErroAPI("Informe um e-mail válido.")
+    if email in current_app.config["ADMIN_EMAILS"]:
+        raise ErroAPI("Este e-mail não pode ser convidado. Fale com o suporte.")
     existente = Usuario.query.filter_by(email=email).first()
     if existente:
         raise ErroAPI("Este e-mail já tem uma conta no Kasiski. Peça para a pessoa usar outro e-mail ou fale com o suporte.")
@@ -251,7 +261,10 @@ def convidar():
             enviado = em.enviar(email, f"Convite para a equipe {g.conta.nome} no Kasiski", f"Aceite em: {link}", corpo)
         except ErroAPI:
             enviado = False
-    return jsonify({**c.to_dict(), "link": link, "email_enviado": bool(enviado)}), 201
+    c.enviado_email = bool(enviado)
+    db.session.commit()
+    # Link entregue por e-mail não volta para quem convidou (senão daria para "provar" um e-mail alheio).
+    return jsonify({**c.to_dict(), "link": None if enviado else link, "email_enviado": bool(enviado)}), 201
 
 
 @bp.delete("/conta/equipe/convites/<int:cid>")
@@ -304,11 +317,14 @@ def aceitar_convite(token):
     ativos, _ = planos.contar_usuarios(conta)
     if ativos >= (planos.dados_plano(conta).get("usuarios") or 1):
         raise ErroAPI("A equipe desta conta já está no limite de usuários do plano. Avise quem convidou você.", 402)
+    # Só o link que chegou por e-mail prova o endereço; link copiado por quem convidou pede o código depois.
     u = Usuario(conta_id=c.conta_id, nome=nome[:200], email=c.email, senha_hash=generate_password_hash(senha),
-                papel="membro", email_verificado=True, modo_guiado=True)   # o e-mail foi provado pelo link do convite
+                papel="membro", email_verificado=bool(c.enviado_email), modo_guiado=True)
     db.session.add(u)
     c.aceito_em = datetime.utcnow()
     db.session.commit()
+    if not u.verificado and verificacao.exigida():
+        return _pedir_verificacao(u, primeiro=True), 201
     return jsonify({"token": gerar_token(u), "usuario": u.to_dict(eh_admin(u))}), 201
 
 

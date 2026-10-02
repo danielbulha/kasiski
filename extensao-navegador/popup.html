@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Kasiski — Sala de Disputa</title>
+<style>
+  :root { --tinta:#14212B; --fraco:#4F6373; --borda:#D5DEE5; --ok:#1B7F4B; --erro:#B42318; --marca:#0E4A6E; --fundo:#fff; }
+  @media (prefers-color-scheme: dark) { :root { --tinta:#E7EEF3; --fraco:#9FB1BF; --borda:#2D3B46; --fundo:#121A20; --marca:#6CB4E0; } }
+  body { font: 14px/1.45 system-ui, sans-serif; color: var(--tinta); background: var(--fundo); width: 340px; margin: 0; padding: 14px; }
+  h1 { font-size: 15px; margin: 0 0 10px; } h1 span { color: var(--marca); }
+  p { margin: 6px 0; } small, .fraco { color: var(--fraco); }
+  input { width: 100%; box-sizing: border-box; font: 600 18px/1 ui-monospace, monospace; letter-spacing: 2px; text-transform: uppercase; padding: 8px; border: 1px solid var(--borda); border-radius: 6px; background: transparent; color: inherit; }
+  button { font: inherit; padding: 7px 12px; border-radius: 6px; border: 1px solid var(--marca); background: var(--marca); color: #fff; cursor: pointer; width: 100%; margin-top: 8px; }
+  button.sec { background: transparent; color: var(--marca); }
+  .erro { color: var(--erro); } .ok { color: var(--ok); }
+  ul { padding-left: 18px; margin: 6px 0; }
+  .caixa { border: 1px solid var(--borda); border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
+</style>
+</head>
+<body>
+  <h1><span>Kasiski</span> · Sala de Disputa</h1>
+  <div id="conteudo"><p class="fraco">Carregando…</p></div>
+  <p class="fraco"><small>A extensão só lê a sala aberta por você. Ela nunca envia lances, clica ou preenche nada no portal. Confira sempre o valor na sala oficial antes de lançar.</small></p>
+  <script src="popup.js"></script>
+</body>
+</html>

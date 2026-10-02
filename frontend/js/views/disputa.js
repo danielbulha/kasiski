@@ -49,6 +49,8 @@ V.disputa = async (el) => {
   if (prep) { sessionStorage.removeItem("ds_preparar"); modalNovaDisputa(el, Number(prep)); }
   clearInterval(V.disputa.relogio);
   V.disputa.relogio = setInterval(() => { if (!document.body.contains(el)) { clearInterval(V.disputa.relogio); return; } tickDisputa(el); }, 1000);
+  clearInterval(V.disputa.leitura);
+  V.disputa.leitura = setInterval(() => { if (!document.body.contains(el)) { clearInterval(V.disputa.leitura); return; } acompanharExtensao(el); }, 3000);
   tickDisputa(el);
 };
 
@@ -64,6 +66,7 @@ function cartaoDisputa(x) {
   return `<article class="ds-cartao ds-${esc(s.situacao || "aguardando")}${encerrada ? " encerrada" : ""}" data-disputa="${x.id}" aria-label="Disputa ${esc(titulo)} item ${esc(x.item || "")}">
     <header><div><b>${esc(titulo)}</b> · item ${esc(x.item || "—")}<small>${esc(ed?.orgao || "")}${x.descricao ? ` · ${esc(x.descricao.slice(0, 90))}` : ""}</small></div>
       ${encerrada ? carimbo(RESULTADO_DISPUTA[x.resultado] || "Encerrada", x.resultado === "vencedor" ? "ok" : "neutro") : carimbo(rot, tipo)}</header>
+    ${faixaExtensao(x)}
     <div class="ds-chips"><span>${esc(x.portal_nome)}</span><span>${esc(V.disputa.cfg?.modos?.[x.modo]?.nome || x.modo)}</span><span>${esc(V.disputa.cfg?.estrategias?.[x.estrategia]?.nome || x.estrategia)}</span>${crit === "maior_desconto" ? "<span>Maior desconto</span>" : ""}</div>
     <div class="ds-numeros"><div><small>Melhor do portal</small><b>${fmtLance(x.melhor_lance, crit)}</b></div>
       <div><small>Meu último</small><b>${fmtLance(x.meu_ultimo, crit)}</b></div>
@@ -83,6 +86,7 @@ function cartaoDisputa(x) {
       ${ed ? `<a href="#/oportunidades/${ed.id}">Oportunidade</a>` : ""}
       <button class="botao texto pequeno" data-analise-ds="${x.id}">${dcSimbolo(12)} Análise de lances</button>
       <button class="botao texto pequeno" data-estrategia="${x.id}">Estratégia</button>
+      ${!encerrada && x.portal === "comprasgov" ? `<button class="botao texto pequeno" data-extensao="${x.id}">${x.extensao?.conectada ? "Extensão conectada" : "Conectar extensão"}</button>` : ""}
       ${!encerrada ? `<button class="botao texto pequeno" data-encerrar="${x.id}">Encerrar</button>` : ""}
       <button class="botao texto pequeno" data-excluir-ds="${x.id}">${icone("excluir", 13)}</button></footer>
     ${(x.lances || []).length ? `<details class="ds-hist"><summary>Histórico (${x.lances.length})</summary><ol>${x.lances.slice().reverse().slice(0, 20).map((l) => `<li><span>${new Date(l.em + "Z").toLocaleTimeString("pt-BR")}</span>
@@ -91,17 +95,30 @@ function cartaoDisputa(x) {
   </article>`;
 }
 
+// Extensão do navegador: lê a sala oficial aberta pelo usuário e atualiza o cartão. Não envia lances.
+function faixaExtensao(x) {
+  const e = x.extensao;
+  if (!e?.conectada && !e?.ultima_leitura_em) return "";
+  const quando = e.ultima_leitura_em ? new Date(e.ultima_leitura_em + "Z").toLocaleTimeString("pt-BR") : null;
+  return `<div class="ds-ext${e.conectada ? " on" : ""}" aria-live="polite"><small>${e.conectada ? "Extensão conectada" : "Extensão desconectada"}${quando ? ` · lido da tela do portal às ${esc(quando)}` : " · aguardando a primeira leitura"}${e.fase ? ` · ${esc(e.fase)}` : ""}</small>
+    ${e.mensagem ? `<small class="ds-ext-msg" title="Última mensagem lida na sala oficial">${esc(e.mensagem.texto)}</small>` : ""}</div>`;
+}
+
+function atualizarCartaoDisputa(el, x) {
+  const i = V.disputa.lista.findIndex((y) => y.id === x.id);
+  if (i < 0) return;
+  x.edital = V.disputa.lista[i]?.edital;
+  V.disputa.lista[i] = x;
+  const c = $(`[data-disputa="${x.id}"]`, el);
+  if (!c) return;
+  c.outerHTML = cartaoDisputa(x);
+  ligarCartoesDisputa(el);
+  const novo = $(`[data-disputa="${x.id}"]`, el);
+  if (novo) { novo.dataset.recebido = Date.now(); tickDisputa(el); }
+}
+
 function ligarCartoesDisputa(el) {
-  const atualizar = (x) => {
-    const i = V.disputa.lista.findIndex((y) => y.id === x.id);
-    x.edital = V.disputa.lista[i]?.edital;
-    V.disputa.lista[i] = x;
-    const c = $(`[data-disputa="${x.id}"]`, el);
-    c.outerHTML = cartaoDisputa(x);
-    ligarCartoesDisputa(el);
-    const novo = $(`[data-disputa="${x.id}"]`, el);
-    if (novo) { novo.dataset.recebido = Date.now(); tickDisputa(el); }
-  };
+  const atualizar = (x) => atualizarCartaoDisputa(el, x);
   const registrar = async (id, valor, tipo, confirmar = false) => {
     try { atualizar(await api("POST", `/api/disputas/${id}/lance`, { valor, tipo, confirmar_abaixo_piso: confirmar })); }
     catch (e) {
@@ -129,6 +146,7 @@ function ligarCartoesDisputa(el) {
   $$("[data-desfazer]", el).forEach((b) => b.onclick = async () => { try { atualizar(await api("POST", `/api/disputas/${b.dataset.desfazer}/desfazer`)); } catch (e) { avisarErro(e); } });
   $$("[data-analise-ds]", el).forEach((b) => b.onclick = () => modalAnaliseLances(Number(b.dataset.analiseDs), el));
   $$("[data-estrategia]", el).forEach((b) => b.onclick = () => modalEstrategia(V.disputa.lista.find((y) => y.id === Number(b.dataset.estrategia)), el));
+  $$("[data-extensao]", el).forEach((b) => b.onclick = () => modalExtensao(Number(b.dataset.extensao), el));
   $$("[data-encerrar]", el).forEach((b) => b.onclick = () => modalEncerrarDisputa(Number(b.dataset.encerrar), el));
   $$("[data-excluir-ds]", el).forEach((b) => b.onclick = () => excluirParaLixeira({ url: `/api/disputas/${b.dataset.excluirDs}`, nome: "esta sala de disputa", tipo: "disputa", depois: () => V.disputa(el) }));
 }
@@ -363,4 +381,64 @@ function htmlAnaliseLances(x) {
     ${(a.ia?.na_sessao || []).length ? `<h3 class="al-h">Na sessão</h3><ul>${a.ia.na_sessao.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>` : ""}
     <p class="dc-aviso">${esc(a.aviso || "")} ${ev.possiveis_consultado_em ? `Histórico consultado em ${fmt.dataHora(ev.possiveis_consultado_em + "Z")}.` : ""}</p>
     <div class="acoes"><button class="botao texto pequeno" data-al-rodar>Analisar de novo</button></div>`;
+}
+
+// ---------------------------------------------------------------- extensão do navegador (leitura da sala oficial)
+async function acompanharExtensao(el) {
+  if (document.hidden || V.disputa.lendoExt) return;
+  const ligadas = V.disputa.lista.filter((x) => x.extensao?.conectada && x.status !== "encerrada");
+  if (!ligadas.length) return;
+  V.disputa.lendoExt = true;
+  try {
+    for (const x of ligadas) {
+      const card = $(`[data-disputa="${x.id}"]`, el);
+      if (!card || card.contains(document.activeElement) || document.querySelector(".modal")) continue;  // não atrapalha quem está digitando
+      const novo = await api("GET", `/api/disputas/${x.id}`).catch(() => null);
+      if (!novo) continue;
+      const mudou = ["melhor_lance", "meu_ultimo", "posicao", "status"].some((k) => novo[k] !== x[k]) || (novo.lances || []).length !== (x.lances || []).length
+        || JSON.stringify(novo.extensao) !== JSON.stringify(x.extensao);
+      if (mudou) atualizarCartaoDisputa(el, novo);
+    }
+  } finally { V.disputa.lendoExt = false; }
+}
+
+async function modalExtensao(id, el) {
+  const m = modal({ titulo: "Extensão do navegador · Compras.gov.br", corpo: `<div id="ext-corpo"><p class="carregando">Carregando…</p></div>` });
+  const corpo = $("#ext-corpo", m);
+  const recarregar = async () => { const x = await api("GET", `/api/disputas/${id}`).catch(() => null); if (x) atualizarCartaoDisputa(el, x); };
+  const esperarConexao = async () => {
+    for (let i = 0; i < 200 && document.body.contains(corpo); i++) {
+      await new Promise((ok) => setTimeout(ok, 3000));
+      const e = await api("GET", `/api/disputas/${id}/extensao`).catch(() => null);
+      if (e?.conectada) { toast("Extensão conectada.", "ok"); desenhar(); recarregar(); return; }
+    }
+  };
+  async function desenhar() {
+    let e;
+    try { e = await api("GET", `/api/disputas/${id}/extensao`); } catch (err) { corpo.innerHTML = erroTela(err); return; }
+    corpo.innerHTML = `<p>A extensão <b>lê</b> a sala de disputa do Compras.gov.br que você abriu no navegador e atualiza esta sala sozinha:
+        melhor lance, seu lance, posição, fase e mensagens do pregoeiro. <b>Ela não envia lances</b>, não clica e não preenche nada no portal.</p>
+      ${e.conectada ? `<div class="aviso ok">Conectada${e.ultima_leitura_em ? ` · última leitura às ${new Date(e.ultima_leitura_em + "Z").toLocaleTimeString("pt-BR")}` : " · aguardando a primeira leitura"}.
+          Vale até ${fmt.dataHora(e.expira_em + "Z")}.</div>
+        <button class="botao secundario" data-ext-sair>Desconectar a extensão</button>`
+        : `<ol><li>Instale a extensão Kasiski no Chrome ou no Edge.</li><li>Gere o código abaixo e digite no ícone da extensão.</li>
+          <li>Abra a sala de disputa no Compras.gov.br normalmente, com o seu login.</li></ol>
+          <div id="ext-codigo"></div><button class="botao" data-ext-codigo>Gerar código de conexão</button>`}
+      ${e.mensagens.length ? `<h3 class="al-h">Mensagens lidas na sala oficial</h3><ul class="ds-ext-lista">${e.mensagens.map((x) => `<li><small>${fmt.dataHora(x.recebido_em + "Z")}</small> ${esc(x.texto)}</li>`).join("")}</ul>` : ""}
+      <p class="fraco">Os valores vêm da tela do portal, não de uma confirmação oficial. Antes de lançar, confira sempre na sala do Compras.gov.br.
+        Use a extensão só se as regras do portal permitirem.</p>`;
+    const g = $("[data-ext-codigo]", corpo);
+    if (g) g.onclick = () => ocupado(g, "Gerando…", async () => {
+      try {
+        const r = await api("POST", `/api/disputas/${id}/extensao/codigo`);
+        $("#ext-codigo", corpo).innerHTML = `<p class="ds-ext-cod" aria-label="Código de conexão">${esc(r.codigo)}</p>
+          <p class="fraco">Vale por 10 minutos e uma única conexão. Conecta todas as salas desta licitação.</p>`;
+        g.textContent = "Gerar outro código";
+        esperarConexao();
+      } catch (err) { avisarErro(err); }
+    });
+    const s = $("[data-ext-sair]", corpo);
+    if (s) s.onclick = async () => { try { await api("DELETE", `/api/disputas/${id}/extensao`); toast("Extensão desconectada.", "ok"); desenhar(); recarregar(); } catch (err) { avisarErro(err); } };
+  }
+  desenhar();
 }

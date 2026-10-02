@@ -149,4 +149,12 @@ def to_dict(d):
         "status": d.status, "resultado": d.resultado, "posicao": d.posicao, "melhor_lance": d.melhor_lance,
         "meu_ultimo": d.meu_ultimo, "lances": (d.lances or [])[-60:], "notas": d.notas, "analise": d.analise,
         "sugestao": sugerir(d), "agora": datetime.utcnow().isoformat(timespec="seconds"),
+        "extensao": _extensao(d),
     }
+
+
+def _extensao(d):
+    from services import extensao
+    e = extensao.estado(d)
+    return {"conectada": e["conectada"], "ultima_leitura_em": e["ultima_leitura_em"], "fase": e["fase"],
+            "mensagem": e["mensagens"][0] if e["mensagens"] else None}

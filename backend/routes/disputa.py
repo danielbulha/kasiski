@@ -20,7 +20,8 @@ CAMPOS_NUM = ("valor_referencia", "lance_inicial", "preco_piso", "decremento", "
 def _portal_do_edital(ed):
     t = (ed.portal_disputa or ed.link or "").lower()
     for chave, padrao in (("comprasgov", r"compras\.gov|comprasnet|gov\.br/compras"), ("bec", r"\bbec\b|bec\.sp"),
-                          ("licitacoes_e", r"licitacoes-e"), ("bbmnet", r"bbmnet|bolsa brasileira de mercadorias"), ("bll", r"\bbll\b"), ("portal_compras_publicas", r"portaldecompraspublicas")):
+                          ("licitacoes_e", r"licitacoes-e"), ("bbmnet", r"bbmnet|bolsa brasileira de mercadorias"), ("bll", r"\bbll\b|bllcompras"), ("bnc", r"bnccompras|\bbnc\b"), ("licitanet", r"licitanet"),
+                          ("portal_compras_publicas", r"portaldecompraspublicas")):
         if re.search(padrao, t):
             return chave
     return "comprasgov" if ed.numero_controle and not t else "outro"
@@ -60,8 +61,10 @@ def _aplicar(d, x):
 @bp.get("/disputa/config")
 @login_requerido
 def config():
+    from services import extensao
+    leitura = extensao.portais_com_leitura()
     return jsonify({"estrategias": D.ESTRATEGIAS, "modos": D.MODOS,
-                    "portais": {k: {"nome": n, "url": u} for k, (n, u) in D.PORTAIS.items()}})
+                    "portais": {k: {"nome": n, "url": u, "extensao": k in leitura} for k, (n, u) in D.PORTAIS.items()}})
 
 
 @bp.get("/empresas/<int:eid>/disputas")

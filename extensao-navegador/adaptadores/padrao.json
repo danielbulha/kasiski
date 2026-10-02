@@ -1,0 +1,47 @@
+{
+  "versao": 1,
+  "observacao": "Onde a extensão lê os dados em cada portal. Só dados (seletores CSS e nomes de colunas), nunca código. Portal sem 'leitura' fica em 'aguardando configuração' e não envia nada. Os endereços precisam estar também no manifest.json da extensão.",
+  "portais": [
+    {
+      "id": "comprasgov",
+      "nome": "Compras.gov.br",
+      "enderecos": ["https://cnetmobile.estaleiro.serpro.gov.br/comprasnet-web/"],
+      "conferido": false,
+      "fonte": "código público do aplicativo comprasnet-web (out/2026)",
+      "leitura": {
+        "tipo": "seletores",
+        "sala": "app-disputa-fornecedor",
+        "item": "app-disputa-fornecedor-itens .cp-itens-disputa",
+        "itemNumero": "app-identificacao-item .dots > span:not(.text-uppercase):not(.pr-1)",
+        "melhorLance": "[data-test=\"valor-geral\"]",
+        "meuLance": "[data-test=\"valor-fornec\"]",
+        "fase": "[data-test=\"situacao-item\"]",
+        "situacao": "i.fa-thumbs-up, i.fa-thumbs-down, i.fa-hand-paper",
+        "situacaoTextos": {"fa-thumbs-up": "Ganhando", "fa-thumbs-down": "Perdendo", "fa-hand-paper": "Empatado"}
+      },
+      "mensagens": {"mensagem": ".cp-mensagens-compra", "hora": ".mensagens-data", "texto": ".mensagens-texto"}
+    },
+    {
+      "id": "bbmnet",
+      "nome": "BBMNET",
+      "enderecos": ["https://sala.bbmnet.com.br/"],
+      "conferido": false,
+      "fonte": "código público do aplicativo sala.bbmnet.com.br (out/2026)",
+      "leitura": {
+        "tipo": "tabela",
+        "sala": "ngx-lista-itens",
+        "cabecalho": ".table-header > div",
+        "linha": ".table-body",
+        "celula": ":scope > div > div",
+        "colunas": {"item": "Lote / Item", "melhorLance": "Melhor proposta / Lance", "fase": "Situação", "tempo": "Tempo decorrido"}
+      },
+      "mensagens": {"mensagem": "#chatBody > .row", "hora": "", "texto": ""}
+    },
+    {"id": "bll", "nome": "BLL Compras", "enderecos": ["https://bllcompras.com/"], "leitura": null},
+    {"id": "bnc", "nome": "BNC Compras", "enderecos": ["https://bnccompras.com/"], "leitura": null},
+    {"id": "portal_compras_publicas", "nome": "Portal de Compras Públicas", "enderecos": ["https://operacao.portaldecompraspublicas.com.br/"], "leitura": null},
+    {"id": "bec", "nome": "BEC-SP", "enderecos": ["https://www.bec.sp.gov.br/"], "leitura": null},
+    {"id": "licitanet", "nome": "Licitanet", "enderecos": ["https://portal.licitanet.com.br/", "https://licitanet.com.br/"], "leitura": null},
+    {"id": "licitacoes_e", "nome": "Licitações-e", "enderecos": ["https://www.licitacoes-e.com.br/", "https://licitacoes-e2.bb.com.br/"], "leitura": null}
+  ]
+}

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Kasiski — Sala de Disputa",
   "version": "0.1.0",
-  "description": "Lê a sala de disputa do Compras.gov.br aberta por você e mostra lances, posição e mensagens na sala do Kasiski. Não envia lances.",
+  "description": "Lê a sala de disputa dos portais de licitação aberta por você (Compras.gov.br, BBMNET e outros) e mostra lances e mensagens na sala do Kasiski. Não envia lances.",
   "minimum_chrome_version": "110",
   "permissions": [
     "storage"
@@ -25,11 +25,20 @@
   "content_scripts": [
     {
       "matches": [
-        "https://cnetmobile.estaleiro.serpro.gov.br/comprasnet-web/*"
+        "https://cnetmobile.estaleiro.serpro.gov.br/comprasnet-web/*",
+        "https://sala.bbmnet.com.br/*",
+        "https://bllcompras.com/*",
+        "https://bnccompras.com/*",
+        "https://operacao.portaldecompraspublicas.com.br/*",
+        "https://www.bec.sp.gov.br/*",
+        "https://portal.licitanet.com.br/*",
+        "https://licitanet.com.br/*",
+        "https://www.licitacoes-e.com.br/*",
+        "https://licitacoes-e2.bb.com.br/*"
       ],
       "js": [
         "comum.js",
-        "adaptadores/comprasgov.js",
+        "motor.js",
         "observador.js"
       ],
       "run_at": "document_idle"

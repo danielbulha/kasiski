@@ -10,6 +10,8 @@ por um token próprio (12 h). O token só serve para enviar eventos das salas de
 desconectar, trocar a senha ou a sala for excluída.
 """
 import hashlib
+import json
+import os
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -24,6 +26,19 @@ MAX_EVENTOS_MIN = 600
 TIPOS = {"melhor_lance", "meu_lance", "posicao", "fase", "mensagem"}
 _ALFABETO = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # sem 0/O e 1/I, que se confundem ao digitar
 _DOC = re.compile(r"\b\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}\b|\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b")  # CNPJ / CPF
+
+
+_ADAPTADORES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "adaptadores_extensao.json")
+
+
+def adaptadores():
+    """Onde a extensão lê os dados em cada portal (só dados: seletores e nomes de colunas, nunca código)."""
+    with open(_ADAPTADORES, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def portais_com_leitura():
+    return {p["id"] for p in adaptadores()["portais"] if p.get("leitura")}
 
 
 def _hash(v):

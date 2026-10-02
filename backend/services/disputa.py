@@ -31,6 +31,8 @@ PORTAIS = {
     "licitacoes_e": ("Licitações-e (Banco do Brasil)", "https://www.licitacoes-e.com.br/"),
     "bll": ("BLL Compras", "https://bllcompras.com/"),
     "portal_compras_publicas": ("Portal de Compras Públicas", "https://www.portaldecompraspublicas.com.br/"),
+    "bnc": ("BNC Compras", "https://bnccompras.com/"),
+    "licitanet": ("Licitanet", "https://www.licitanet.com.br/"),
     "outro": ("Outro portal", ""),
 }
 

@@ -3,8 +3,8 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const pedir = (msg) => chrome.runtime.sendMessage(msg);
 const MOTIVOS = {
   lendo: ["ok", "Lendo a sala de disputa."], sem_itens: ["", "Na sala, mas nenhum item visível."],
-  fora_da_sala: ["", "Abra a sala de disputa no Compras.gov.br."], erro_leitura: ["erro", "Não consegui ler esta página."],
-  aguardando_configuracao: ["erro", "O leitor do Compras.gov.br ainda não foi configurado para esta versão da página."],
+  fora_da_sala: ["", "Abra a sala de disputa do portal."], erro_leitura: ["erro", "Não consegui ler esta página."],
+  aguardando_configuracao: ["erro", "A leitura deste portal ainda está sendo configurada. Clique em \"Copiar estrutura da página\" e envie ao suporte do Kasiski."],
 };
 
 async function desenhar() {
@@ -12,7 +12,7 @@ async function desenhar() {
   const [aba] = await chrome.tabs.query({ active: true, currentWindow: true });
   const st = abas?.[aba?.id];
   const linhaAba = st ? `<p class="${MOTIVOS[st.motivo]?.[0] || ""}">${esc(MOTIVOS[st.motivo]?.[1] || st.motivo)}</p>`
-    : `<p class="fraco">Esta aba não é a sala de disputa do Compras.gov.br.</p>`;
+    : `<p class="fraco">Esta aba não é a sala de disputa de um portal atendido.</p>`;
   const captura = st ? `<button class="sec" id="capturar">Copiar estrutura da página (sem números)</button>` : "";
   if (!c?.token) {
     $("#conteudo").innerHTML = `${c?.erro ? `<p class="erro">${esc(c.erro)}</p>` : ""}

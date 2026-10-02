@@ -87,7 +87,7 @@ class Usuario(db.Model):
     # Segurança do acesso. email_verificado = None em contas anteriores à verificação (tratadas como
     # confirmadas); False nos cadastros novos até digitarem o código recebido por e-mail.
     email_verificado = db.Column(db.Boolean)
-    falhas_login = db.Column(db.Integer, default=0)
+    falhas_login = db.Column(db.Integer, default=0)   # não usados mais: as falhas ficam em uso_publico (tipo login_conta)
     bloqueado_ate = db.Column(db.DateTime)
     papel = db.Column(db.String(20))              # dono (gerencia equipe e assinatura) ou membro
     token_versao = db.Column(db.Integer, default=0)  # muda ao trocar a senha: derruba os logins antigos

@@ -125,26 +125,44 @@ def login():
     ip = _limite_ip("login_falha", current_app.config["LOGIN_FALHAS_IP"], 15,
                     "Muitas tentativas de login a partir desta rede. Aguarde 15 minutos e tente de novo.")
     u = Usuario.query.filter_by(email=(d.get("email") or "").strip().lower()).first()
-    agora = datetime.utcnow()
-    if u and u.bloqueado_ate and u.bloqueado_ate > agora:
-        minutos = int((u.bloqueado_ate - agora).total_seconds() // 60) + 1
-        raise ErroAPI(f"Muitas tentativas de senha. Por segurança, o acesso foi pausado por {minutos} minuto(s).", 429,
-                      "bloqueado")
+    if u:
+        _conferir_bloqueio_conta(u, ip)
     if not u or not check_password_hash(u.senha_hash, d.get("senha") or ""):
         _registrar_ip("login_falha", ip)
         if u:
-            u.falhas_login = (u.falhas_login or 0) + 1
-            if u.falhas_login >= 5:
-                u.bloqueado_ate = agora + timedelta(minutes=15)
-                u.falhas_login = 0
+            from models import UsoPublico
+            db.session.add(UsoPublico(tipo="login_conta", ip_hash=ip, email=u.email))
             db.session.commit()
         raise ErroAPI("E-mail ou senha incorretos.", 401)
-    if u.falhas_login or u.bloqueado_ate:
-        u.falhas_login, u.bloqueado_ate = 0, None
-        db.session.commit()
+    _limpar_falhas_conta(u, ip)
     if not u.verificado and verificacao.exigida():
         return _pedir_verificacao(u)
     return jsonify({"token": gerar_token(u), "usuario": u.to_dict(eh_admin(u))})
+
+
+def _conferir_bloqueio_conta(u, ip):
+    """Pausa as tentativas numa conta só para quem está errando a senha dela (conta + IP). Assim um terceiro que
+    sabe o e-mail não consegue travar o acesso do dono, que entra de outra rede. Se a conta recebe muitas senhas
+    erradas de vários IPs (ataque distribuído), toda rede que já errou nela fica pausada por 1 hora."""
+    from models import UsoPublico
+    cfg, agora = current_app.config, datetime.utcnow()
+    q = UsoPublico.query.filter(UsoPublico.tipo == "login_conta", UsoPublico.email == u.email)
+    if q.filter(UsoPublico.ip_hash == ip, UsoPublico.criado_em >= agora - timedelta(minutes=15)).count() \
+            >= cfg["LOGIN_FALHAS_CONTA_IP"]:
+        raise ErroAPI("Muitas tentativas de senha. Por segurança, o acesso desta rede foi pausado por 15 minutos.", 429,
+                      "bloqueado")
+    hora = q.filter(UsoPublico.criado_em >= agora - timedelta(hours=1))
+    if hora.count() >= cfg["LOGIN_FALHAS_CONTA_HORA"] and hora.filter(UsoPublico.ip_hash == ip).first():
+        raise ErroAPI("Muitas tentativas de senha nesta conta. Por segurança, o acesso desta rede foi pausado por 1 hora.",
+                      429, "bloqueado")
+
+
+def _limpar_falhas_conta(u, ip):
+    """Senha certa: zera as falhas desta rede na conta (as de outras redes continuam contando)."""
+    from models import UsoPublico
+    UsoPublico.query.filter(UsoPublico.tipo == "login_conta", UsoPublico.email == u.email,
+                            UsoPublico.ip_hash == ip).delete(synchronize_session=False)
+    db.session.commit()
 
 
 @bp.get("/conta")

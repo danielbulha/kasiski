@@ -116,7 +116,7 @@ V.edital = async (el, id) => {
     <div class="capa">
       <div class="capa-topo"><div><div class="processo">${esc(ed.numero || ed.numero_controle || "Sem número")} · ${esc(ed.modalidade || "")}</div>
           <h1>${esc(ed.objeto || "Edital ainda sem objeto — clique em Analisar para extrair")}</h1></div>
-        <div class="acoes"><a class="botao pequeno secundario" href="#/oportunidades/${ed.id}" title="Abrir no quadro de oportunidades">${icone("kanban", 14)} ${esc(ETAPA_NOMES_OP[ed.etapa] || "Ver no quadro")}</a>
+        <div class="acoes"><a class="botao pequeno" href="#/editais/${ed.id}/jornada" title="O que falta em cada fase">${icone("ok", 14)} Jornada</a><a class="botao pequeno secundario" href="#/oportunidades/${ed.id}" title="Abrir no quadro de oportunidades">${icone("kanban", 14)} ${esc(ETAPA_NOMES_OP[ed.etapa] || "Ver no quadro")}</a>
           ${carimbo(ROTULOS.statusEdital[ed.status] || ed.status, ed.status === "ganho" ? "ok" : ed.status === "perdido" ? "erro" : "neutro")}
           <select id="status" aria-label="Alterar status">${Object.entries(ROTULOS.statusEdital).map(([k, v]) => `<option value="${k}" ${ed.status === k ? "selected" : ""}>${v}</option>`).join("")}</select>
           <button class="botao pequeno texto" id="excluir-edital" title="Excluir licitação">${icone("excluir", 14)} Excluir</button></div></div>

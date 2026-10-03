@@ -1,6 +1,6 @@
 // Roteador, layout com navegação por fase da licitação e telas de entrada/cadastro.
 const ROTAS = [
-  [/^#\/painel$/, "painel"], [/^#\/oportunidades$/, "oportunidades"], [/^#\/oportunidades\/(\d+)$/, "oportunidades"], [/^#\/radar$/, "radar"], [/^#\/editais$/, "editais"], [/^#\/editais\/(\d+)$/, "edital"],
+  [/^#\/painel$/, "painel"], [/^#\/oportunidades$/, "oportunidades"], [/^#\/oportunidades\/(\d+)$/, "oportunidades"], [/^#\/radar$/, "radar"], [/^#\/editais$/, "editais"], [/^#\/editais\/(\d+)$/, "edital"], [/^#\/editais\/(\d+)\/jornada$/, "jornada"],
   [/^#\/cofre$/, "cofre"], [/^#\/concorrentes$/, "concorrentes"], [/^#\/concorrentes\/(\d+)$/, "concorrente"],
   [/^#\/pecas$/, "pecas"], [/^#\/pecas\/advogado$/, "advogado"], [/^#\/pecas\/(\d+)$/, "peca"], [/^#\/agenda$/, "agenda"],
   [/^#\/contratos$/, "contratos"], [/^#\/contratos\/(\d+)$/, "contrato"], [/^#\/precos$/, "precos"], [/^#\/propostas\/(\d+)$/, "proposta"],

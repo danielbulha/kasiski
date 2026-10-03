@@ -20,7 +20,7 @@ V.pecas = async (el) => {
       : vazio("Nenhuma peça gerada ainda", "Clique em Nova peça para redigir a primeira minuta.")}</section>`;
   $("#nova", el).onclick = () => modalNovaPeca(tipos, pre ? JSON.parse(pre) : null);
   $$("[data-excluir-peca]", el).forEach((b) => b.onclick = () => excluirParaLixeira({ url: `/api/pecas/${b.dataset.excluirPeca}`, nome: "esta peça", tipo: "peca", depois: () => V.pecas(el) }));
-  if (pre) sessionStorage.removeItem("nova_peca");
+  if (pre) { sessionStorage.removeItem("nova_peca"); modalNovaPeca(tipos, JSON.parse(pre)); }   // veio da análise ou da Jornada: já abre com os pontos
 };
 
 async function modalNovaPeca(tipos, pre) {
@@ -30,7 +30,7 @@ async function modalNovaPeca(tipos, pre) {
     titulo: "Nova peça", largo: true, corpo: `<form id="form-peca">
       <div class="linha-campos">
         <div class="campo"><label for="tipo_peca">Tipo de peça</label><select id="tipo_peca" name="tipo">
-          ${tipos.map((t) => `<option value="${t.codigo}">${esc(t.nome)}</option>`).join("")}</select></div>
+          ${tipos.map((t) => `<option value="${t.codigo}" ${pre?.tipo === t.codigo ? "selected" : ""}>${esc(t.nome)}</option>`).join("")}</select></div>
         <div class="campo"><label for="ref_peca">Referência</label><select id="ref_peca" name="ref">
           <option value="">Nenhuma (peça avulsa)</option>
           <optgroup label="Editais">${editais.map((e) => `<option value="edital:${e.id}" ${pre?.edital_id == e.id ? "selected" : ""}>${esc((e.numero || e.objeto || "Edital " + e.id).slice(0, 60))}</option>`).join("")}</optgroup>

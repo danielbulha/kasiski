@@ -255,6 +255,16 @@ def ver(edid):
                     "qtd_documentos": DocumentoLicitacao.query.filter_by(edital_id=edid).count()})
 
 
+@bp.get("/editais/<int:edid>/jornada")
+@login_requerido
+def jornada(edid):
+    """Jornada da licitação: situação de cada etapa, derivada das fontes (services/jornada.py)."""
+    from services import jornada as _jornada
+    ed = edital_da_conta(edid)
+    _expirar_travadas(edid)
+    return jsonify(_jornada.montar(ed))
+
+
 @bp.patch("/editais/<int:edid>")
 @login_requerido
 def editar(edid):

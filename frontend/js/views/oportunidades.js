@@ -272,7 +272,7 @@ async function abrirOportunidade(id, aoMudar) {
     gaveta.innerHTML = `
       <header class="op-g-cab"><div><small class="fraco">${esc(ed.origem === "diario" ? "Aviso capturado em diário oficial" : ed.numero_controle || "Edital enviado por upload")}</small>
           <h2>${esc(tituloCartao(c))}</h2><p>${esc(c.orgao || "")}</p></div>
-        <div class="op-g-cab-acoes"><a class="botao pequeno" href="#/editais/${ed.id}">Ver todos os detalhes ${icone("chevronDireita", 14)}</a>
+        <div class="op-g-cab-acoes"><a class="botao pequeno" href="#/editais/${ed.id}/jornada">Jornada ${icone("chevronDireita", 14)}</a><a class="botao pequeno secundario" href="#/editais/${ed.id}">Ver todos os detalhes ${icone("chevronDireita", 14)}</a>
           <button class="botao texto" data-fechar-gaveta aria-label="Fechar">Fechar</button></div></header>
       <div class="op-g-controles">
         <div class="campo"><label for="g-etapa">Etapa</label><select id="g-etapa">${etapas.map((e) => `<option value="${e.codigo}" ${c.etapa === e.codigo ? "selected" : ""}>${esc(e.nome)}</option>`).join("")}</select></div>
@@ -295,7 +295,7 @@ async function abrirOportunidade(id, aoMudar) {
       <div class="abas op-g-abas" role="tablist">${[["geral", "Visão geral"], ["itens", "Itens e lotes"], ["documentos", "Documentos"], ["concorrentes", "Concorrentes"], ["orgao", "Órgão"], ["historico", "Movimentações"]]
         .map(([k, t]) => `<button role="tab" data-g-aba="${k}" class="${abaAtual === k ? "ativa" : ""}" aria-selected="${abaAtual === k}">${t}</button>`).join("")}</div>
       <div id="g-corpo"></div>
-      <footer class="op-g-rodape"><a class="botao" href="#/editais/${ed.id}">Ver todos os detalhes ${icone("chevronDireita", 14)}</a>
+      <footer class="op-g-rodape"><a class="botao" href="#/editais/${ed.id}/jornada">Abrir a Jornada ${icone("chevronDireita", 14)}</a><a class="botao secundario" href="#/editais/${ed.id}">Ver todos os detalhes ${icone("chevronDireita", 14)}</a>
         ${["preparacao", "pronta", "em_disputa"].includes(c.etapa) && S.plano?.disputa ? `<a class="botao secundario" href="#/disputa" data-ir-disputa="${ed.id}">${icone("lance", 14)} Sala de disputa</a>` : ""}
         ${ed.numero_controle && ed.origem !== "diario" ? `<button class="botao texto" data-sinc-um>Sincronizar com o PNCP</button>` : ""}
         <span class="op-g-rodape-dir">${["perdida", "desistencia", "contrato_ativo"].includes(c.etapa) ? `<button class="botao texto" data-arquivar>${icone("arquivo", 14)} Mandar para o Arquivo</button>` : ""}
